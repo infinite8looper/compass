@@ -114,6 +114,8 @@ The app converts between them with the declination from Android's built-in World
 3. It saves as soon as a fix with accuracy of 15 m or better arrives.
 4. After 20 seconds without one, it saves the best fresh fix it has and shows that fix's accuracy, or, if it has no fresh fix at all, says that it could not get a position.
 5. It never saves a cached or stale position.
+6. If location is switched off in the system settings, the app does not search. It says that location is off and to turn it on in Settings, with an OK button.
+7. If the waypoint cannot be stored, it says so instead of reporting a save.
 
 New waypoints are named "Waypoint N" and are given a color automatically, so logging needs no typing.
 A newly logged waypoint becomes a target, so its marker appears on the dial at once. The focus does not move to it.

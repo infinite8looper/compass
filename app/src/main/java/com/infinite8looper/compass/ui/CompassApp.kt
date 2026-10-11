@@ -22,7 +22,7 @@ fun CompassApp() {
             composable("compass") {
                 CompassScreen(vm, onOpenList = { nav.navigate("waypoints") }, onLog = { nav.navigate("log") }, onCalibrate = { nav.navigate("calibrate") })
             }
-            composable("log") { Pending("log") }
+            composable("log") { LogScreen(vm, onDone = { nav.popBackStack() }) }
             composable("waypoints") { Pending("waypoints") }
             composable("edit/{id}") { Pending("edit") }
             composable("hue/{id}") { Pending("hue") }
