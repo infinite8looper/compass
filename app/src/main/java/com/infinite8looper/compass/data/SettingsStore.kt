@@ -2,12 +2,18 @@ package com.infinite8looper.compass.data
 
 import android.content.Context
 import androidx.datastore.core.DataStore
+import java.io.IOException
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStoreFile
 import com.infinite8looper.compass.nav.GeoPoint
 import com.infinite8looper.compass.nav.NorthRef
 import com.infinite8looper.compass.nav.Units
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import java.util.Locale
 
@@ -19,11 +25,18 @@ data class Settings(
 fun defaultUnits(locale: Locale): Units =
     if (locale.country in setOf("US", "GB", "LR", "MM")) Units.IMPERIAL else Units.METRIC
 
-class SettingsStore(context: Context, fileName: String) {
-    private val store: DataStore<Preferences> =
-        PreferenceDataStoreFactory.create { context.applicationContext.preferencesDataStoreFile(fileName) }
+class SettingsStore(
+    context: Context,
+    fileName: String,
+    scope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob()),
+) {
+    private val app: Context = context.applicationContext
+    private val store: DataStore<Preferences> = PreferenceDataStoreFactory.create(
+        corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
+        scope = scope,
+    ) { app.preferencesDataStoreFile(fileName) }
 
-    val settings: Flow<Settings> = store.data.map { p ->
+    val settings: Flow<Settings> = store.data.catch { if (it is IOException) emit(emptyPreferences()) else throw it }.map { p ->
         val lat = p[LAT]; val lon = p[LON]
         Settings(
             north = if (p[MAGNETIC] == true) NorthRef.MAGNETIC else NorthRef.TRUE,
