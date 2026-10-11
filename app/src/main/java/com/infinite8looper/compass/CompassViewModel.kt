@@ -1,6 +1,7 @@
 package com.infinite8looper.compass
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.infinite8looper.compass.data.SettingsStore
@@ -11,7 +12,9 @@ import com.infinite8looper.compass.sensors.HeadingReading
 import com.infinite8looper.compass.sensors.HeadingSource
 import com.infinite8looper.compass.sensors.LocationSource
 import com.infinite8looper.compass.sensors.declinationAt
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -45,8 +48,10 @@ class CompassViewModel(app: Application) : AndroidViewModel(app) {
         .flatMapLatest { has ->
             if (has && locationSource.hasPermission()) locationSource.updates(5_000) else emptyFlow()
         }
-        .onEach { settingsStore.setLastPosition(it.point, it.altitudeM) }
+        .onEach { quietly("save last position") { settingsStore.setLastPosition(it.point, it.altitudeM) } }
         .map<Fix, Fix?> { it }
+        // A location failure ends the fixes, not the screen state: the waypoints and settings keep flowing.
+        .catch { Log.w(TAG, "location updates failed", it) }
         .onStart { emit(null) }
 
     val nav: StateFlow<NavUi> = combine(waypoints, settingsStore.settings, fix) { ws, s, f ->
@@ -54,34 +59,55 @@ class CompassViewModel(app: Application) : AndroidViewModel(app) {
         val declination = known?.let { declinationAt(it, f?.altitudeM ?: s.lastAltitudeM ?: 0f, System.currentTimeMillis()) }
         val targets = buildTargets(ws.map { it.toInfo() }, s.focusedId, f?.point, declination, s.north)
         NavUi(targets, targets.firstOrNull { it.focused }, s.units, s.north, declination, f?.elapsedMs, ws)
-    }.stateIn(viewModelScope, sharing, NavUi.EMPTY)
+    }
+        .catch { Log.w(TAG, "screen state stopped updating", it) }
+        .stateIn(viewModelScope, sharing, NavUi.EMPTY)
 
     fun permissionChanged() { permissionTick.value++ }
 
-    fun moveFocus(step: Int) = viewModelScope.launch {
-        val n = nav.value
-        settingsStore.setFocused(stepFocus(n.targets.map { it.id }, n.focused?.id, step))
+    /** The target ids, newest first, and which of them has the focus, read from the stores themselves. */
+    private suspend fun targetsAndFocus(): Pair<List<Long>, Long?> {
+        val ids = dao.observeAll().first().filter { it.isTarget }.map { it.id }
+        return ids to resolveFocus(ids, settingsStore.settings.first().focusedId)
     }
 
+    fun moveFocus(step: Int) = launchQuietly("move focus") {
+        val (ids, focused) = targetsAndFocus()
+        // With no targets there is nothing to step to, and a stored focus must survive.
+        if (ids.isNotEmpty()) settingsStore.setFocused(stepFocus(ids, focused, step))
+    }
+
+    /** Stores a new waypoint as a target. Throws if the waypoint cannot be stored, so the caller can say so. */
     suspend fun logWaypoint(fix: Fix): Waypoint {
+        // The focus falls back to the newest target when none is stored, so pin it down before adding one.
+        targetsAndFocus().second?.let { settingsStore.setFocused(it) }
         val n = settingsStore.nextWaypointNumber()
         val w = Waypoint(
             name = "Waypoint $n", lat = fix.point.lat, lon = fix.point.lon, accuracyM = fix.accuracyM,
             createdAt = System.currentTimeMillis(), hue = hueForIndex(n - 1), isTarget = true,
         )
-        settingsStore.setLastPosition(fix.point, fix.altitudeM)
+        quietly("save last position") { settingsStore.setLastPosition(fix.point, fix.altitudeM) }
         return w.copy(id = dao.insert(w))
     }
 
-    fun setTarget(id: Long, on: Boolean) = viewModelScope.launch { dao.setTarget(id, on) }
-    fun setAllTargets(on: Boolean) = viewModelScope.launch { dao.setAllTargets(on) }
-    fun rename(id: Long, name: String?) = viewModelScope.launch {
+    fun setTarget(id: Long, on: Boolean) = launchQuietly("set target") { dao.setTarget(id, on) }
+    fun setAllTargets(on: Boolean) = launchQuietly("set all targets") { dao.setAllTargets(on) }
+    fun rename(id: Long, name: String?) = launchQuietly("rename") {
         dao.get(id)?.let { dao.update(it.copy(name = cleanName(name, it.name))) }
     }
-    fun setHue(id: Long, hue: Float) = viewModelScope.launch {
+    fun setHue(id: Long, hue: Float) = launchQuietly("set hue") {
         dao.get(id)?.let { dao.update(it.copy(hue = normalizeDeg(hue))) }
     }
-    fun delete(id: Long) = viewModelScope.launch { dao.delete(id) }
-    fun setNorth(n: NorthRef) = viewModelScope.launch { settingsStore.setNorth(n) }
-    fun setUnits(u: Units) = viewModelScope.launch { settingsStore.setUnits(u) }
+    fun delete(id: Long) = launchQuietly("delete") { dao.delete(id) }
+    fun setNorth(n: NorthRef) = launchQuietly("set north") { settingsStore.setNorth(n) }
+    fun setUnits(u: Units) = launchQuietly("set units") { settingsStore.setUnits(u) }
+
+    /** Runs a write whose failure must not take the app down. Cancellation still propagates. */
+    private suspend fun quietly(what: String, block: suspend () -> Unit) {
+        try { block() } catch (e: CancellationException) { throw e } catch (e: Exception) { Log.w(TAG, "could not $what", e) }
+    }
+
+    private fun launchQuietly(what: String, block: suspend () -> Unit): Job = viewModelScope.launch { quietly(what, block) }
+
+    private companion object { const val TAG = "CompassViewModel" }
 }

@@ -6,7 +6,7 @@ Status: awaiting review
 ## Purpose
 
 A standalone compass for Wear OS that also navigates back to saved places.
-The wearer logs the current GPS position as a waypoint with one tap, and sets any number of waypoints as targets to see their directions and distances on the compass dial.
+The wearer logs the current GPS position as a waypoint with one press of the watch's side button, and sets any number of waypoints as targets to see their directions and distances on the compass dial.
 The app is free, MIT licensed, and published under the infinite8looper developer account.
 
 Success means:
@@ -14,7 +14,7 @@ Success means:
 - The dial matches `notes/mockup.png` and moves smoothly, with no visible stutter or jitter, on a Pixel Watch.
 - The heading agrees with a reference compass once the watch is calibrated.
 - Each target's marker points at its saved place and the distance shown is correct.
-- Logging a waypoint takes one tap.
+- Logging a waypoint takes one press of the side button.
 
 ## Decisions made with the owner
 
@@ -48,15 +48,15 @@ Fullscreen on a black background, following the mockup:
 - The heading in the center as a whole number of degrees.
 - On the ring: one marker per target, in that waypoint's color, at the bearing to it. All markers update together.
   Markers have their own shape, distinct from the north tick and the heading triangle, so a red or blue marker is not mistaken for either.
-- Under the heading: the focused target's color dot, name and distance. The focused target's marker is drawn larger than the others.
-- A `+` button at the bottom that logs a waypoint.
+- Around the heading: the focused target's color dot and name above it, and the distance below it. The focused target's marker is drawn larger than the others.
+- No on-screen button: a press of the watch's side button logs a waypoint.
 - A small label `MAG` when the dial is showing magnetic north (see North reference).
 - A settings entry point at the top edge, small enough not to compete with the dial.
 
 Gestures on this screen:
 
 - Turning the crown, or swiping up or down, moves the focus through the targets, newest first. It changes which target's name and distance are shown, not which waypoints are targets.
-- Tapping the name area opens the waypoints list. With no targets it reads "No target"; with no waypoints saved it shows a hint to tap `+`.
+- Tapping the name area opens the waypoints list. With no targets it reads "No target"; with no waypoints saved it shows a hint to press the side button, or, on a watch that has no side button available to apps, to open the list.
 - The system's swipe-right gesture leaves the app, as usual.
 
 The heading is the direction of the watch's 12 o'clock edge projected onto the horizontal plane.
@@ -109,7 +109,7 @@ The app converts between them with the declination from Android's built-in World
 
 ### Logging a waypoint
 
-1. Tapping `+` asks for the location permission if it has not been granted.
+1. Pressing the side button asks for the location permission if it has not been granted.
 2. The app requests a fresh high-accuracy fix and shows the current accuracy while it waits.
 3. It saves as soon as a fix with accuracy of 15 m or better arrives.
 4. After 20 seconds without one, it saves the best fresh fix it has and shows that fix's accuracy, or, if it has no fresh fix at all, says that it could not get a position.
@@ -125,7 +125,7 @@ The hue for each new waypoint steps round the color wheel by the golden angle (a
 This keeps consecutive waypoints far apart in hue, never repeats exactly, and has no upper limit on the number of waypoints.
 The wearer can change any waypoint's hue on the edit screen.
 
-If the permission is denied, the compass still works, and `+` explains that waypoints need location access.
+If the permission is denied, the compass still works, and pressing the side button explains that waypoints need location access.
 
 ### Navigating
 
@@ -179,7 +179,7 @@ No mocks, per the owner's standing rules.
 
 These are stated from memory and are checked before code depends on them:
 
-- That the Pixel Watch reserves the crown press and side button for the system, so logging must be an on-screen button. If a button turns out to be available to apps, it becomes an additional way to log.
+- Whether the Pixel Watch delivers its side button to apps. Logging uses the side button; if the watch does not deliver it, logging is reached from the waypoints list instead.
 - The Pixel Watch generation and its Wear OS version, to confirm min SDK 33 covers it.
 - Current stable versions of Compose for Wear OS, Room, DataStore and Play services location, each confirmed by a real build.
 
