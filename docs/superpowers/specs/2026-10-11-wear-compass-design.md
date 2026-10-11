@@ -51,7 +51,6 @@ Fullscreen on a black background, following the mockup:
 - Around the heading: the focused target's color dot and name above it, and the distance below it. The focused target's marker is drawn larger than the others.
 - No on-screen button: a press of the watch's side button logs a waypoint.
 - A small label `MAG` when the dial is showing magnetic north (see North reference).
-- A settings entry point at the top edge, small enough not to compete with the dial.
 
 Gestures on this screen:
 
@@ -65,9 +64,11 @@ When the watch is tilted so steeply that this projection is unstable, the screen
 ### 2. Waypoints list
 
 A scrolling, curved list. Each row shows the color dot, the name, the distance if a location fix exists, and whether the waypoint is a target.
-Tapping a row toggles it as a target.
-Each row has an edit control that opens the edit screen.
-Two items at the top set all waypoints as targets or clear all targets.
+Each row has a switch that sets it as a target; tapping the rest of the row opens the edit screen.
+The first item logs a waypoint at the current position.
+Below it, two items set all waypoints as targets or clear all targets.
+The last item opens settings.
+With no waypoints saved, the list shows the first item, a line saying there are none yet, and the settings item.
 
 ### 3. Edit waypoint
 

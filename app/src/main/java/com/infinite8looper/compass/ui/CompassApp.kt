@@ -23,9 +23,17 @@ fun CompassApp() {
                 CompassScreen(vm, onOpenList = { nav.navigate("waypoints") }, onLog = { nav.navigate("log") }, onCalibrate = { nav.navigate("calibrate") })
             }
             composable("log") { LogScreen(vm, onDone = { nav.popBackStack() }) }
-            composable("waypoints") { Pending("waypoints") }
-            composable("edit/{id}") { Pending("edit") }
-            composable("hue/{id}") { Pending("hue") }
+            composable("waypoints") {
+                WaypointsScreen(vm, onEdit = { nav.navigate("edit/$it") }, onSettings = { nav.navigate("settings") }, onLog = { nav.navigate("log") })
+            }
+            composable("edit/{id}") { entry ->
+                val id = entry.arguments?.getString("id")?.toLongOrNull() ?: return@composable
+                EditScreen(vm, id, onPickHue = { nav.navigate("hue/$id") }, onDone = { nav.popBackStack() })
+            }
+            composable("hue/{id}") { entry ->
+                val id = entry.arguments?.getString("id")?.toLongOrNull() ?: return@composable
+                HueScreen(vm, id, onDone = { nav.popBackStack() })
+            }
             composable("settings") { Pending("settings") }
             composable("calibrate") { Pending("calibrate") }
         }
