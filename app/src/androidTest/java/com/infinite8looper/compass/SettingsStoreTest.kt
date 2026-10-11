@@ -1,0 +1,51 @@
+package com.infinite8looper.compass
+
+import android.content.Context
+import androidx.datastore.preferences.preferencesDataStoreFile
+import androidx.test.core.app.ApplicationProvider
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.infinite8looper.compass.data.SettingsStore
+import com.infinite8looper.compass.data.defaultUnits
+import com.infinite8looper.compass.nav.GeoPoint
+import com.infinite8looper.compass.nav.NorthRef
+import com.infinite8looper.compass.nav.Units
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.*
+import org.junit.Test
+import org.junit.runner.RunWith
+import java.util.Locale
+import java.util.UUID
+
+@RunWith(AndroidJUnit4::class)
+class SettingsStoreTest {
+    private val ctx: Context = ApplicationProvider.getApplicationContext()
+    private fun withStore(block: suspend (SettingsStore, String) -> Unit) = runBlocking {
+        val file = "test-settings-${UUID.randomUUID()}"
+        try { block(SettingsStore(ctx, file), file) } finally { ctx.preferencesDataStoreFile(file).delete() }
+    }
+
+    @Test fun defaultsWhenNoFileExists() = withStore { s, _ ->
+        val v = s.settings.first()
+        assertEquals(NorthRef.TRUE, v.north); assertEquals(defaultUnits(Locale.getDefault()), v.units)
+        assertNull(v.focusedId); assertNull(v.lastPosition); assertNull(v.lastAltitudeM)
+    }
+    @Test fun valuesRoundTrip() = withStore { s, _ ->
+        s.setNorth(NorthRef.MAGNETIC); s.setUnits(Units.IMPERIAL); s.setFocused(7)
+        s.setLastPosition(GeoPoint(43.7022, -72.2896), 160f)
+        val v = s.settings.first()
+        assertEquals(NorthRef.MAGNETIC, v.north); assertEquals(Units.IMPERIAL, v.units); assertEquals(7L, v.focusedId)
+        assertEquals(43.7022, v.lastPosition!!.lat, 1e-9); assertEquals(-72.2896, v.lastPosition.lon, 1e-9)
+        assertEquals(160f, v.lastAltitudeM!!, 0f)
+    }
+    @Test fun focusCanBeCleared() = withStore { s, _ ->
+        s.setFocused(7); s.setFocused(null); assertNull(s.settings.first().focusedId)
+    }
+    @Test fun waypointNumbersCountUpAndNeverRepeat() = withStore { s, _ ->
+        assertEquals(listOf(1, 2, 3), listOf(s.nextWaypointNumber(), s.nextWaypointNumber(), s.nextWaypointNumber()))
+    }
+    @Test fun unitsDefaultFromLocale() {
+        assertEquals(Units.IMPERIAL, defaultUnits(Locale.US)); assertEquals(Units.IMPERIAL, defaultUnits(Locale.UK))
+        assertEquals(Units.METRIC, defaultUnits(Locale.FRANCE)); assertEquals(Units.METRIC, defaultUnits(Locale.CANADA))
+    }
+}
