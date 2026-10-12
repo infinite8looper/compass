@@ -66,8 +66,9 @@ fun CompassScreen(vm: CompassViewModel, onOpenList: () -> Unit, onLog: () -> Uni
         var reference = Float.NaN
         var stale: HeadingReading? = null
         // The facing state for this loop: a later frame-by-frame consumer (the blind navigation pulses) reads
-        // [facing], and [wasFacing] below, here, without going through composition.
+        // [facing], and [wasFacing] and [targetChanged] below, here, without going through composition.
         var facing = false
+        var facingId = NO_TARGET
         facingState.value = false
         while (true) withFrameNanos { now ->
             val reading = readingState.value
@@ -108,10 +109,21 @@ fun CompassScreen(vm: CompassViewModel, onOpenList: () -> Unit, onLog: () -> Uni
 
                 // Facing is decided from the heading the dial shows, and only while that heading is live: not
                 // while the dial is frozen by the hold-flat state, and not while it is catching up.
+                // A focus that has moved to another target starts from not facing.
                 val wasFacing = facing
-                facing = nextFacing(wasFacing, shown.floatValue, n.focused?.dialAngleDeg, headingLive = !hold && !settling.active)
+                val focusedId = n.focused?.id ?: NO_TARGET
+                val targetChanged = focusedId != facingId
+                facingId = focusedId
+                facing = nextFacing(
+                    wasFacing, shown.floatValue, n.focused?.dialAngleDeg, headingLive = !hold && !settling.active,
+                    targetChanged = targetChanged,
+                )
                 if (facing != wasFacing) facingState.value = facing
-                // Turning onto the target is `facing && !wasFacing` on this frame.
+                // Turning onto a target is `facing && (!wasFacing || targetChanged)` on this frame.
+            } else if (facing) {
+                // Without a heading nothing is faced.
+                facing = false
+                facingState.value = false
             }
             last = now
         }
@@ -257,6 +269,9 @@ fun CompassScreen(vm: CompassViewModel, onOpenList: () -> Unit, onLog: () -> Uni
         }
     }
 }
+
+/** Stands for the focused target's id in the frame loop while no target is focused. Row ids start at 1. */
+private const val NO_TARGET = 0L
 
 /** Where the calibrate prompt and the words of the hold-flat hint sit, in dial radii below the center. */
 private const val PROMPT_Y = 0.31f

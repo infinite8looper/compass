@@ -14,7 +14,7 @@ internal val Dim = Color(0xFF9E9E9E)
 val AccentColor = Color(0xFF2F8BFF)
 /** North on the dial. */
 val NorthColor = Color(0xFFFF3B30)
-/** A failure, and deleting. */
+/** A failure, and deleting. It has the same value as [NorthColor] but is a separate role, so the two are kept as two values. */
 val ErrorColor = Color(0xFFFF3B30)
 
 /** A waypoint's own color: its line and arrow on the dial, and its mark wherever it is listed. */

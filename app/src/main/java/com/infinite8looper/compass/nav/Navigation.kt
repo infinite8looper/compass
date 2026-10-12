@@ -109,11 +109,20 @@ fun nextHoldFlat(current: Boolean, pitchDeg: Float): Boolean = when {
  * target or no bearing to it ([targetDialAngleDeg] null), when either value is not a finite number, and while the
  * shown heading is not live ([headingLive] false): the dial is frozen in the hold-flat state, or still catching
  * up with a heading it did not follow, and what it passes on the way is not where the wearer points.
+ * When the focus has moved to another target since the last frame ([targetChanged]), the new target starts from
+ * not facing and has to be within the entering limit.
+ *
+ * Anything built on this, such as a haptic pulse on turning onto the target, inherits the wait for a live heading:
+ * after the app opens, the screen wakes, the hold-flat state ends or the dial's north moves, facing is not
+ * reported for at least [TICK_SETTLE_MIN_NANOS] (0.4 s).
  */
-fun nextFacing(current: Boolean, shownHeadingDeg: Float, targetDialAngleDeg: Float?, headingLive: Boolean = true): Boolean {
+fun nextFacing(
+    current: Boolean, shownHeadingDeg: Float, targetDialAngleDeg: Float?, headingLive: Boolean = true,
+    targetChanged: Boolean = false,
+): Boolean {
     if (!headingLive || targetDialAngleDeg == null || !shownHeadingDeg.isFinite() || !targetDialAngleDeg.isFinite()) return false
     val off = abs(shortestDelta(shownHeadingDeg, targetDialAngleDeg))
-    return if (current) off <= FACING_LEAVE_DEG else off <= FACING_ENTER_DEG
+    return if (current && !targetChanged) off <= FACING_LEAVE_DEG else off <= FACING_ENTER_DEG
 }
 
 /**

@@ -67,7 +67,7 @@ One instrument, one set of parts.
 
 - Every target is drawn as a line across the tick ring at its bearing, a little longer and heavier than a heavy tick.
 - The focused target's line is in the waypoint's full color, with a thin black casing so it reads against the ticks.
-- Every other target's line is a soft tint: a pale version of its own color (about a third of the full color's saturation) at about 60 percent opacity, with no casing. Targets can still be told apart by color, but only the focused one is vivid.
+- Every other target's line is a soft tint: a paler version of its own color (about 60 percent of the full color's saturation) at about 60 percent opacity, with no casing. Targets can still be told apart by color, but only the focused one is vivid.
 - The focused target also has an arrow: a triangle of the same shape and size as the blue heading pointer, in the waypoint's color, just inside the ring at the target's bearing, pointing outward.
 - The dot markers are gone.
 - Breadcrumbs, when a trail exists, are short muted ticks inside the ring. While retracing, the crumb being walked to is drawn like a focused target, in the breadcrumb color.
@@ -75,6 +75,8 @@ One instrument, one set of parts.
 ### Facing the target
 
 - "Facing" means the shown heading is within 2 degrees of the focused target's bearing. Once facing, it stays so until the difference exceeds 3 degrees, so sensor noise at the edge does not make it flicker.
+- Facing is never reported while the hold-flat state applies, or while the dial is still catching up after the app opens, the screen wakes, hold-flat ends or the north reference changes. It resumes once the dial has caught up, which takes at least 0.4 seconds.
+- When the focus moves to another target, that target starts from not facing: it has to be within 2 degrees to count as faced.
 - While facing, the focused target's line is drawn clearly thicker. It sits at 12 o'clock under the blue pointer at that moment, so the wearer sees one heavy line in the target's color there. There is no ring or circle.
 
 ### Logging with one press

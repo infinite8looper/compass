@@ -295,4 +295,16 @@ class NavigationTest {
         assertEquals(2, switches)
         assertFalse(facing)
     }
+
+    @Test fun facingStartsAgainWhenTheFocusMovesToAnotherTarget() {
+        // Facing target A at 0; the focus moves to B. B is faced only if it is within the entering limit.
+        assertFalse(nextFacing(true, 0f, 2.5f, targetChanged = true))
+        assertTrue(nextFacing(true, 0f, 1.5f, targetChanged = true))
+        assertFalse(nextFacing(false, 0f, 2.5f, targetChanged = true))
+        // On the frames after the change, B is an ordinary target again.
+        assertTrue(nextFacing(nextFacing(true, 0f, 1.5f, targetChanged = true), 0f, 2.5f))
+        assertFalse(nextFacing(nextFacing(true, 0f, 2.5f, targetChanged = true), 0f, 2.5f))
+        // The same target keeps the leaving limit.
+        assertTrue(nextFacing(true, 0f, 2.5f, targetChanged = false))
+    }
 }

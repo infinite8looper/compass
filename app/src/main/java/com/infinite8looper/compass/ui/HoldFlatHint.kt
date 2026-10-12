@@ -122,7 +122,7 @@ private fun DrawScope.drawWatch(ms: Float) {
             Ink, Offset(center.x - caseHalf, center.y - caseDepth / 2f), Size(caseHalf * 2f, caseDepth),
             CornerRadius(h * 0.055f), alpha = visible,
         )
-        // The glass, in the heading's blue: the side that has to face up.
+        // The glass, in the accent color: the side that has to face up.
         val glassHalf = caseHalf * 0.74f
         drawRoundRect(
             AccentColor, Offset(center.x - glassHalf, center.y - caseDepth / 2f - glassDepth * 0.55f),
