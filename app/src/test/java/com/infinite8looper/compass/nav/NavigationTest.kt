@@ -240,4 +240,59 @@ class NavigationTest {
         }
         assertEquals(20, count)
     }
+
+    @Test fun facingIsEnteredWithinTwoDegrees() {
+        assertTrue(nextFacing(false, 100f, 101.9f))
+        assertTrue(nextFacing(false, 100f, 98.1f))
+        assertTrue(nextFacing(false, 100f, 100f))
+        assertFalse(nextFacing(false, 100f, 102.1f))
+        assertFalse(nextFacing(false, 100f, 97.9f))
+        assertFalse(nextFacing(false, 100f, 280f))
+    }
+    @Test fun facingIsLeftOnlyBeyondThreeDegrees() {
+        assertTrue(nextFacing(true, 100f, 102.9f))
+        assertTrue(nextFacing(true, 100f, 97.1f))
+        assertFalse(nextFacing(true, 100f, 103.1f))
+        assertFalse(nextFacing(true, 100f, 96.9f))
+        // Between the two limits the answer is whatever it was.
+        assertTrue(nextFacing(true, 100f, 102.5f))
+        assertFalse(nextFacing(false, 100f, 102.5f))
+    }
+    @Test fun facingWorksAcrossNorth() {
+        assertTrue(nextFacing(false, 359f, 0.9f))
+        assertTrue(nextFacing(false, 0.9f, 359f))
+        assertFalse(nextFacing(false, 359f, 1.1f))
+        assertFalse(nextFacing(false, 1.1f, 359f))
+        assertTrue(nextFacing(true, 358f, 0.9f))
+        assertTrue(nextFacing(true, 0.9f, 358f))
+        assertFalse(nextFacing(true, 358f, 1.1f))
+        assertFalse(nextFacing(true, 1.1f, 358f))
+        assertTrue(nextFacing(false, 0f, 360f))
+    }
+    @Test fun facingNeedsATargetAndRealNumbers() {
+        for (current in listOf(false, true)) {
+            assertFalse(nextFacing(current, 100f, null))
+            assertFalse(nextFacing(current, Float.NaN, 100f))
+            assertFalse(nextFacing(current, 100f, Float.NaN))
+            assertFalse(nextFacing(current, Float.POSITIVE_INFINITY, 100f))
+            assertFalse(nextFacing(current, 100f, Float.NEGATIVE_INFINITY))
+        }
+    }
+    @Test fun facingIsOffWhileTheShownHeadingIsNotLive() {
+        // Held flat too steeply, or catching up after a pause, the dial does not show where the wearer points.
+        assertFalse(nextFacing(false, 100f, 100f, headingLive = false))
+        assertFalse(nextFacing(true, 100f, 100f, headingLive = false))
+        assertFalse(nextFacing(true, 100f, 102.5f, headingLive = false))
+        // Once it is live again, facing is entered afresh, by the entering limit.
+        assertTrue(nextFacing(nextFacing(true, 100f, 101f, headingLive = false), 100f, 101f, headingLive = true))
+        assertFalse(nextFacing(nextFacing(true, 100f, 102.5f, headingLive = false), 100f, 102.5f, headingLive = true))
+    }
+    @Test fun facingThroughASweepSwitchesOnceEachWay() {
+        // The heading turns through a target at 90 and on, with a little noise at each limit.
+        val headings = listOf(80f, 87.9f, 88.1f, 87.95f, 88.2f, 90f, 92.9f, 92.4f, 92.95f, 93.1f, 92.9f, 100f)
+        var facing = false; var switches = 0
+        for (h in headings) { val next = nextFacing(facing, h, 90f); if (next != facing) switches++; facing = next }
+        assertEquals(2, switches)
+        assertFalse(facing)
+    }
 }

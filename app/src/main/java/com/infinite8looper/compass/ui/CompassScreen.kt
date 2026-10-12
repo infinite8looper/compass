@@ -42,8 +42,6 @@ import kotlinx.coroutines.delay
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-internal val Dim = Color(0xFF9E9E9E)
-
 @Composable
 fun CompassScreen(vm: CompassViewModel, onOpenList: () -> Unit, onLog: () -> Unit, onCalibrate: () -> Unit) {
     // Held as a State and read only in the frame loop and derived states, so sensor events do not recompose.
@@ -53,6 +51,9 @@ fun CompassScreen(vm: CompassViewModel, onOpenList: () -> Unit, onLog: () -> Uni
     val shown = remember { mutableFloatStateOf(Float.NaN) }
     // Written every frame and read where the screen is composed: only a change of value recomposes.
     var holdFlat by remember { mutableStateOf(false) }
+    // Whether the wearer faces the focused target. Written in the frame loop when it changes and read only where
+    // the dial draws the focused target's line, so a change redraws that line and recomposes nothing.
+    val facingState = remember { mutableStateOf(false) }
     val view = LocalView.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
 
@@ -64,6 +65,10 @@ fun CompassScreen(vm: CompassViewModel, onOpenList: () -> Unit, onLog: () -> Uni
         var lastTap = 0L
         var reference = Float.NaN
         var stale: HeadingReading? = null
+        // The facing state for this loop: a later frame-by-frame consumer (the blind navigation pulses) reads
+        // [facing], and [wasFacing] below, here, without going through composition.
+        var facing = false
+        facingState.value = false
         while (true) withFrameNanos { now ->
             val reading = readingState.value
             if (reading != null) {
@@ -100,6 +105,13 @@ fun CompassScreen(vm: CompassViewModel, onOpenList: () -> Unit, onLog: () -> Uni
                     lastTap = now
                 }
                 cell = next
+
+                // Facing is decided from the heading the dial shows, and only while that heading is live: not
+                // while the dial is frozen by the hold-flat state, and not while it is catching up.
+                val wasFacing = facing
+                facing = nextFacing(wasFacing, shown.floatValue, n.focused?.dialAngleDeg, headingLive = !hold && !settling.active)
+                if (facing != wasFacing) facingState.value = facing
+                // Turning onto the target is `facing && !wasFacing` on this frame.
             }
             last = now
         }
@@ -175,7 +187,7 @@ fun CompassScreen(vm: CompassViewModel, onOpenList: () -> Unit, onLog: () -> Uni
         val dialAlpha = animateFloatAsState(if (holdFlat) DIAL_DIMMED else 1f, tween(250), label = "dial")
         CompassDial(
             headingProvider = { shown.floatValue }, targets = nav.targets,
-            modifier = Modifier.graphicsLayer { alpha = dialAlpha.value },
+            modifier = Modifier.graphicsLayer { alpha = dialAlpha.value }, facing = { facingState.value },
         )
 
         // Tap areas, each at least 48 dp both ways. The whole middle opens the waypoints list. While the

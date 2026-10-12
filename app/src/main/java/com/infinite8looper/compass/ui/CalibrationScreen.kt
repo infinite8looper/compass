@@ -62,17 +62,17 @@ fun CalibrationScreen(vm: CompassViewModel) {
                 for (i in 1..64) { val p = at(i * (2 * PI).toFloat() / 64); lineTo(p.x, p.y) }
             }
             drawPath(path, Color(0xFF6E6E6E), style = Stroke(2.dp.toPx()))
-            drawCircle(HeadingBlue, 5.dp.toPx(), at(phase))
+            drawCircle(AccentColor, 5.dp.toPx(), at(phase))
         }
         Text(
             "Accuracy: ${accuracyLabel(accuracy)}",
-            color = if (accuracy != null && accuracy >= 2) Color(0xFF7BE07B) else NorthRed, fontSize = 13.sp,
+            color = if (accuracy != null && accuracy >= 2) Color(0xFF7BE07B) else ErrorColor, fontSize = 13.sp,
         )
         if (field != null) {
             Text("Field: $field µT", color = Color(0xFF9E9E9E), fontSize = 10.sp)
             if (shown.interference) {
                 Text("Magnetic interference nearby. Move away from chargers, magnets and steel.",
-                    color = NorthRed, fontSize = 10.sp, textAlign = TextAlign.Center)
+                    color = ErrorColor, fontSize = 10.sp, textAlign = TextAlign.Center)
             }
         }
     }

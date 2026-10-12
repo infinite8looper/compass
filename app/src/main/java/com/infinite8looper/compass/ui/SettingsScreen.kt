@@ -76,7 +76,7 @@ fun SettingsScreen(vm: CompassViewModel, onCalibrate: () -> Unit) {
                     label = { Text("Show coordinates") }, secondaryLabel = { Text("GPS position on the compass") },
                 )
             }
-            if (needsAccess) item { Text("Needs location access", color = NorthRed, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) }
+            if (needsAccess) item { Text("Needs location access", color = ErrorColor, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) }
             item {
                 SwitchButton(
                     checked = nav.backupEnabled,

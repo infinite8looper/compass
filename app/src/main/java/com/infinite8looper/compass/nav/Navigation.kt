@@ -27,6 +27,8 @@ const val TICK_REFERENCE_SHIFT_DEG = 0.5f
 const val TICK_SETTLE_MIN_NANOS = 400_000_000L
 const val TICK_SETTLE_MAX_NANOS = 1_200_000_000L
 private const val TICK_CELLS = 180
+const val FACING_ENTER_DEG = 2f
+const val FACING_LEAVE_DEG = 3f
 
 fun normalizeDeg(d: Float): Float = ((d % 360f) + 360f) % 360f
 
@@ -98,6 +100,20 @@ fun nextHoldFlat(current: Boolean, pitchDeg: Float): Boolean = when {
     pitchDeg.isNaN() -> current
     current -> pitchDeg >= HOLD_FLAT_LEAVE_DEG
     else -> pitchDeg > HOLD_FLAT_ENTER_DEG
+}
+
+/**
+ * Whether the wearer is facing the focused target after a frame: the shown heading comes within
+ * [FACING_ENTER_DEG] of the target's place on the dial, and stays so until the difference exceeds
+ * [FACING_LEAVE_DEG], so noise at either limit does not switch it back and forth. It is false with no focused
+ * target or no bearing to it ([targetDialAngleDeg] null), when either value is not a finite number, and while the
+ * shown heading is not live ([headingLive] false): the dial is frozen in the hold-flat state, or still catching
+ * up with a heading it did not follow, and what it passes on the way is not where the wearer points.
+ */
+fun nextFacing(current: Boolean, shownHeadingDeg: Float, targetDialAngleDeg: Float?, headingLive: Boolean = true): Boolean {
+    if (!headingLive || targetDialAngleDeg == null || !shownHeadingDeg.isFinite() || !targetDialAngleDeg.isFinite()) return false
+    val off = abs(shortestDelta(shownHeadingDeg, targetDialAngleDeg))
+    return if (current) off <= FACING_LEAVE_DEG else off <= FACING_ENTER_DEG
 }
 
 /**
