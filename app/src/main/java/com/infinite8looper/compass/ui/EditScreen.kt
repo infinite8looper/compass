@@ -405,7 +405,7 @@ private const val CROWN_DEG_PER_PIXEL = 0.25f
 private const val ROW_Y = 0.5f
 
 /** How long the frame takes to fill again when a hold is let go. */
-private const val HOLD_REFILL_MS = 180
+internal const val HOLD_REFILL_MS = 180
 
 // The line that marks the waypoint's color on the wheel runs past both edges of the band.
 private const val WHEEL_MARK_OUTER = 0.985f

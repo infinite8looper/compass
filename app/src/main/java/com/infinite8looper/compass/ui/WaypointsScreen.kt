@@ -1,6 +1,22 @@
 package com.infinite8looper.compass.ui
 
 import android.os.SystemClock
+import android.view.HapticFeedbackConstants
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameMillis
+import androidx.compose.ui.input.pointer.PointerEventTimeoutCancellationException
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.onLongClick
+import androidx.compose.ui.semantics.role
+import com.infinite8looper.compass.nav.HOLD_TO_DELETE_MS
+import com.infinite8looper.compass.nav.holdProgress
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -83,8 +99,11 @@ import kotlinx.coroutines.delay
  * to. So whenever this screen is in view the status can be read, which is what its time is counted by.
  *
  * While the breadcrumb trail setting is on, or crumbs are stored, a row for the trail stands under `Log here`: it
- * says what the trail is doing and how long it is, a tap on it does what a double press of the side button does,
- * and a long press clears the trail. A watch that passes no double press to the app has the whole trail there.
+ * says what the trail is doing and how long it is, and a tap on it does what a double press of the side button
+ * does. Holding it clears the trail: once the touch has lasted the system's long-press time the frame shows a ring
+ * in the error color that drains for a second, the row's smaller line reads `Hold to clear`, and when the ring is
+ * empty every crumb is deleted. Letting go, or moving the finger away, before that clears nothing and is no tap. A
+ * watch that passes no double press to the app has the whole trail there.
  *
  * [onEdit] is what a long press on a waypoint's row does, [onLogHere] what `Log here` does, and [onSidePress] what
  * a single press of a side button does.
@@ -120,6 +139,32 @@ fun WaypointsScreen(
 
     val pressScope = rememberCoroutineScope()
     val sideButton = remember(pressScope) { SideButton(pressScope) }
+
+    // How far a hold on the trail's row has come, from 0 to 1, as on the edit screen's `Hold to delete`. Written
+    // every frame of a hold and read only where the frame is drawn.
+    val view = LocalView.current
+    val clearHeld = remember { Animatable(0f) }
+    var clearing by remember { mutableStateOf(false) }
+    var clearStartedMs by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(clearing) {
+        if (!clearing) {
+            // Let go before the end: nothing is cleared and the ring goes.
+            if (clearHeld.value < 1f) clearHeld.animateTo(0f, tween(HOLD_REFILL_MS)) else clearHeld.snapTo(0f)
+            return@LaunchedEffect
+        }
+        while (true) {
+            val progress = holdProgress(withFrameMillis { SystemClock.uptimeMillis() } - clearStartedMs, HOLD_TO_DELETE_MS)
+            clearHeld.snapTo(progress)
+            if (progress >= 1f) {
+                if (paneView() == PaneView.IN_VIEW) {
+                    view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                    vm.clearTrail()
+                }
+                clearing = false
+                return@LaunchedEffect
+            }
+        }
+    }
     val navState = rememberUpdatedState(nav)
     val sidePress by rememberUpdatedState(onSidePress)
     Box(
@@ -177,22 +222,50 @@ fun WaypointsScreen(
             val trail = nav.trail
             if (nav.breadcrumbTrail || trail.count > 0) item(key = "trail") {
                 val active = trail.mode != TrailMode.OFF
+                // There is something to clear while crumbs are stored or a trail is being laid.
+                val canClear = trail.count > 0 || active
+                val switches = nav.breadcrumbTrail
                 InstrumentRow(
-                    Modifier.combinedClickable(
-                        role = Role.Button,
-                        // With the setting off a tap does nothing, as a double press does nothing; the crumbs
-                        // that are left can still be cleared.
-                        onClickLabel = if (nav.breadcrumbTrail) trailRowAction(trail.mode, trail.count) else null,
-                        onLongClickLabel = "Clear trail",
-                        onLongClick = { inView { vm.clearTrail() } },
-                    ) { inView { vm.trailDoublePress() } },
+                    Modifier
+                        // For an accessibility service: the tap and the hold as named actions.
+                        .semantics(mergeDescendants = true) {
+                            role = Role.Button
+                            // With the setting off a tap does nothing, as a double press does nothing; the crumbs
+                            // that are left can still be cleared.
+                            if (switches) onClick(trailRowAction(trail.mode, trail.count)) { inView { vm.trailDoublePress() }; true }
+                            if (canClear) onLongClick("Hold to clear the trail") { inView { vm.clearTrail() }; true }
+                        }
+                        .pointerInput(vm, paneView, canClear, switches) {
+                            awaitEachGesture {
+                                val down = awaitFirstDown()
+                                // Lifted within the long-press time, it is a tap. A touch the list or the row of
+                                // screens takes as a drag is neither a tap nor a hold.
+                                var held = false
+                                val up = try {
+                                    withTimeout(viewConfiguration.longPressTimeoutMillis) { waitForUpOrCancellation() }
+                                } catch (e: PointerEventTimeoutCancellationException) {
+                                    held = true
+                                    null
+                                }
+                                if (!held) {
+                                    if (up != null && switches) { up.consume(); inView { vm.trailDoublePress() } }
+                                    return@awaitEachGesture
+                                }
+                                if (!canClear || paneView() != PaneView.IN_VIEW) return@awaitEachGesture
+                                clearStartedMs = down.uptimeMillis + viewConfiguration.longPressTimeoutMillis
+                                clearing = true
+                                // Ends when the finger lifts or the touch becomes a scroll or a swipe; the hold
+                                // itself ends when the ring is empty.
+                                try { waitForUpOrCancellation()?.consume() } finally { clearing = false }
+                            }
+                        },
                     trailing = { TickToggle(active, color = { CrumbColor }) },
                 ) {
                     Column {
                         Text("Trail", color = if (active) Ink else Dim, style = if (active) nameOnStyle else nameStyle, maxLines = 1)
                         Text(
-                            trailRowDetail(trail.mode, trail.count), color = Dim, style = distanceStyle, maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+                            if (clearing) TRAIL_HOLD_TO_CLEAR else trailRowDetail(trail.mode, trail.count),
+                            color = if (clearing) ErrorColor else Dim, style = distanceStyle, maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
@@ -247,9 +320,19 @@ fun WaypointsScreen(
             }
         }
       }
-        FrameRing(paneIndex = Pane.WAYPOINTS.ordinal, scroll = { listScrollArc(listState) })
+        // While the trail's row is held the frame carries a ring in the color of deleting, which drains as the hold
+        // goes on, as on the edit screen.
+        FrameRing(
+            paneIndex = Pane.WAYPOINTS.ordinal, scroll = { listScrollArc(listState) },
+            fill = { if (clearHeld.value > 0f) 1f - clearHeld.value else 0f }, fillColor = ErrorColor, fillInner = TRAIL_CLEAR_RING_INNER,
+        )
     }
 }
+
+/** What the trail's row says while it is held. */
+private const val TRAIL_HOLD_TO_CLEAR = "Hold to clear"
+/** The inner edge of the ring that drains while the trail's row is held: outside the list's circle. */
+private const val TRAIL_CLEAR_RING_INNER = 0.90f
 
 // The pinned status, in fractions of the screen's radius, measured down from the top of the list's circle: the
 // band's height, how much of it is solid black, where the words start, and how wide a line may be there.
