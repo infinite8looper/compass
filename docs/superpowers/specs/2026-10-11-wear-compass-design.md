@@ -92,7 +92,14 @@ Gestures on this screen:
 - The system's swipe-right gesture leaves the app, as usual.
 
 The heading is the direction of the watch's 12 o'clock edge projected onto the horizontal plane.
-When the watch is tilted so steeply that this projection is unstable, the screen shows a "hold flat" hint and the dial keeps its last stable value.
+When the watch is tilted so steeply that this projection is unstable, the heading is not taken:
+
+- The dial keeps its last stable value and is dimmed.
+- In place of the heading number, the center shows a looping animation of a watch seen from the side, turning from upright to level between two level marks, with the words "Hold flat" below. One loop takes about 2 seconds and rests on the level position for about half a second before it starts again.
+- The focused target's name and distance stay where they are. The drawing is larger when no name or distance is shown.
+- The state begins when the tilt passes 70° and ends only when it drops below 60°, so a watch held near either limit does not switch back and forth.
+- When the system setting that removes animations is on, the watch is shown still, in the level position.
+- When the watch is level again, the dial returns to full brightness and the heading number comes back.
 
 ### 2. Waypoints list
 
@@ -192,6 +199,15 @@ The saved waypoints (the `waypoints.db` database) and the settings (the DataStor
 - Distance is shown in meters below 1 km and kilometers with one decimal above, or in feet below 1000 ft and miles with one decimal above.
 - When the focused target is under 10 m away (30 ft in imperial), the distance text is replaced by "Arrived at target", since the bearing is not meaningful at that range.
 - If position updates stop arriving, the distance is marked as out of date instead of being shown as current.
+
+### Tick feedback
+
+- With the Tick feedback setting on, the watch gives a very faint tap each time the heading shown on the dial crosses one of the fine ticks (every 2°).
+- The taps follow the dial as it is drawn, which is smoothed, not the raw sensor value.
+- A heading that rests on a tick, or wavers around it, gives no taps: the heading has to pass a tick by about 0.3° before that tick counts, and has to come back the same amount past it for it to count again.
+- There is at most one tap every 40 ms. During a fast turn the taps that would come sooner are dropped, not saved up, and several ticks crossed in one display frame give one tap.
+- No taps are given while the setting is off, while the "hold flat" hint shows, while the compass is not the screen in front, before the first heading has arrived, or on a watch with no compass sensor.
+- The tap is the lightest tick the system offers for frequent feedback, and it follows the system's own setting for touch feedback. The app does not ask for the vibration permission.
 
 ### Smoothness
 

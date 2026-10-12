@@ -16,6 +16,13 @@ private const val EARTH_RADIUS_M = 6_371_008.8
 private const val FEET_PER_METER = 3.280839895
 private const val METERS_PER_MILE = 1609.344
 const val STALE_AFTER_MS = 20_000L
+const val HOLD_FLAT_ENTER_DEG = 70f
+const val HOLD_FLAT_LEAVE_DEG = 60f
+/** The spacing of the dial's minor ticks. */
+const val TICK_STEP_DEG = 2f
+const val TICK_MARGIN_DEG = 0.3f
+const val TICK_MIN_INTERVAL_NANOS = 40_000_000L
+private const val TICK_CELLS = 180
 
 fun normalizeDeg(d: Float): Float = ((d % 360f) + 360f) % 360f
 
@@ -79,6 +86,45 @@ fun hasArrived(meters: Double, units: Units): Boolean = when (units) {
 fun hueForIndex(index: Int): Float = normalizeDeg(index * 137.508f)
 
 fun shouldHoldFlat(pitchDeg: Float): Boolean = pitchDeg > 70f
+/**
+ * Whether the hold-flat state applies after a reading with this pitch: it is entered above 70 degrees and
+ * left only below 60, so a watch hovering near either limit does not switch back and forth. NaN changes nothing.
+ */
+fun nextHoldFlat(current: Boolean, pitchDeg: Float): Boolean = when {
+    pitchDeg.isNaN() -> current
+    current -> pitchDeg >= HOLD_FLAT_LEAVE_DEG
+    else -> pitchDeg > HOLD_FLAT_ENTER_DEG
+}
+
+/**
+ * The 2-degree cell between two minor ticks that the shown heading counts as being in: cell `index` runs from
+ * `2 * index` to `2 * index + 2` degrees, 0 to 179 around the dial. [Unset] until a first heading arrives.
+ */
+@JvmInline
+value class TickCell internal constructor(val index: Int) {
+    companion object { val Unset = TickCell(-1) }
+}
+
+/**
+ * The cell after the heading moves to [headingDeg]. The heading stays in its cell until it is [TICK_MARGIN_DEG]
+ * past one of the cell's two tick lines, so resting on a line or jittering around it changes nothing, and coming
+ * back over the same line needs the same margin on the other side. NaN changes nothing.
+ */
+fun nextTickCell(current: TickCell, headingDeg: Float): TickCell {
+    if (headingDeg.isNaN()) return current
+    if (current != TickCell.Unset) {
+        val fromCenter = shortestDelta(current.index * TICK_STEP_DEG + TICK_STEP_DEG / 2f, headingDeg)
+        if (abs(fromCenter) < TICK_STEP_DEG / 2f + TICK_MARGIN_DEG) return current
+    }
+    return TickCell((normalizeDeg(headingDeg) / TICK_STEP_DEG).toInt() % TICK_CELLS)
+}
+
+/** One tap for a move between two cells, however many tick lines lie between them. Arriving from [TickCell.Unset] is not a move. */
+fun isTickCrossing(before: TickCell, after: TickCell): Boolean = before != TickCell.Unset && after != before
+
+/** Taps are at least [TICK_MIN_INTERVAL_NANOS] apart. A tap that comes sooner is dropped, not kept for later. */
+fun tickTapDue(nowNanos: Long, lastTapNanos: Long): Boolean = nowNanos - lastTapNanos >= TICK_MIN_INTERVAL_NANOS
+
 fun isFieldNormal(microTesla: Float): Boolean = microTesla in 25f..65f
 fun accuracyLabel(accuracy: Int?): String = when (accuracy) {
     3 -> "High"; 2 -> "Medium"; 1 -> "Low"; 0 -> "Unreliable"; else -> "Unknown"

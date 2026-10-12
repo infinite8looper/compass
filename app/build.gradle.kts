@@ -46,6 +46,12 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     buildFeatures { compose = true; buildConfig = true }
+    testOptions {
+        // The instrumented tests bring the real activity to the front and wait for its main thread to go idle.
+        // A screen that is animating never does (the hold-flat hint loops for as long as the watch is tilted, and
+        // an emulator's default pose is upright), so the tests run with the system's animations switched off.
+        animationsDisabled = true
+    }
 }
 
 dependencies {

@@ -1,8 +1,12 @@
 package com.infinite8looper.compass.ui
 
 import android.hardware.SensorManager
+import android.os.Build
 import android.os.SystemClock
+import android.view.HapticFeedbackConstants
 import android.view.KeyEvent
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.clickable
@@ -13,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.rotary.onRotaryScrollEvent
@@ -25,6 +30,8 @@ import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.wear.compose.foundation.requestFocusOnHierarchyActive
 import androidx.wear.compose.material3.Text
@@ -44,23 +51,42 @@ fun CompassScreen(vm: CompassViewModel, onOpenList: () -> Unit, onLog: () -> Uni
     val nav by vm.nav.collectAsStateWithLifecycle()
     val navState = rememberUpdatedState(nav)
     val shown = remember { mutableFloatStateOf(Float.NaN) }
+    // Written every frame and read where the screen is composed: only a change of value recomposes.
+    var holdFlat by remember { mutableStateOf(false) }
+    val view = LocalView.current
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(view, lifecycle) {
         var last = 0L
+        var cell = TickCell.Unset
+        var lastTap = 0L
         while (true) withFrameNanos { now ->
             val reading = readingState.value
-            if (reading != null && !shouldHoldFlat(reading.pitchDeg)) {
+            if (reading != null) {
                 val n = navState.value
-                val target = displayHeading(reading.magneticDeg, n.declination, n.north).deg
-                val dt = if (last == 0L) 0f else (now - last) / 1e9f
-                shown.floatValue = if (shown.floatValue.isNaN()) target else smoothAngle(shown.floatValue, target, dt)
+                val hold = nextHoldFlat(holdFlat, reading.pitchDeg)
+                holdFlat = hold
+                // While the watch is tilted too far the heading is not taken, so the dial keeps its last value.
+                if (!hold) {
+                    val target = displayHeading(reading.magneticDeg, n.declination, n.north).deg
+                    val dt = if (last == 0L) 0f else (now - last) / 1e9f
+                    shown.floatValue = if (shown.floatValue.isNaN()) target else smoothAngle(shown.floatValue, target, dt)
+                }
+                // The cell is followed on every frame, so nothing is owed when the taps are allowed again.
+                val next = nextTickCell(cell, shown.floatValue)
+                if (isTickCrossing(cell, next) && !hold && n.tickFeedback &&
+                    lifecycle.currentState == Lifecycle.State.RESUMED && tickTapDue(now, lastTap)
+                ) {
+                    view.performHapticFeedback(TICK_HAPTIC)
+                    lastTap = now
+                }
+                cell = next
             }
             last = now
         }
     }
 
     val headingText by remember { derivedStateOf { if (shown.floatValue.isNaN()) "--" else "${shown.floatValue.roundToInt() % 360}°" } }
-    val holdFlat by remember { derivedStateOf { readingState.value?.let { shouldHoldFlat(it.pitchDeg) } ?: false } }
     val lowAccuracy by remember {
         derivedStateOf { readingState.value?.accuracy?.let { it <= SensorManager.SENSOR_STATUS_ACCURACY_LOW } ?: false }
     }
@@ -69,7 +95,6 @@ fun CompassScreen(vm: CompassViewModel, onOpenList: () -> Unit, onLog: () -> Uni
         while (true) { value = isStale(SystemClock.elapsedRealtime(), nav.fixElapsedMs); delay(1_000) }
     }
 
-    val view = LocalView.current
     val navigating = nav.targets.isNotEmpty()
     DisposableEffect(navigating) {
         view.keepScreenOn = navigating
@@ -127,7 +152,12 @@ fun CompassScreen(vm: CompassViewModel, onOpenList: () -> Unit, onLog: () -> Uni
         val bodyStyle = style(0.097f)
         fun Modifier.slot(y: Float, width: Float) = align(Alignment.Center).offset(y = r * y).width(r * width)
 
-        CompassDial(headingProvider = { shown.floatValue }, targets = nav.targets)
+        // The dial steps back while the hint asks for something: its value is the last one taken, not a live one.
+        val dialAlpha = animateFloatAsState(if (holdFlat) DIAL_DIMMED else 1f, tween(250), label = "dial")
+        CompassDial(
+            headingProvider = { shown.floatValue }, targets = nav.targets,
+            modifier = Modifier.graphicsLayer { alpha = dialAlpha.value },
+        )
 
         // Tap areas, each at least 48 dp both ways. The whole middle opens the waypoints list. While the
         // calibrate prompt shows, the part from the prompt down is its own area and the list keeps the rest.
@@ -144,18 +174,30 @@ fun CompassScreen(vm: CompassViewModel, onOpenList: () -> Unit, onLog: () -> Uni
             )
         }
 
+        val focused = nav.focused
+        // Whether the slots just above and below the heading hold any text: a target's name and distance, or "No target".
+        val linesAroundHeading = focused != null || (nav.loaded && nav.waypoints.isNotEmpty())
+
         if (!vm.supported) {
             Text("This watch has no compass sensor", color = Ink, style = bodyStyle, modifier = Modifier.slot(0f, 0.8f))
         } else {
             if (showingMagnetic) Text("MAG", color = Dim, style = style(0.079f), maxLines = 1, modifier = Modifier.slot(-0.31f, 0.6f))
-            HeadingNumber({ headingText }, style(0.30f, FontWeight.Light), Modifier.slot(0f, 2 * READOUT_RADIUS))
+            // The middle slot holds the heading, or, while the heading cannot be trusted, the hint that says why.
+            // The hint's drawing fills the gap between the line above the heading and the line below it, and
+            // has more room when both of those slots are empty. Its words sit where the calibrate prompt does.
+            val hintHeight = if (linesAroundHeading) 0.255f else 0.42f
             when {
-                holdFlat -> Text("Hold flat", color = NorthRed, style = bodyStyle, maxLines = 1, modifier = Modifier.slot(0.31f, 0.6f))
-                lowAccuracy -> Text("Calibrate", color = NorthRed, style = bodyStyle, maxLines = 1, modifier = Modifier.slot(0.31f, 0.6f))
+                holdFlat -> HoldFlatHint(
+                    labelStyle = bodyStyle, labelOffset = r * PROMPT_Y,
+                    modifier = Modifier.slot(0f, hintHeight * 1.9f).height(r * hintHeight),
+                )
+                else -> {
+                    HeadingNumber({ headingText }, style(0.30f, FontWeight.Light), Modifier.slot(0f, 2 * READOUT_RADIUS))
+                    if (lowAccuracy) Text("Calibrate", color = NorthRed, style = bodyStyle, maxLines = 1, modifier = Modifier.slot(PROMPT_Y, 0.6f))
+                }
             }
         }
 
-        val focused = nav.focused
         when {
             focused != null -> {
                 Row(Modifier.slot(-0.195f, 0.78f), Arrangement.Center, Alignment.CenterVertically) {
@@ -182,6 +224,20 @@ fun CompassScreen(vm: CompassViewModel, onOpenList: () -> Unit, onLog: () -> Uni
         }
     }
 }
+
+/** Where the calibrate prompt and the words of the hold-flat hint sit, in dial radii below the center. */
+private const val PROMPT_Y = 0.31f
+
+/** How much of the dial's brightness is left while the hold-flat hint shows. */
+private const val DIAL_DIMMED = 0.4f
+
+/**
+ * The softest tick the platform maps to a vibration. From API 34 that is the constant made for many choices in
+ * quick succession. API 33 does not have it; there the clock tick plays the platform's lightest effect.
+ */
+private val TICK_HAPTIC =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) HapticFeedbackConstants.SEGMENT_FREQUENT_TICK
+    else HapticFeedbackConstants.CLOCK_TICK
 
 private val SIDE_BUTTONS = setOf(KeyEvent.KEYCODE_STEM_1, KeyEvent.KEYCODE_STEM_2, KeyEvent.KEYCODE_STEM_3)
 

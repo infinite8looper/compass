@@ -116,4 +116,119 @@ class NavigationTest {
         assertNull(acquireFix(flow { delay(60_000) }))
         assertNull(acquireFix(flow { }))
     }
+
+    @Test fun holdFlatEntersAboveSeventy() {
+        assertFalse(nextHoldFlat(false, 0f)); assertFalse(nextHoldFlat(false, 59f))
+        assertFalse(nextHoldFlat(false, 70f))
+        assertTrue(nextHoldFlat(false, 70.5f)); assertTrue(nextHoldFlat(false, 90f))
+    }
+    @Test fun holdFlatDoesNotEnterBetweenSixtyAndSeventyFromLevel() {
+        var hold = false
+        for (pitch in listOf(10f, 55f, 60f, 62f, 65f, 69.9f, 66f, 61f, 30f)) {
+            hold = nextHoldFlat(hold, pitch)
+            assertFalse("entered at $pitch", hold)
+        }
+    }
+    @Test fun holdFlatStaysBetweenSixtyAndSeventyOnceEntered() {
+        var hold = nextHoldFlat(false, 72f)
+        assertTrue(hold)
+        for (pitch in listOf(69f, 65f, 60.5f, 60f, 64f, 69.9f, 61f)) {
+            hold = nextHoldFlat(hold, pitch)
+            assertTrue("left at $pitch", hold)
+        }
+    }
+    @Test fun holdFlatLeavesBelowSixty() {
+        assertFalse(nextHoldFlat(true, 59.9f)); assertFalse(nextHoldFlat(true, 0f))
+        // Hovering either side of one threshold changes the state once, not on every reading.
+        var hold = false; var changes = 0
+        for (pitch in listOf(65f, 72f, 68f, 71f, 66f, 72f, 61f, 58f, 63f, 69f, 59f, 65f)) {
+            val next = nextHoldFlat(hold, pitch)
+            if (next != hold) changes++
+            hold = next
+        }
+        assertEquals(2, changes)
+        assertFalse(hold)
+    }
+    @Test fun holdFlatKeepsItsStateOnNaN() {
+        assertTrue(nextHoldFlat(true, Float.NaN)); assertFalse(nextHoldFlat(false, Float.NaN))
+    }
+
+    /** Feeds [headings] through the tick function one per frame and counts the frames that tap. */
+    private fun taps(headings: List<Float>): Int {
+        var cell = TickCell.Unset; var count = 0
+        for (h in headings) {
+            val next = nextTickCell(cell, h)
+            if (isTickCrossing(cell, next)) count++
+            cell = next
+        }
+        return count
+    }
+    /** From [from] to [to] degrees in steps of 0.1, the short way, both ends included. */
+    private fun sweep(from: Float, to: Float): List<Float> {
+        val tenths = Math.round(shortestDelta(from, to) * 10f)
+        val step = if (tenths < 0) -1 else 1
+        return (0..kotlin.math.abs(tenths)).map { normalizeDeg(from + it * step / 10f) }
+    }
+
+    @Test fun tickSlowSweepZeroToTenGivesFiveTaps() {
+        // The lines at 2, 4, 6, 8 and 10. Each counts once the heading is 0.3 past it, so the tap for the line
+        // at 10 comes at 10.3: stopping exactly on the line has not crossed it yet.
+        assertEquals(5, taps(sweep(0f, 10.5f)))
+        assertEquals(4, taps(sweep(0f, 10f)))
+        assertEquals(5, taps(sweep(10.5f, 0.5f)))
+    }
+    @Test fun tickSweepAcrossTheWrapBothWays() {
+        // 358, 0, 2 and 4 going up; 4, 2, 0 and 358 coming back.
+        assertEquals(4, taps(sweep(356f, 4.5f)))
+        assertEquals(3, taps(sweep(356f, 4f)))
+        assertEquals(4, taps(sweep(4.5f, 356f)))
+        assertEquals(1, taps(listOf(359.5f, 359.9f, 0.2f, 0.4f)))
+        assertEquals(1, taps(listOf(0.4f, 0.1f, 359.9f, 359.6f)))
+    }
+    @Test fun tickJitterAroundALineGivesNone() {
+        assertEquals(0, taps(List(200) { if (it % 2 == 0) 10.2f else 9.8f }))
+        assertEquals(0, taps(listOf(10f) + List(200) { if (it % 2 == 0) 10.2f else 9.8f }))
+        assertEquals(0, taps(List(200) { if (it % 2 == 0) 359.8f else 0.2f }))
+        // Arriving at the line from below and then resting on it: still nothing.
+        assertEquals(0, taps(sweep(9f, 10f) + List(200) { if (it % 2 == 0) 10.2f else 9.8f }))
+    }
+    @Test fun tickReturnAcrossTheSameLineNeedsTheMarginBack() {
+        assertEquals(1, taps(listOf(9f, 10.4f)))
+        assertEquals(1, taps(listOf(9f, 10.4f, 10.1f, 9.9f, 9.8f)))
+        assertEquals(2, taps(listOf(9f, 10.4f, 10.1f, 9.9f, 9.6f)))
+        // Rocking a full degree either side of a line taps on every pass.
+        assertEquals(6, taps(listOf(9f, 11f, 9f, 11f, 9f, 11f, 9f)))
+    }
+    @Test fun tickJumpOfThirtyDegreesInOneStepGivesOne() {
+        assertEquals(1, taps(listOf(10f, 40f)))
+        assertEquals(1, taps(listOf(350f, 20f)))
+        assertEquals(1, taps(listOf(5f, 185f)))
+    }
+    @Test fun tickReversingMidCellGivesNone() {
+        assertEquals(0, taps(listOf(4.5f, 5.5f, 4.5f, 5.9f, 4.1f, 5f)))
+        assertEquals(0, taps(sweep(4.2f, 5.8f) + sweep(5.8f, 4.2f)))
+    }
+    @Test fun tickIgnoresNaN() {
+        assertEquals(TickCell.Unset, nextTickCell(TickCell.Unset, Float.NaN))
+        val armed = nextTickCell(TickCell.Unset, 7f)
+        assertEquals(armed, nextTickCell(armed, Float.NaN))
+        // A NaN frame neither taps nor loses the place; the first real reading only arms.
+        assertEquals(0, taps(listOf(Float.NaN, 7f, Float.NaN, 7.5f)))
+        assertEquals(1, taps(listOf(7f, Float.NaN, 9f)))
+        assertFalse(isTickCrossing(TickCell.Unset, armed))
+    }
+    @Test fun tickTapsAreAtLeastFortyMillisecondsApart() {
+        val ms = 1_000_000L
+        assertTrue(tickTapDue(nowNanos = 40 * ms, lastTapNanos = 0L))
+        assertFalse(tickTapDue(nowNanos = 39 * ms, lastTapNanos = 0L))
+        assertTrue(tickTapDue(nowNanos = 1_000 * ms, lastTapNanos = 960 * ms))
+        assertFalse(tickTapDue(nowNanos = 1_000 * ms, lastTapNanos = 984 * ms))
+        // A spin crossing a tick on every 60 Hz frame taps on every third frame; the rest are dropped.
+        var last = 0L; var count = 0
+        for (frame in 1..60) {
+            val now = frame * 16_666_667L
+            if (tickTapDue(now, last)) { count++; last = now }
+        }
+        assertEquals(20, count)
+    }
 }
