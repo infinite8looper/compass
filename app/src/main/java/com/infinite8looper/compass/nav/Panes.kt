@@ -37,6 +37,18 @@ fun pageToward(page: Int, pane: Pane): Int {
     }
 }
 
+/**
+ * The page Back turns to: one page toward settings, as a right swipe does, which round the ring is settings from
+ * the compass, waypoints from settings and the compass from waypoints. At rest that is the page before
+ * [nearestPage]. While the row is being moved ([scrollInProgress]) it is the page before the one the row is headed
+ * for ([targetPage]), so a second Back made before the first has come to rest goes one page further. Only at the
+ * very start of the row, where that page does not exist, is it the page two on, which shows the same screen.
+ */
+fun backPage(nearestPage: Int, targetPage: Int, scrollInProgress: Boolean): Int {
+    val to = (if (scrollInProgress) targetPage else nearestPage) - 1
+    return if (to < 0) to + Pane.entries.size else to
+}
+
 /** How much of one of the row's pages the wearer has in front of them. */
 enum class PaneView {
     /** No part of it is on the screen. */

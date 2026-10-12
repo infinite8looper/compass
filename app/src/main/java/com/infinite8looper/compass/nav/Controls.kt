@@ -21,9 +21,14 @@ fun holdProgress(elapsedMs: Long, holdMs: Long = HOLD_TO_DELETE_MS): Float = whe
     else -> elapsedMs.toFloat() / holdMs
 }
 
-/** The header of the waypoints list: how many of the [total] waypoints are targets, or that there are none yet. */
-fun headerText(targets: Int, total: Int): String =
-    if (total <= 0) "No waypoints yet" else "${targets.coerceIn(0, total)} of $total targets"
+/**
+ * The header of the waypoints list: how many of the [total] waypoints are targets, or that there are none yet.
+ * The noun follows the total: one waypoint is "target", more are "targets".
+ */
+fun headerText(targets: Int, total: Int): String = when {
+    total <= 0 -> "No waypoints yet"
+    else -> "${targets.coerceIn(0, total)} of $total ${if (total == 1) "target" else "targets"}"
+}
 
 /** What a tap on the header does: true sets every waypoint as a target, false clears them all, which it does only when all are set. */
 fun headerTapSetsAll(targets: Int, total: Int): Boolean = total <= 0 || targets < total
@@ -39,14 +44,46 @@ const val WHEEL_DEAD_CENTER = 0.3f
  * color wheel: on its band, on the rim outside it, or within [tolerance] inside it, which is the room a fingertip
  * aimed at the band needs. All three are in the same unit.
  *
- * This is the one definition of "on the wheel": a touch that starts there is the wheel's and nothing else's (it
- * does not go back, and it does not hold `Hold to delete`), and a touch that starts anywhere else never changes
- * the color.
+ * This is the one definition of "on the wheel" for where a touch goes down: a touch that starts there does not
+ * hold `Hold to delete` and is not a tap on anything under it, and a touch that starts anywhere else never changes
+ * the color. What a touch that starts there becomes is decided by how it first moves ([isAlongWheel]) and by
+ * whether it stays ([staysOnWheel]).
  */
 fun startsOnWheel(touchRadius: Float, screenRadius: Float, tolerance: Float): Boolean {
     if (touchRadius.isNaN() || tolerance.isNaN() || !(screenRadius > 0f)) return false
     return touchRadius >= WHEEL_BAND_INNER * screenRadius - tolerance.coerceAtLeast(0f)
 }
+
+/**
+ * Whether a touch that went down on the wheel, [downDx] to the right of and [downDy] below the center, and has now
+ * moved by ([moveDx], [moveDy]) far enough to be a drag, is a drag on the wheel: one that goes along the ring at
+ * least as much as it goes toward the center, or goes outward. A drag that starts mostly toward the center is not
+ * the wheel's: it is the swipe from the edge that goes back, and it changes no color.
+ */
+fun isAlongWheel(downDx: Float, downDy: Float, moveDx: Float, moveDy: Float): Boolean {
+    val radius = hypot(downDx, downDy)
+    if (radius.isNaN() || radius <= 0f || moveDx.isNaN() || moveDy.isNaN() || (moveDx == 0f && moveDy == 0f)) return false
+    // The movement's part pointing away from the center, and its part across that.
+    val outward = (moveDx * downDx + moveDy * downDy) / radius
+    val along = kotlin.math.abs(moveDx * downDy - moveDy * downDx) / radius
+    return outward > 0f || along >= -outward
+}
+
+/**
+ * Whether a drag on the wheel is still on it with the finger [touchRadius] from the center: on the band, on the
+ * rim, or within [tolerance] inside the band. A drag that has left it toward the center is no longer a change of
+ * color, and stays so however it goes on: the color returns to what it was when the finger came down.
+ */
+fun staysOnWheel(touchRadius: Float, screenRadius: Float, tolerance: Float): Boolean =
+    startsOnWheel(touchRadius, screenRadius, tolerance)
+
+/**
+ * Whether a touch that the wheel had and gave up goes back when it lifts: it does when the finger is then more
+ * than half the screen's width to the right of where it came down, the distance at which any right swipe on a
+ * screen opened from a row goes back.
+ */
+fun isBackSwipe(dxFromDown: Float, screenWidth: Float): Boolean =
+    !dxFromDown.isNaN() && screenWidth > 0f && dxFromDown > screenWidth / 2f
 
 /**
  * The hue under a finger that is [dx] to the right of and [dy] below the center of a screen of radius

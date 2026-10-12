@@ -28,9 +28,13 @@ import com.infinite8looper.compass.nav.PANE_PAGES
 import com.infinite8looper.compass.nav.PANE_START_PAGE
 import com.infinite8looper.compass.nav.Pane
 import com.infinite8looper.compass.nav.PaneView
+import com.infinite8looper.compass.nav.backPage
 import com.infinite8looper.compass.nav.pageToward
 import com.infinite8looper.compass.nav.pageView
 import com.infinite8looper.compass.nav.paneOf
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 
 @Composable
@@ -90,10 +94,39 @@ private fun Panes(vm: CompassViewModel, panes: PagerState, onLogHere: () -> Unit
     val show: (Pane) -> Unit = remember(panes, scope) {
         { pane -> scope.launch { panes.animateScrollToPage(pageToward(panes.currentPage, pane)) } }
     }
-    // Back, where a watch has it, returns to the compass from the other two screens. On the compass it is left to
-    // the system, which closes the app.
-    val awayFromCompass by remember(panes) { derivedStateOf { paneOf(panes.currentPage) != Pane.COMPASS } }
-    BackHandler(enabled = awayFromCompass) { show(Pane.COMPASS) }
+    // Back, where a watch has it, never leaves the app from the three screens: it turns one screen toward
+    // settings, as a right swipe does, and slides there. Leaving the app is the crown's press, which is the system's.
+    // Backs made close together each count. The page the Backs so far lead to is kept here while the row slides
+    // there, and a Back that comes meanwhile moves it one page on. One slide runs at a time and goes on to the page
+    // kept here when it ends: a second slide started over the first would stop it half way.
+    // A slide can be stopped from outside. A finger on the screens does it; and a slide from waypoints on through
+    // the compass was stopped at the compass every time it was tried, with no finger, by something this code does
+    // not start. A slide that was stopped is started again, a few times at most: a finger that holds the screens
+    // wins, and a slide stopped on its way is finished.
+    val backSlide = remember(panes) { object { var to: Int? = null; var job: Job? = null } }
+    BackHandler {
+        backSlide.to = backPage(panes.currentPage, backSlide.to ?: panes.targetPage, backSlide.to != null || panes.isScrollInProgress)
+        if (backSlide.job?.isActive != true) {
+            backSlide.job = scope.launch {
+                var stopped = 0
+                try {
+                    while (true) {
+                        val to = backSlide.to ?: break
+                        try {
+                            panes.animateScrollToPage(to)
+                            if (backSlide.to == to) backSlide.to = null
+                        } catch (e: CancellationException) {
+                            // This coroutine's own end passes on; a slide that something else stopped does not.
+                            ensureActive()
+                            if (++stopped > BACK_SLIDE_RESTARTS) break
+                        }
+                    }
+                } finally {
+                    backSlide.to = null
+                }
+            }
+        }
+    }
 
     HorizontalPager(state = panes, beyondViewportPageCount = 1, gestureInclusion = EveryTouchPages) { page ->
         // How much of this page the wearer has. The pager can have two pages of one pane built at a time (the one
@@ -149,6 +182,9 @@ private val EveryTouchPages = object : GestureInclusion {
 
 /** The route of the three side-by-side screens, the navigation host's first destination. */
 private const val PANES_ROUTE = "panes"
+
+/** How many times a slide that Back started is started again after something else has stopped it. */
+private const val BACK_SLIDE_RESTARTS = 3
 
 /** The route of the screen that edits the waypoint with the given id. */
 private const val EDIT_ROUTE = "edit/{id}"

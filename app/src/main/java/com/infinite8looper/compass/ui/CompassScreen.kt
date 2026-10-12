@@ -4,7 +4,6 @@ import android.hardware.SensorManager
 import android.os.Build
 import android.os.SystemClock
 import android.view.HapticFeedbackConstants
-import android.view.KeyEvent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -360,40 +359,17 @@ fun CompassScreen(
 private data class StatusLines(val text: String, val detail: String?, val color: Color)
 
 /**
- * One line of the logging status. It starts at the size of [style] and, when the words are wider than the slot,
+ * One line of the logging status, on the compass and on the waypoints screen. It starts at the size of [style] and, when the words are wider than the slot,
  * steps down to three quarters of it before it cuts them short: the longest of the fixed messages and a waypoint
  * number of several digits do not fit the slot at full size, and the width a font gives them differs by watch.
  */
 @Composable
-private fun StatusLine(text: String, color: Color, style: TextStyle, modifier: Modifier) {
+internal fun StatusLine(text: String, color: Color, style: TextStyle, modifier: Modifier) {
     BasicText(
         text, modifier.semantics { liveRegion = LiveRegionMode.Polite }, style, maxLines = 1, softWrap = false,
         overflow = TextOverflow.Ellipsis, color = { color },
         autoSize = TextAutoSize.StepBased(minFontSize = style.fontSize * 0.75f, maxFontSize = style.fontSize, stepSize = 0.25.sp),
     )
-}
-
-/**
- * The one place where a side button reaches the compass. It follows a button from down to up and calls `onPress`
- * once for a short press, when the button is released. The repeats of a held button and a canceled press call
- * nothing. The crown's own press (KEYCODE_STEM_PRIMARY) belongs to the system and is not touched.
- */
-private class SideButton {
-    private var armed = KeyEvent.KEYCODE_UNKNOWN
-
-    /** Takes a key event and says whether it was a side button's, which no one else should then handle. */
-    fun onKey(key: KeyEvent, onPress: () -> Unit): Boolean {
-        if (key.keyCode !in SIDE_BUTTONS) return false
-        when (key.action) {
-            KeyEvent.ACTION_DOWN -> armed = if (key.repeatCount == 0) key.keyCode else KeyEvent.KEYCODE_UNKNOWN
-            KeyEvent.ACTION_UP -> {
-                val pressed = armed == key.keyCode && !key.isCanceled
-                armed = KeyEvent.KEYCODE_UNKNOWN
-                if (pressed) onPress()
-            }
-        }
-        return true
-    }
 }
 
 /** Stands for the focused target's id in the frame loop while no target is focused. Row ids start at 1. */
@@ -422,8 +398,6 @@ private const val DIAL_DIMMED = 0.4f
 private val TICK_HAPTIC =
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) HapticFeedbackConstants.SEGMENT_FREQUENT_TICK
     else HapticFeedbackConstants.CLOCK_TICK
-
-private val SIDE_BUTTONS = setOf(KeyEvent.KEYCODE_STEM_1, KeyEvent.KEYCODE_STEM_2, KeyEvent.KEYCODE_STEM_3)
 
 /** The heading number. The text is read here, not in [CompassScreen], so a new whole degree recomposes only this. */
 @Composable

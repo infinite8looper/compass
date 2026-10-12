@@ -76,6 +76,39 @@ class PanesTest {
         assertEquals(PANE_PAGES - 3, pageToward(PANE_PAGES - 1, Pane.SETTINGS))   // the short way would be past the end
     }
 
+    @Test fun backGoesOnePageTowardSettingsRoundTheRing() {
+        assertEquals(Pane.COMPASS, paneOf(start))
+        assertEquals(Pane.SETTINGS, paneOf(backPage(start, start, false)))
+        assertEquals(Pane.WAYPOINTS, paneOf(backPage(start - 1, start - 1, false)))
+        assertEquals(Pane.COMPASS, paneOf(backPage(start + 1, start + 1, false)))
+        for (page in start - 4..start + 4) assertEquals(page - 1, backPage(page, page, false))
+    }
+    @Test fun backWhileThePagesAreMovingGoesOnFromWhereTheyAreHeaded() {
+        // Sliding from the compass to settings: another Back goes one further, to waypoints.
+        assertEquals(start - 2, backPage(start, start - 1, true))
+        assertEquals(start - 2, backPage(start - 1, start - 1, true))
+        // A finger has the pages and they are headed for the page after: Back is one page before that.
+        assertEquals(start, backPage(start, start + 1, true))
+        // At rest the page in view counts, whatever the target last was.
+        assertEquals(start - 1, backPage(start, start + 1, false))
+    }
+    @Test fun tenBacksInARowGoRoundTheRingAndEndOnAPage() {
+        var page = start
+        val seen = mutableListOf<Pane>()
+        repeat(10) { page = backPage(page, page, false); seen += paneOf(page) }
+        assertEquals(start - 10, page)
+        assertEquals(listOf(Pane.SETTINGS, Pane.WAYPOINTS, Pane.COMPASS, Pane.SETTINGS), seen.take(4))
+        assertEquals(setOf(Pane.SETTINGS, Pane.WAYPOINTS, Pane.COMPASS), seen.toSet())
+    }
+    @Test fun backNeverLeavesTheRow() {
+        // At the very start of the row the same pane is two pages on.
+        assertEquals(2, backPage(0, 0, false))
+        assertEquals(paneOf(-1 + 3), paneOf(backPage(0, 0, false)))
+        assertEquals(0, backPage(1, 1, false))
+        assertEquals(2, backPage(1, 0, true))
+        assertEquals(PANE_PAGES - 2, backPage(PANE_PAGES - 1, PANE_PAGES - 1, false))
+    }
+
     // In the tests below the compass is page [start], waypoints the page after it and settings the page before.
     private val compass = start
     private val waypoints = start + 1

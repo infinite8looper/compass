@@ -24,7 +24,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.toggleable
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.runtime.Composable
@@ -84,8 +83,11 @@ import com.infinite8looper.compass.nav.WHEEL_BAND_INNER
 import com.infinite8looper.compass.nav.WHEEL_BAND_OUTER
 import com.infinite8looper.compass.nav.colorWriteWaitMs
 import com.infinite8looper.compass.nav.holdProgress
+import com.infinite8looper.compass.nav.isAlongWheel
+import com.infinite8looper.compass.nav.isBackSwipe
 import com.infinite8looper.compass.nav.normalizeDeg
 import com.infinite8looper.compass.nav.startsOnWheel
+import com.infinite8looper.compass.nav.staysOnWheel
 import com.infinite8looper.compass.nav.wheelHue
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -125,11 +127,12 @@ private fun rememberLeaveOnce(onDone: () -> Unit): () -> Unit {
  * - `Hold to delete` is below it.
  *
  * A change is stored as it is made; there is nothing to confirm and no way to leave without it. A right swipe
- * that starts anywhere but on the wheel goes back, which is the navigation host's doing: the wheel takes the
- * touches that start on it and leaves the others alone.
+ * goes back, which is the navigation host's doing, wherever it starts: the wheel takes a touch that goes down on
+ * it only when the touch then moves along the wheel or does not move, and a swipe from the edge moves toward the
+ * middle. A drag along the wheel that leaves it toward the middle puts the color back as it was.
  *
- * [onDone] leaves the screen. It is called once: when the waypoint has been deleted here, or when the screen finds
- * that its waypoint does not exist.
+ * [onDone] leaves the screen. It is called once: when the waypoint has been deleted here, when a touch the wheel
+ * gave up ends as a swipe back, or when the screen finds that its waypoint does not exist.
  */
 @Composable
 fun EditScreen(vm: CompassViewModel, id: Long, onDone: () -> Unit) {
@@ -158,7 +161,8 @@ private fun EditWaypoint(vm: CompassViewModel, w: Waypoint, leave: () -> Unit) {
     LaunchedEffect(writes) {
         snapshotFlow { hue.floatValue }.collectLatest { changed ->
             delay(colorWriteWaitMs(SystemClock.uptimeMillis(), writes.lastWriteMs))
-            writes.write(changed)
+            // Only what is still drawn is written: a color the wearer has since given up is not.
+            if (changed == hue.floatValue) writes.write(changed)
         }
     }
     // Leaving the screen within the gap writes what is drawn. The write is the view model's and outlives the screen.
@@ -189,6 +193,7 @@ private fun EditWaypoint(vm: CompassViewModel, w: Waypoint, leave: () -> Unit) {
 
     val rename = rememberTextInput { vm.rename(id, it) }
     val tolerance = with(LocalDensity.current) { WHEEL_TOLERANCE.toPx() }
+    val leaveTolerance = with(LocalDensity.current) { WHEEL_LEAVE_TOLERANCE.toPx() }
 
     BoxWithConstraints(
         Modifier.fillMaxSize().background(Color.Black)
@@ -198,29 +203,56 @@ private fun EditWaypoint(vm: CompassViewModel, w: Waypoint, leave: () -> Unit) {
             }
             .requestFocusOnHierarchyActive().focusable()
             // The wheel. It sees a touch before anything inside the screen does and before the swipe that goes
-            // back, and takes it whole if it starts on the wheel; every other touch it leaves untouched.
-            .pointerInput(id, tolerance) {
+            // back. A touch that goes down on it is no one else's tap or hold. What it becomes is decided when it
+            // has moved far enough to be a drag:
+            // - along the wheel, it is the wheel's and picks the color under the finger for as long as it stays on
+            //   the wheel. If it leaves the wheel toward the middle the color goes back to what it was when the
+            //   finger came down, drawn and stored, and the rest of the touch changes nothing; lifted more than
+            //   half the screen to the right of where it began, it goes back;
+            // - toward the middle, it is left alone from the first movement, so the swipe from the edge that goes
+            //   back is the navigation host's like any other and no color changes.
+            // A touch that does not move is a tap, and picks the color it landed on.
+            .pointerInput(id, tolerance, leaveTolerance) {
                 val c = Offset(size.width / 2f, size.height / 2f)
                 val r = minOf(size.width, size.height) / 2f
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-                    if (!startsOnWheel((down.position - c).getDistance(), r, tolerance)) return@awaitEachGesture
+                    val from = down.position - c
+                    if (!startsOnWheel(from.getDistance(), r, tolerance)) return@awaitEachGesture
                     down.consume()
-                    var dragging = false
+                    val before = hue.floatValue
+                    var touch = WheelTouch.UNDECIDED
                     while (true) {
                         val change = awaitPointerEvent(PointerEventPass.Initial).changes.firstOrNull { it.id == down.id } ?: break
+                        val moved = change.position - down.position
                         if (!change.pressed) {
-                            // A tap picks the color it lands on. A finger that rests on the wheel and is lifted
-                            // again, as one that missed `Hold to delete` would, picks nothing.
-                            if (!dragging && change.uptimeMillis - down.uptimeMillis < viewConfiguration.longPressTimeoutMillis) {
-                                wheelHue(down.position.x - c.x, down.position.y - c.y, r)?.let { hue.floatValue = it }
+                            when (touch) {
+                                // A finger that rests on the wheel and is lifted again, as one that missed
+                                // `Hold to delete` would, picks nothing.
+                                WheelTouch.UNDECIDED -> if (change.uptimeMillis - down.uptimeMillis < viewConfiguration.longPressTimeoutMillis) {
+                                    wheelHue(from.x, from.y, r)?.let { hue.floatValue = it }
+                                }
+                                WheelTouch.RECOLOR -> Unit
+                                WheelTouch.GIVEN_UP -> if (isBackSwipe(moved.x, size.width.toFloat())) leave()
                             }
                             change.consume()
                             break
                         }
-                        if (!dragging && (change.position - down.position).getDistance() > viewConfiguration.touchSlop) dragging = true
-                        if (dragging) wheelHue(change.position.x - c.x, change.position.y - c.y, r)?.let { hue.floatValue = it }
-                        change.consume()
+                        if (touch == WheelTouch.UNDECIDED && moved.getDistance() > viewConfiguration.touchSlop) {
+                            // Not the wheel's: nothing of it has been taken but its first contact.
+                            if (!isAlongWheel(from.x, from.y, moved.x, moved.y)) return@awaitEachGesture
+                            touch = WheelTouch.RECOLOR
+                        }
+                        val at = change.position - c
+                        if (touch == WheelTouch.RECOLOR) {
+                            if (staysOnWheel(at.getDistance(), r, leaveTolerance)) wheelHue(at.x, at.y, r)?.let { hue.floatValue = it }
+                            else {
+                                touch = WheelTouch.GIVEN_UP
+                                hue.floatValue = before
+                                writes.write(before)
+                            }
+                        }
+                        if (touch != WheelTouch.UNDECIDED) change.consume()
                     }
                     // Let go: what is drawn is written now.
                     writes.write(hue.floatValue)
@@ -314,10 +346,12 @@ private class HueWrites(initial: Float, private val store: (Float) -> Unit) {
  */
 @Composable
 private fun ColorWheel(hue: () -> Float, shown: () -> Boolean, onHue: (Float) -> Unit) {
-    val current = hue()
     Spacer(
         Modifier.fillMaxSize()
+            // The hue is read where the description is made and where the wheel is drawn, not where this is
+            // composed, so turning the color composes nothing again.
             .semantics {
+                val current = hue()
                 contentDescription = "Color"
                 stateDescription = "Hue ${current.roundToInt()} of 360"
                 progressBarRangeInfo = ProgressBarRangeInfo(current, 0f..360f)
@@ -353,7 +387,7 @@ private fun TargetRow(on: Boolean, hue: () -> Float, style: androidx.compose.ui.
     Row(modifier, Arrangement.Center, Alignment.CenterVertically) {
         Text("Target", color = if (on) Ink else Dim, style = style, maxLines = 1)
         Spacer(Modifier.width(8.dp))
-        TickToggle(on, color = waypointColor(hue()))
+        TickToggle(on, color = { waypointColor(hue()) })
     }
 }
 
@@ -365,6 +399,22 @@ private fun ColorDot(hue: () -> Float, modifier: Modifier) {
 
 /** How far inside the wheel's band a touch still starts on it: the room a fingertip aimed at the band needs. */
 private val WHEEL_TOLERANCE = 8.dp
+
+/**
+ * How far inside the wheel's band a drag along it may stray before it has left the wheel: twice the room a touch
+ * gets to start on it, since a finger that follows the ring round wanders more than one that is put down on it.
+ */
+private val WHEEL_LEAVE_TOLERANCE = 16.dp
+
+/** What a touch that went down on the wheel is. */
+private enum class WheelTouch {
+    /** It has not moved far enough to be a drag: a tap or a rest so far. */
+    UNDECIDED,
+    /** A drag on the wheel: the color follows the finger. */
+    RECOLOR,
+    /** A drag that left the wheel toward the middle: the color is back where it was and stays there. */
+    GIVEN_UP,
+}
 
 /** One click of the emulator's crown is 128 pixels: 32 degrees of hue, about eleven clicks to the turn. */
 private const val CROWN_DEG_PER_PIXEL = 0.25f

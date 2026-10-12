@@ -4,6 +4,7 @@ import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.view.HapticFeedbackConstants
+import android.view.KeyEvent
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -86,3 +87,33 @@ internal fun LogResultTimer(vm: CompassViewModel, paneView: () -> PaneView) {
         }
     }
 }
+
+/**
+ * A side button, on a screen that logs a waypoint with it: the compass and the waypoints screen. It follows a
+ * button from down to up and calls `onPress` once for a short press, when the button is released. The repeats of a
+ * held button and a canceled press call nothing. The crown's own press (KEYCODE_STEM_PRIMARY) belongs to the
+ * system and is not touched.
+ *
+ * Key presses go to the screen that has the focus, which among the three side-by-side screens is one at a time,
+ * so a press reaches one screen. Each screen takes every side-button event that reaches it and acts on a press
+ * only while it is in view: a press that arrives while the screens are moving is taken and dropped.
+ */
+internal class SideButton {
+    private var armed = KeyEvent.KEYCODE_UNKNOWN
+
+    /** Takes a key event and says whether it was a side button's, which no one else should then handle. */
+    fun onKey(key: KeyEvent, onPress: () -> Unit): Boolean {
+        if (key.keyCode !in SIDE_BUTTONS) return false
+        when (key.action) {
+            KeyEvent.ACTION_DOWN -> armed = if (key.repeatCount == 0) key.keyCode else KeyEvent.KEYCODE_UNKNOWN
+            KeyEvent.ACTION_UP -> {
+                val pressed = armed == key.keyCode && !key.isCanceled
+                armed = KeyEvent.KEYCODE_UNKNOWN
+                if (pressed) onPress()
+            }
+        }
+        return true
+    }
+}
+
+private val SIDE_BUTTONS = setOf(KeyEvent.KEYCODE_STEM_1, KeyEvent.KEYCODE_STEM_2, KeyEvent.KEYCODE_STEM_3)

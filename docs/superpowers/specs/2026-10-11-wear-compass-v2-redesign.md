@@ -25,7 +25,7 @@ Earlier requests that this redesign must carry forward:
 
 - Breadcrumbs are a separate temporary trail. Named waypoints are never touched or deleted by it.
 - Blind navigation: one strong pulse on turning onto the target, then a soft pulse about once a second while still facing it.
-- The crown press is the only way to leave the app. Swipes are for moving between the three screens.
+- The crown press is the only way to leave the app. Swipes are for moving between the three screens. (The owner's decision of 2026-10-12, under "Changed by the owner after approval", restates this and says what Back and the side button do.)
 
 ## Changed by the owner after approval
 
@@ -36,6 +36,7 @@ Earlier requests that this redesign must carry forward:
 - On colors: "maybe the colors should be drawn using theme consistent coloring to match the watch face?" The owner chose: yes where the watch provides it, for the accent only.
 - The `Calibrate` prompt on the compass is light gray too.
 - "North should also be drawn in a themed color".
+- 2026-10-12: "Back swipe should go to settings. Pressing the non-crown button should log a waypoint. Pressing the crown exits." As built: system Back on one of the three screens turns one screen toward settings, as a right swipe does (compass to settings, settings to waypoints, waypoints to the compass), and never closes the app. The side button logs a waypoint on the compass and on the waypoints screen. The crown's press, which is the system's, is the only way out of the app.
 
 ## Decisions made in the mockups and approved with them
 
@@ -97,9 +98,9 @@ One instrument, one set of parts.
 - Long-pressing the compass also opens waypoints.
 - Tapping the compass does nothing.
 - Swiping up or down, or turning the crown, on the compass still moves the focus among the targets.
-- The side button acts only while the compass is in view.
-- Pressing the crown leaves the app. A right swipe does not.
-- Screens opened from a row (edit a waypoint, calibration) go back with the usual right swipe.
+- The side button acts while the compass or the waypoints screen is in view, and logs a waypoint on either. It does nothing on settings, on the edit screen or on calibration.
+- Pressing the crown leaves the app. A right swipe does not, and neither does Back: on the three screens Back turns one screen toward settings, as a right swipe does.
+- Screens opened from a row (edit a waypoint, calibration) go back with the usual right swipe, and with Back.
 
 ### Unchanged
 
@@ -109,6 +110,7 @@ The clean compass with no waypoints, `MAG`, the hold-flat animation, tick feedba
 
 - A header line states how many waypoints are targets, for example `3 of 4 targets`. Tapping it sets all as targets, or clears all if all already are.
 - First row: `Log here`, which saves a waypoint exactly as the side button does. It exists because not every watch passes its side button to apps.
+- The side button saves a waypoint from this screen too, while it is in view.
 - One row per waypoint, newest first: its tick (long and in its color when it is a target, a short gray stub when not), its name, and its distance when a position is known.
 - Tap a row: set or clear it as a target.
 - Long-press a row: edit it.
@@ -121,7 +123,7 @@ The clean compass with no waypoints, `MAG`, the hold-flat animation, tick feedba
 - The name is in the middle. Tapping it opens the system's text input.
 - A target tick above the name shows and toggles whether it is a target.
 - `Hold to delete` at the bottom: holding it for about a second deletes the waypoint, with the frame draining as it is held so the wearer can let go to cancel. No dialog.
-- A right swipe that does not start on the color wheel goes back.
+- A right swipe goes back, from the edge of the screen too: a touch that goes down on the color wheel and moves toward the middle is a swipe and changes no color. (This replaces "a right swipe that does not start on the color wheel goes back".)
 
 ## Settings screen
 
@@ -180,31 +182,31 @@ The logging screen; the separate color screen; the delete confirmation dialog; t
 - While the logging status has a second line, that line takes the place of the words `Hold flat` or `Calibrate`, and the calibrate prompt's tap area goes with its word. The hold-flat drawing keeps looping, and the words return when the status clears.
 - A press while a result is waiting or showing starts a new save.
 - A status line that does not fit its slot at full size is drawn smaller, down to three quarters, before it is cut short. `Needs location access` is one that is drawn smaller.
-- The save continues when the wearer moves to another screen. The time a result is shown (about two seconds for a save, about three for a failure) counts only while the compass is in view; a result that arrives while it is not waits and is shown for its full time when the compass is next in view.
+- The save continues when the wearer moves to another screen. A result is shown for about two seconds for a save and about three for a failure, on the compass or on the waypoints screen, and that time counts only while one of those two is at rest in view. A result that arrives while neither is waits, and is shown for its full time on whichever of the two is in view next; a showing that is cut short starts again there. The confirming tap is given once.
 - The screen stays on while a save is in progress, with or without targets.
 - The confirming tap is given once, when the saved result is first shown.
 - The first press asks for precise and approximate location together. If only approximate location is granted, nothing is saved, the compass shows `Needs location access`, and the next press asks again.
-- `Log here` on the waypoints screen starts the same save and stays on the waypoints screen. While a save is in progress or its result is showing, the header of the waypoints screen shows the status in place of the count: the same words in the same colors as on the compass, with the second line small and dim under them. This holds for a save started from either screen. The time a result is shown counts while the compass or the waypoints screen is at rest in view, whichever it is; a showing that is cut short starts again on whichever of the two is in view next; the confirming tap is given once.
+- `Log here` on the waypoints screen starts the same save and stays on the waypoints screen. While a save is in progress or its result is showing, the status stands at the top of the waypoints screen, over the list and not part of it, so it is there wherever the list is scrolled to: the same words in the same colors as on the compass, with the second line small and dim under them, on a black band that covers the rows passing under it. This holds for a save started from either screen. A tap on the band does nothing. The header keeps showing the count.
 - The three screens: an app that is started afresh opens on the compass. An app that was left with the crown and is still running comes back on the screen it was left on.
-- Back, on a watch that has it, returns to the compass from waypoints and from settings, and leaves the app from the compass.
+- Back, on a watch that has it, turns one screen toward settings from each of the three screens and never leaves the app. Backs made close together each turn one screen.
 - A screen opened from a row comes back to the screen it was opened from. If the system has stopped the app in the meantime and restores that screen, going back from it shows the compass.
 - A swipe ends on a whole screen and turns one screen. A second swipe made before the first has come to rest, or a finger that catches the screens while they slide, carries on to the next screen. While the screens are being moved (a finger has them, or they are still sliding) no screen counts as in view: the compass acts on no crown turn, button press, vertical swipe or long press, gives no tick and no confirming tap, and does not count the time of a logging result. The words of a waiting result are drawn on the compass as it passes; its time and its confirming tap start when the screens have come to rest on the compass.
 - A touch on the compass becomes one gesture: a sideways swipe turns to the next screen, a vertical swipe moves the focus, and a long press (the system's long-press time) opens waypoints with a light tap. A swipe at an angle goes whichever way the finger first travels far enough. A long press that starts on the calibrate prompt's tap area opens nothing.
-- The compass acts on the crown and the side button only while it is at rest in view. While the screens are moving, a turn or press that reaches the compass is dropped. The crown scrolls the list on the other two screens.
+- The compass acts on the crown and the side button only while it is at rest in view, and the waypoints screen acts on the side button only while it is at rest in view. A press reaches one screen, the one with the focus. While the screens are moving, a turn or press is dropped. The crown scrolls the list on the waypoints and settings screens.
 - While another screen is in view the compass does not listen to the sensor, draws no frames, gives no tick, and does not count the time of a logging result. When it comes back the dial catches up and the ticks stay quiet until it has.
 - The screen is kept on for targets only while the compass is in view. It is kept on during a save on any screen, the ones opened from a row included.
 - Location for targets runs on all three screens while the app is on screen, as it did on the separate screens before: the waypoints screen shows distances from it.
 - The three ticks that show which screen is in view are at the bottom edge on the waypoints and settings screens. On the compass they appear only around a swipe, from the moment the compass starts to move until about a second after it has come to rest, at the bottom of the readout (under the lowest line of text, inside the circle the letters sweep), where nothing on the turning dial passes.
 - The window's own swipe-to-dismiss is switched off for the app, so no right swipe on the three screens can close it.
-- The waypoints header reads `N of M targets` for every count, `1 of 1 targets` and `0 of 3 targets` included, and `No waypoints yet` when there are none. With no waypoints the header is the quiet line and a tap on it does nothing.
+- The waypoints header reads `N of M targets`, with `target` when there is one waypoint (`1 of 1 target`, `0 of 1 target`), and `No waypoints yet` when there are none. With no waypoints the header is the quiet line and a tap on it does nothing.
 - A waypoint's row has its name, its distance under the name when a position is known, and its tick at the right. A target's name is in ink at medium weight; the name of a waypoint that is not a target is dim. The header is dim and `Log here` is in the accent color.
 - The rows of the waypoints screen keep their full size wherever they are, so a row is 48 dp tall at the edge as in the middle. The two ends of a row follow the round edge: a row above or below the middle is drawn shorter. Rows fade out toward the top and the bottom of the frame and are cut off inside it. The screen opens with `Log here` in the middle, the header above it and the newest waypoint below.
 - The scroll position is an arc in the accent color on the frame at 3 o'clock, as long as the part of the list that is on screen. It is not drawn when the whole list fits.
 - On the waypoints screen the three ticks that show which screen is in view stand in the frame's own band at 6 o'clock, and the frame's ticks leave a gap for them. The settings screen keeps the earlier place of its three ticks until it gets its frame.
 - A tap or a long press on the waypoints screen acts only while that screen is at rest in view, as on the compass.
 - The edit screen has, from the top: the word `Target` with the tick that shows and switches it, in the waypoint's color; the name, with a dot in the waypoint's color beside it, on up to two lines and drawn smaller when it is long; and `Hold to delete` in the error color. Each of the three is 48 dp tall to the touch. The waypoint's color is marked on the wheel by a line across it.
-- A touch "starts on the color wheel" when it goes down on the wheel's band (from 0.86 of the radius outward), on the rim outside it, or within 8 dp inside it. Such a touch belongs to the wheel alone: it never goes back and never holds `Hold to delete`, whose touch area reaches under the wheel at its corners. A touch that starts anywhere else never changes the color, wherever it travels.
-- On the wheel, a finger that moves picks the color under it for as long as it stays down, and a tap picks the color it lands on. A finger that rests on the wheel for longer than the system's long-press time and lifts without moving changes nothing. Within three tenths of the radius of the center a finger picks no color.
+- A touch "goes down on the color wheel" when it lands on the wheel's band (from 0.86 of the radius outward), on the rim outside it, or within 8 dp inside it. Such a touch is never a tap on what is under it and never holds `Hold to delete`, whose touch area reaches under the wheel at its corners. A touch that goes down anywhere else never changes the color, wherever it travels.
+- What a touch on the wheel becomes is decided when it has moved far enough to be a drag. If it moves along the wheel at least as much as toward the middle, it picks the color under the finger for as long as it stays within 16 dp of the band; if it then leaves the wheel toward the middle, the color returns to what it was when the finger came down, drawn and stored, the rest of that touch changes nothing, and if it lifts more than half the screen to the right of where it began the screen goes back. If it moves mostly toward the middle from the start, it is an ordinary swipe: it changes no color and goes back like any right swipe. A touch that lifts without moving is a tap and picks the color it landed on, unless it rested longer than the system's long-press time, which changes nothing. Within three tenths of the radius of the center a finger picks no color.
 - The crown turns the color by a quarter of a degree for each pixel of scroll, which is 32 degrees for one click of the emulator's crown.
 - A color change is drawn at once. It is stored at most four times a second while it keeps changing, when the finger lifts, and when the screen is left, so the stored color is the last one drawn.
 - Changes to waypoints (target, all targets, name, color, delete) are applied one at a time in the order they were made. Before this, a color or name change that overlapped another change to the same waypoint could undo it.

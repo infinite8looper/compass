@@ -10,6 +10,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -60,8 +67,11 @@ import kotlinx.coroutines.delay
  * is in view, the logging result's time is counted only then, and the clock that marks distances as old runs only
  * while some of the screen is showing.
  *
- * While a waypoint is being logged, from here or from the compass, the header shows the status in place of the
- * count: the same words, in the same colors, as on the compass.
+ * A side button logs a waypoint here as it does on the compass, while this screen is in view.
+ *
+ * While a waypoint is being logged, from here or from the compass, the status stands at the top of the screen, over
+ * the list and apart from it: the same words, in the same colors, as on the compass, wherever the list is scrolled
+ * to. So whenever this screen is in view the status can be read, which is what its time is counted by.
  *
  * [onEdit] is what a long press on a waypoint's row does, and [onLogHere] what `Log here` does.
  */
@@ -92,7 +102,14 @@ fun WaypointsScreen(vm: CompassViewModel, paneView: () -> PaneView, onEdit: (Lon
     val targets = nav.waypoints.count { it.isTarget }
     val setsAll = headerTapSetsAll(targets, total)
 
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
+    val sideButton = remember { SideButton() }
+    Box(
+        Modifier.fillMaxSize().background(Color.Black)
+            // The list inside has the focus while this screen does, so a side button's press passes here first.
+            .onPreviewKeyEvent { e -> sideButton.onKey(e.nativeKeyEvent, onPress = { inView(onLogHere) }) }
+    ) {
+      // The list and what is pinned over it are cut off at one circle inside the frame.
+      Box(Modifier.fillMaxSize().padding(r * (1f - LIST_RADIUS)).clip(CircleShape)) {
         ScalingLazyColumn(
             state = listState,
             // The rows keep their size and their spacing all the way: a row is as easy to hit near the edge as in
@@ -100,7 +117,7 @@ fun WaypointsScreen(vm: CompassViewModel, paneView: () -> PaneView, onEdit: (Lon
             // so no row is drawn over the frame or stops at a hard edge.
             scalingParams = ScalingLazyColumnDefaults.scalingParams(edgeScale = 1f, edgeAlpha = 1f),
             verticalArrangement = Arrangement.spacedBy(0.dp, Alignment.CenterVertically),
-            modifier = Modifier.fillMaxSize().padding(r * (1f - LIST_RADIUS)).clip(CircleShape).fadeTopAndBottom(),
+            modifier = Modifier.fillMaxSize().fadeTopAndBottom(),
         ) {
             item(key = "header") {
                 InstrumentRow(
@@ -110,16 +127,7 @@ fun WaypointsScreen(vm: CompassViewModel, paneView: () -> PaneView, onEdit: (Lon
                     ) { inView { vm.setAllTargets(setsAll) } },
                     centered = true,
                 ) {
-                    val current = status
-                    if (current == LogStatus.Idle) {
-                        Text(headerText(targets, total), color = Dim, style = headerStyle, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    } else {
-                        val (words, detail) = statusText(current, nav.units)
-                        Column(Modifier.semantics { liveRegion = LiveRegionMode.Polite }, horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(words, color = logStatusColor(current), style = headerStyle, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            if (detail != null) Text(detail, color = Dim, style = detailStyle, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
-                    }
+                    Text(headerText(targets, total), color = Dim, style = headerStyle, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
             item(key = "log") {
@@ -140,7 +148,7 @@ fun WaypointsScreen(vm: CompassViewModel, paneView: () -> PaneView, onEdit: (Lon
                             toggleableState = ToggleableState(w.isTarget)
                             stateDescription = if (w.isTarget) "Target" else "Not a target"
                         },
-                    trailing = { TickToggle(w.isTarget, color = waypointColor(w.hue)) },
+                    trailing = { TickToggle(w.isTarget, color = { waypointColor(w.hue) }) },
                 ) {
                     Column {
                         Text(
@@ -157,9 +165,33 @@ fun WaypointsScreen(vm: CompassViewModel, paneView: () -> PaneView, onEdit: (Lon
                 }
             }
         }
+        val current = status
+        if (current != LogStatus.Idle) {
+            val (words, detail) = statusText(current, nav.units)
+            // A black band over the top of the list, soft at its lower edge, with the status on it. It takes the
+            // taps that land on it, so the header under it is not tapped by a finger that cannot see it.
+            Column(
+                Modifier.align(Alignment.TopCenter).fillMaxWidth().height(r * STATUS_BAND)
+                    .background(Brush.verticalGradient(0f to Color.Black, STATUS_BAND_SOLID to Color.Black, 1f to Color.Transparent))
+                    .pointerInput(Unit) { detectTapGestures() }
+                    .padding(top = r * STATUS_TOP),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                StatusLine(words, logStatusColor(current), headerStyle, Modifier.width(r * STATUS_WIDTH))
+                if (detail != null) Text(detail, color = Dim, style = detailStyle, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+      }
         FrameRing(paneIndex = Pane.WAYPOINTS.ordinal, scroll = { listScrollArc(listState) })
     }
 }
+
+// The pinned status, in fractions of the screen's radius, measured down from the top of the list's circle: the
+// band's height, how much of it is solid black, where the words start, and how wide a line may be there.
+private const val STATUS_BAND = 0.58f
+private const val STATUS_BAND_SOLID = 0.86f
+private const val STATUS_TOP = 0.17f
+private const val STATUS_WIDTH = 1.0f
 
 /**
  * Where the frame's scroll arc is for a list: how far through its rows the list is, and how much of it is on

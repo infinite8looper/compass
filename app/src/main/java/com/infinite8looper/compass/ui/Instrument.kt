@@ -1,6 +1,5 @@
 package com.infinite8looper.compass.ui
 
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
@@ -29,6 +28,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.findRootCoordinates
@@ -236,17 +236,18 @@ private val TickStub = 7.dp
 private val TickWidth = 3.dp
 
 /**
- * A switch, drawn as a tick: long and in [color] when [on], a short gray stub when off. It is a mark only; the
- * row it stands in is what is tapped, and says what it switches.
+ * A switch, drawn as a tick: long and in its color when [on], a short gray stub when off. It is a mark only; the
+ * row it stands in is what is tapped, and says what it switches. [color] is read while drawing, so a color that
+ * is being changed redraws the tick and recomposes nothing.
  */
 @Composable
-fun TickToggle(on: Boolean, modifier: Modifier = Modifier, color: Color = AccentColor) {
-    val length by animateFloatAsState(if (on) 1f else TickStub / TickLength, tween(120), label = "tick")
-    val tint by animateColorAsState(if (on) color else Faint, tween(120), label = "tick color")
+fun TickToggle(on: Boolean, modifier: Modifier = Modifier, color: () -> Color = { AccentColor }) {
+    val shown = animateFloatAsState(if (on) 1f else 0f, tween(120), label = "tick")
     Spacer(modifier.size(TickLength + TickWidth, HitHeight / 2).drawBehind {
         // The tick grows inward from its right end, the way a tick stands on the edge of a dial.
         val right = size.width - TickWidth.toPx() / 2f
-        drawLine(tint, Offset(right, center.y), Offset(right - TickLength.toPx() * length, center.y), TickWidth.toPx(), StrokeCap.Round)
+        val length = TickStub.toPx() + (TickLength.toPx() - TickStub.toPx()) * shown.value
+        drawLine(lerp(Faint, color(), shown.value), Offset(right, center.y), Offset(right - length, center.y), TickWidth.toPx(), StrokeCap.Round)
     })
 }
 

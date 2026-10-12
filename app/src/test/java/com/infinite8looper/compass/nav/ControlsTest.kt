@@ -40,9 +40,13 @@ class ControlsTest {
         assertEquals("30 of 30 targets", headerText(30, 30))
     }
 
-    @Test fun headerTextWithOneWaypoint() {
-        assertEquals("1 of 1 targets", headerText(1, 1))
-        assertEquals("0 of 1 targets", headerText(0, 1))
+    @Test fun headerTextWithOneWaypointSaysTarget() {
+        assertEquals("1 of 1 target", headerText(1, 1))
+        assertEquals("0 of 1 target", headerText(0, 1))
+        // More than one waypoint is "targets" whatever the number that are set.
+        assertEquals("1 of 2 targets", headerText(1, 2))
+        assertEquals("0 of 2 targets", headerText(0, 2))
+        assertEquals("2 of 2 targets", headerText(2, 2))
     }
 
     @Test fun headerTextWithNoWaypointsSaysSo() {
@@ -210,5 +214,80 @@ class ControlsTest {
         assertEquals(0f, rowInset(Float.NaN, 100f), 0f)
         assertEquals(0f, rowInset(10f, 0f), 0f)
         assertEquals(0f, rowInset(10f, Float.NaN), 0f)
+    }
+
+    @Test fun aDragThatStartsAlongTheWheelIsTheWheels() {
+        // Down at 12 o'clock, 90 above the center: along the wheel there is sideways.
+        assertTrue(isAlongWheel(0f, -90f, 10f, 0f))
+        assertTrue(isAlongWheel(0f, -90f, -10f, 0f))
+        assertTrue(isAlongWheel(0f, -90f, 10f, 4f))
+        // Down at 9 o'clock: along the wheel is up or down.
+        assertTrue(isAlongWheel(-90f, 0f, 0f, 10f))
+        assertTrue(isAlongWheel(-90f, 0f, 3f, -10f))
+    }
+
+    @Test fun aDragThatStartsTowardTheCenterIsNotTheWheels() {
+        // The swipe that goes back, from the bezel at 9 o'clock.
+        assertFalse(isAlongWheel(-90f, 0f, 10f, 0f))
+        assertFalse(isAlongWheel(-90f, 0f, 10f, 4f))
+        assertFalse(isAlongWheel(-90f, 0f, 10f, -9f))
+        assertFalse(isAlongWheel(0f, -90f, 0f, 10f))
+        assertFalse(isAlongWheel(64f, 64f, -7f, -7f))
+    }
+
+    @Test fun aDragThatStartsOutwardOrHalfWayIsTheWheels() {
+        // Outward there is only the rim, which is the wheel's.
+        assertTrue(isAlongWheel(-90f, 0f, -10f, 0f))
+        assertTrue(isAlongWheel(-90f, 0f, -10f, 2f))
+        // As much along as inward: the wheel's.
+        assertTrue(isAlongWheel(-90f, 0f, 10f, 10f))
+    }
+
+    @Test fun aDragWithNoDirectionIsNotTheWheels() {
+        assertFalse(isAlongWheel(0f, 0f, 10f, 0f))
+        assertFalse(isAlongWheel(-90f, 0f, 0f, 0f))
+        assertFalse(isAlongWheel(Float.NaN, 0f, 10f, 0f))
+        assertFalse(isAlongWheel(-90f, 0f, Float.NaN, 0f))
+    }
+
+    @Test fun aDragStaysOnTheWheelInItsBandAndOnTheRim() {
+        val r = 100f
+        assertTrue(staysOnWheel(WHEEL_BAND_INNER * r, r, 0f))
+        assertTrue(staysOnWheel(0.92f * r, r, 16f))
+        assertTrue(staysOnWheel(WHEEL_BAND_OUTER * r, r, 16f))
+        assertTrue(staysOnWheel(r, r, 16f))
+        assertTrue(staysOnWheel(1.4f * r, r, 16f))
+    }
+
+    @Test fun aDragLeavesTheWheelInwardPastTheTolerance() {
+        val r = 100f
+        val edge = WHEEL_BAND_INNER * r
+        assertTrue(staysOnWheel(edge - 16f, r, 16f))
+        assertTrue(staysOnWheel(edge - 15.9f, r, 16f))
+        assertFalse(staysOnWheel(edge - 16.1f, r, 16f))
+        assertFalse(staysOnWheel(edge - 0.1f, r, 0f))
+        assertFalse(staysOnWheel(0.5f * r, r, 16f))
+        assertFalse(staysOnWheel(0f, r, 16f))
+        // A tolerance below nothing is none.
+        assertFalse(staysOnWheel(edge - 1f, r, -4f))
+    }
+
+    @Test fun aDragWithNoPlaceHasLeftTheWheel() {
+        assertFalse(staysOnWheel(Float.NaN, 100f, 16f))
+        assertFalse(staysOnWheel(90f, 0f, 16f))
+        assertFalse(staysOnWheel(90f, Float.NaN, 16f))
+        assertFalse(staysOnWheel(90f, 100f, Float.NaN))
+    }
+
+    @Test fun aTouchThatEndsMoreThanHalfTheScreenToTheRightGoesBack() {
+        assertTrue(isBackSwipe(201f, 400f))
+        assertTrue(isBackSwipe(390f, 400f))
+        assertFalse(isBackSwipe(200f, 400f))
+        assertFalse(isBackSwipe(120f, 400f))
+        assertFalse(isBackSwipe(0f, 400f))
+        assertFalse(isBackSwipe(-300f, 400f))
+        assertFalse(isBackSwipe(Float.NaN, 400f))
+        assertFalse(isBackSwipe(300f, 0f))
+        assertFalse(isBackSwipe(300f, Float.NaN))
     }
 }
