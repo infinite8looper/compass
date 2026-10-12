@@ -512,6 +512,12 @@ class CompassViewModelTest {
     private fun crumbAt(point: GeoPoint, t: Long = 1) = Crumb(lat = point.lat, lon = point.lon, accuracyM = 5f, createdAt = t)
     private val farNorth = GeoPoint(43.7067, -72.2896)
 
+    /**
+     * The values with repeats of the one before left out. The database's notifications can report a table as
+     * changed when it holds what it held, so a list that is watched can be given twice running.
+     */
+    private fun <T> List<T>.runs(): List<T> = filterIndexed { i, v -> i == 0 || v != this[i - 1] }
+
     private suspend fun trailOf(vm: CompassViewModel, wanted: (TrailUi) -> Boolean): TrailUi =
         withTimeout(10_000) { vm.nav.first { it.loaded && wanted(it.trail) } }.trail
 
@@ -697,7 +703,7 @@ class CompassViewModelTest {
             val left = withTimeout(60_000) { vm.nav.first { it.loaded && it.trail.count == 1 } }
             // Each of the two near ones went by itself, the newest first, and the far one is now walked to.
             withTimeout(10_000) { while (seen.last() != listOf(far)) delay(10) }
-            assertEquals(listOf(listOf(nearest, near, far), listOf(near, far), listOf(far)), seen.toList())
+            assertEquals(listOf(listOf(nearest, near, far), listOf(near, far), listOf(far)), seen.toList().runs())
             assertEquals(TrailMode.RETRACING, left.trail.mode)
             assertEquals(crumbTargetId(far), left.focused?.id)
             assertEquals("Crumb 1", left.focused?.name)
@@ -741,7 +747,7 @@ class CompassViewModelTest {
             crumbDao.insert(crumbAt(hanover.point))
             settings.setTrailMode(TrailMode.RETRACING)
             // The crumb is there, and then it is not.
-            withTimeout(60_000) { while (counts.toList() != listOf(0, 1, 0)) delay(10) }
+            withTimeout(60_000) { while (counts.toList().runs() != listOf(0, 1, 0)) delay(10) }
             counting.cancel()
             val done = withTimeout(10_000) { vm.nav.first { it.trail.count == 0 && it.trail.mode == TrailMode.OFF && it.focused != null } }
             assertTrue(crumbDao.all().isEmpty())
@@ -776,7 +782,7 @@ class CompassViewModelTest {
             withTimeout(10_000) { while (counts.isEmpty()) delay(10) }
             crumbDao.insert(crumbAt(hanover.point))
             settings.setTrailMode(TrailMode.RETRACING)
-            withTimeout(60_000) { while (counts.toList() != listOf(0, 1, 0)) delay(10) }
+            withTimeout(60_000) { while (counts.toList().runs() != listOf(0, 1, 0)) delay(10) }
             counting.cancel()
             withTimeout(10_000) { while (settings.settings.first().trailMode != TrailMode.OFF) delay(10) }
             withTimeout(10_000) { while (LogStatus.TrailComplete !in statuses) delay(10) }
