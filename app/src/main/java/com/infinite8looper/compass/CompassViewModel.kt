@@ -47,15 +47,24 @@ class CompassViewModel(app: Application) : AndroidViewModel(app) {
     private val waypoints = dao.observeAll()
     private val hasTargets = waypoints.map { ws -> ws.any { it.isTarget } }.distinctUntilChanged()
 
-    /** Location runs only while at least one waypoint is a target and something is collecting [nav]. */
-    private val fix: Flow<Fix?> = combine(hasTargets, permissionTick) { has, _ -> has }
-        .flatMapLatest { has ->
-            if (has && locationSource.hasPermission()) locationSource.updates(5_000) else emptyFlow()
+    /**
+     * Whether location should be running right now. This is the one place that decides it: today only when at
+     * least one waypoint is a target and the permission is held; another reason can be added here.
+     */
+    private val locationWanted: Flow<Boolean> =
+        combine(hasTargets, permissionTick) { hasTargets, _ -> hasTargets && locationSource.hasPermission() }
+            .distinctUntilChanged()
+
+    /** The live fix, or null when location is not wanted, so a fix never outlives the updates that made it. */
+    private val fix: Flow<Fix?> = locationWanted
+        .flatMapLatest { wanted ->
+            if (!wanted) flowOf(null)
+            else locationSource.updates(5_000)
+                .onEach { quietly("save last position") { settingsStore.setLastPosition(it.point, it.altitudeM) } }
+                .map<Fix, Fix?> { it }
+                // A location failure ends the fixes, not the screen state: the waypoints and settings keep flowing.
+                .catch { Log.w(TAG, "location updates failed", it) }
         }
-        .onEach { quietly("save last position") { settingsStore.setLastPosition(it.point, it.altitudeM) } }
-        .map<Fix, Fix?> { it }
-        // A location failure ends the fixes, not the screen state: the waypoints and settings keep flowing.
-        .catch { Log.w(TAG, "location updates failed", it) }
         .onStart { emit(null) }
 
     val nav: StateFlow<NavUi> = combine(waypoints, settingsStore.settings, fix) { ws, s, f ->

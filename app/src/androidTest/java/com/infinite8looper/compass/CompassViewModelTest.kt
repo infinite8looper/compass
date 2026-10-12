@@ -116,4 +116,21 @@ class CompassViewModelTest {
         withTimeoutOrNull(3_000) { vm.nav.collect { assertTrue(it.distances.isEmpty()) } }
         Unit
     }
+
+    /** Needs the feed running and the app on screen. A fix that has arrived must not outlive the location updates. */
+    @Test fun clearingTheTargetsRemovesTheDistancesAndTheFix() = runBlocking {
+        ActivityScenario.launch(MainActivity::class.java).use {
+            val vm = viewModel()
+            vm.logWaypoint(hanover)
+            val live = withTimeout(60_000) { vm.nav.first { it.distances.isNotEmpty() && it.fixElapsedMs != null } }
+            assertTrue(live.targets.isNotEmpty())
+            val declinationWithFix = live.declination
+            assertNotNull(declinationWithFix)
+            vm.setAllTargets(false).join()
+            val after = withTimeout(10_000) { vm.nav.first { it.targets.isEmpty() && it.distances.isEmpty() } }
+            assertNull(after.fixElapsedMs)
+            // The declination comes from the stored last position, so it stays.
+            assertNotNull(after.declination)
+        }
+    }
 }

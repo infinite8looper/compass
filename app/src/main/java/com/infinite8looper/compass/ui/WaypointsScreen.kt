@@ -3,7 +3,12 @@ package com.infinite8looper.compass.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import android.os.SystemClock
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.graphics.Color
+import kotlinx.coroutines.delay
+import com.infinite8looper.compass.nav.isStale
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -25,6 +30,10 @@ import com.infinite8looper.compass.nav.formatDistance
 fun WaypointsScreen(vm: CompassViewModel, onEdit: (Long) -> Unit, onSettings: () -> Unit, onLog: () -> Unit) {
     val nav by vm.nav.collectAsStateWithLifecycle()
     val listState = rememberScalingLazyListState()
+    // The same check the compass uses: a fix that has stopped arriving makes the distances old.
+    val stale by produceState(false, nav.fixElapsedMs) {
+        while (true) { value = isStale(SystemClock.elapsedRealtime(), nav.fixElapsedMs); delay(1_000) }
+    }
     ScreenScaffold(scrollState = listState) { padding ->
         ScalingLazyColumn(state = listState, contentPadding = padding, modifier = Modifier.fillMaxSize()) {
             item { Button(onClick = onLog, modifier = Modifier.fillMaxWidth()) { Text("Log waypoint") } }
@@ -45,7 +54,9 @@ fun WaypointsScreen(vm: CompassViewModel, onEdit: (Long) -> Unit, onSettings: ()
                         toggleContentDescription = "Set target",
                         onContainerClick = { onEdit(w.id) },
                         modifier = Modifier.fillMaxWidth(),
-                        secondaryLabel = nav.distances[w.id]?.let { d -> { Text(formatDistance(d, nav.units)) } },
+                        secondaryLabel = nav.distances[w.id]?.let { d ->
+                            { Text(if (stale) "${formatDistance(d, nav.units)} (old)" else formatDistance(d, nav.units), color = if (stale) Dim else Color.Unspecified, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                        },
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Box(Modifier.size(9.dp).background(waypointColor(w.hue), CircleShape))

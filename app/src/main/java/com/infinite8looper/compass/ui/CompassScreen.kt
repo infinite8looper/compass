@@ -35,7 +35,7 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 private val Ink = Color(0xFFE8EAED)
-private val Dim = Color(0xFF9E9E9E)
+internal val Dim = Color(0xFF9E9E9E)
 
 @Composable
 fun CompassScreen(vm: CompassViewModel, onOpenList: () -> Unit, onLog: () -> Unit, onCalibrate: () -> Unit) {
