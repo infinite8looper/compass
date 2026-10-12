@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.wear.compose.foundation.requestFocusOnHierarchyActive
 import androidx.wear.compose.material3.Text
 import com.infinite8looper.compass.CompassViewModel
@@ -135,18 +136,6 @@ fun CompassScreen(vm: CompassViewModel, onOpenList: () -> Unit, onLogHere: () ->
         }
     }
 
-    // The confirming tap for a save that completes while the compass is the screen in view. A save that completes
-    // on another screen, or a result already showing when the compass comes back, gives none.
-    LaunchedEffect(vm, view, lifecycle) {
-        var previous = vm.logStatus.value
-        vm.logStatus.collect { status ->
-            if (status is LogStatus.Saved && previous is LogStatus.Saving && lifecycle.currentState == Lifecycle.State.RESUMED) {
-                view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
-            }
-            previous = status
-        }
-    }
-
     // What the logging status puts on the screen, or null while there is none. Read through a derived state, so
     // the screen is composed again only when the words or their color change.
     val logStatusState = vm.logStatus.collectAsStateWithLifecycle()
@@ -155,6 +144,23 @@ fun CompassScreen(vm: CompassViewModel, onOpenList: () -> Unit, onLogHere: () ->
             val status = logStatusState.value
             if (status == LogStatus.Idle) null
             else statusText(status, navState.value.units).let { (text, detail) -> StatusLines(text, detail, statusColor(status)) }
+        }
+    }
+
+    // A result is shown for its time, counted only while the compass is in view and resumed. A result that arrives
+    // while it is not (another screen is open, the watch is asleep) waits in the view model, and a showing that
+    // is cut short starts again from the beginning. The confirming tap comes once, when a saved result is first
+    // shown. The press number is part of the key, so a new result that reads the same as the last gets its own time.
+    val logPress by vm.logPress.collectAsStateWithLifecycle()
+    val resultShowMs by remember { derivedStateOf { logStatusShowMs(logStatusState.value) } }
+    LaunchedEffect(vm, view, lifecycle, logPress, resultShowMs) {
+        val showMs = resultShowMs ?: return@LaunchedEffect
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            if (vm.logResultFirstSeen(logPress) && vm.logStatus.value is LogStatus.Saved) {
+                view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+            }
+            delay(showMs)
+            vm.logResultShown(logPress)
         }
     }
 
@@ -167,9 +173,13 @@ fun CompassScreen(vm: CompassViewModel, onOpenList: () -> Unit, onLogHere: () ->
         while (true) { value = isStale(SystemClock.elapsedRealtime(), nav.fixElapsedMs); delay(1_000) }
     }
 
+    // The screen stays on while there are targets to walk to, and while a save is in progress with or without
+    // targets: the system gives an app that is not on screen no location, so a watch that went to sleep on the
+    // first save would end it in "No GPS fix".
     val navigating = nav.targets.isNotEmpty()
-    DisposableEffect(navigating) {
-        view.keepScreenOn = navigating
+    val saving by remember { derivedStateOf { logStatusState.value is LogStatus.Saving } }
+    DisposableEffect(navigating || saving) {
+        view.keepScreenOn = navigating || saving
         onDispose { view.keepScreenOn = false }
     }
 
@@ -218,9 +228,21 @@ fun CompassScreen(vm: CompassViewModel, onOpenList: () -> Unit, onLogHere: () ->
             modifier = Modifier.graphicsLayer { alpha = dialAlpha.value }, facing = { facingState.value },
         )
 
+        // What the slots just above and below the heading hold: a target's name and distance, the words
+        // "No target", or nothing. While a waypoint is being logged the slot below holds the status instead, with
+        // or without targets. A slot added next to the heading belongs in [linesAroundHeading] too.
+        val focused = nav.focused
+        val noTarget = focused == null && nav.loaded && nav.waypoints.isNotEmpty()
+        val status = logLines
+        val linesAroundHeading = focused != null || noTarget || status != null
+        // The status's second line sits where the prompts' words do, and has that place for as long as it shows.
+        // The hold-flat drawing goes on looping above it.
+        val promptWords = status?.detail == null
+
         // Tap areas, each at least 48 dp both ways. The whole middle opens the waypoints list. While the
         // calibrate prompt shows, the part from the prompt down is its own area and the list keeps the rest.
-        val calibrate = vm.supported && !holdFlat && lowAccuracy
+        // The calibrate prompt, words and tap area alike, is there only while its words have their place.
+        val calibrate = vm.supported && !holdFlat && lowAccuracy && promptWords
         val listBottom = if (calibrate) 0.255f else 0.5f
         Box(
             Modifier.slot(y = (listBottom - 0.5f) / 2f, width = 0.9f).height(r * (listBottom + 0.5f))
@@ -232,17 +254,6 @@ fun CompassScreen(vm: CompassViewModel, onOpenList: () -> Unit, onLogHere: () ->
                     .clickable(interactionSource = null, indication = null, onClick = onCalibrate)
             )
         }
-
-        // What the slots just above and below the heading hold: a target's name and distance, the words
-        // "No target", or nothing. While a waypoint is being logged the slot below holds the status instead, with
-        // or without targets. A slot added next to the heading belongs in [linesAroundHeading] too.
-        val focused = nav.focused
-        val noTarget = focused == null && nav.loaded && nav.waypoints.isNotEmpty()
-        val status = logLines
-        val linesAroundHeading = focused != null || noTarget || status != null
-        // The status's second line sits where the prompts' words do, and has that place for as long as it shows.
-        // The hold-flat drawing goes on looping above it.
-        val promptWords = status?.detail == null
 
         if (!vm.supported) {
             Text("This watch has no compass sensor", color = Ink, style = bodyStyle, modifier = Modifier.slot(0f, 0.8f))
@@ -259,7 +270,7 @@ fun CompassScreen(vm: CompassViewModel, onOpenList: () -> Unit, onLogHere: () ->
                 )
                 else -> {
                     HeadingNumber({ headingText }, style(0.30f, FontWeight.Light), Modifier.slot(0f, 2 * READOUT_RADIUS))
-                    if (lowAccuracy && promptWords) Text("Calibrate", color = Dim, style = bodyStyle, maxLines = 1, modifier = Modifier.slot(PROMPT_Y, 0.6f))
+                    if (calibrate) Text("Calibrate", color = Dim, style = bodyStyle, maxLines = 1, modifier = Modifier.slot(PROMPT_Y, 0.6f))
                 }
             }
         }

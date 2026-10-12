@@ -19,7 +19,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -80,7 +79,7 @@ class CompassViewModel(app: Application, val locationSource: LocationSource) : A
     val nav: StateFlow<NavUi> = combine(waypoints, settingsStore.settings, fix) { ws, s, f ->
         val known = f?.point ?: s.lastPosition
         val declination = known?.let { declinationAt(it, f?.altitudeM ?: s.lastAltitudeM ?: 0f, System.currentTimeMillis()) }
-        val targets = buildTargets(ws.map { it.toInfo() }, s.focusedId, f?.point, declination, s.north)
+        val targets = buildTargets(ws.map { it.toInfo() }, s.focusedId, f?.point, declination, s.north, s.units)
         // Only a live fix gives distances; the saved last position is not presented as where the wearer is now.
         val distances = f?.let { live -> ws.associate { it.id to distanceMeters(live.point, GeoPoint(it.lat, it.lon)) } }.orEmpty()
         NavUi(targets, targets.firstOrNull { it.focused }, s.units, s.north, declination, f?.elapsedMs, ws, distances,
@@ -133,35 +132,65 @@ class CompassViewModel(app: Application, val locationSource: LocationSource) : A
     private val logState = MutableStateFlow<LogStatus>(LogStatus.Idle)
     /** Where logging with one press stands. It is kept here, not on a screen, so it outlives the screen it started on. */
     val logStatus: StateFlow<LogStatus> = logState.asStateFlow()
-    /** The wait that clears a shown result. A new press ends it, so an old result cannot clear a new one. */
-    private var logResultShown: Job? = null
+    private val logPressCount = MutableStateFlow(0)
+    /**
+     * The number of the press whose save or result [logStatus] holds: it goes up by one for every press that is
+     * taken up. Two results that read the same, such as two failures in a row, are told apart by it.
+     */
+    val logPress: StateFlow<Int> = logPressCount.asStateFlow()
+    /** The press whose result has been reported as seen. */
+    private var logSeenPress = 0
+    /** Guards the three values above where they have to change or be compared together. */
+    private val logLock = Any()
 
     /**
      * Saves the position as a new waypoint, from the first fix good enough that is taken after this call.
-     * Does nothing while a save is in progress. Without the location permission it reports that and saves nothing:
-     * asking for the permission is the screen's part, before it calls this.
-     * The save and the time its result is shown belong to the view model, so both go on when the screen that
-     * started them is left, and [logStatus] returns to [LogStatus.Idle] by itself whether or not anything watches it.
+     * Does nothing while a save is in progress; a press while a result is waiting or showing starts a new save.
+     * Without the location permission it reports that and saves nothing: asking for the permission is the
+     * screen's part, before it calls this.
+     *
+     * The save belongs to the view model, so it goes on when the screen that started it is left. Its result stays
+     * in [logStatus] until a screen reports with [logResultShown] that it has shown it for its time, however long
+     * that takes: a result that arrives while no one can see it is not lost.
+     * The returned job ends when this press's save has ended, or at once for a press that was not taken up.
      */
     fun logHere(): Job {
         val pressedAt = SystemClock.elapsedRealtime()
         // On the main thread, where presses are handled one after another, so two of them cannot both start a save.
         return viewModelScope.launch(Dispatchers.Main.immediate) {
             if (logState.value is LogStatus.Saving) return@launch
-            logResultShown?.cancel()
-            val result = when {
+            val refused = when {
                 !locationSource.hasPermission() -> LogStatus.Failed(LogFailure.NO_PERMISSION)
                 !isLocationOn() -> LogStatus.Failed(LogFailure.LOCATION_OFF)
-                else -> {
-                    logState.value = LogStatus.Saving(null)
-                    saveFreshFix(pressedAt)
-                }
+                else -> null
             }
-            logState.value = result
-            logResultShown = viewModelScope.launch {
-                delay(logStatusShowMs(result) ?: 0L)
-                logState.compareAndSet(result, LogStatus.Idle)
+            synchronized(logLock) {
+                logPressCount.value += 1
+                logState.value = refused ?: LogStatus.Saving(null)
             }
+            if (refused == null) logState.value = saveFreshFix(pressedAt)
+        }
+    }
+
+    /**
+     * Called by the screen that shows the result of press number [press], the first time it shows it. True once
+     * for each result, so what marks the moment (the confirming tap) happens once however often the result comes
+     * into view. False for any press but the one whose result [logStatus] holds.
+     */
+    fun logResultFirstSeen(press: Int): Boolean = synchronized(logLock) {
+        val first = press == logPressCount.value && logStatusShowMs(logState.value) != null && logSeenPress != press
+        if (first) logSeenPress = press
+        first
+    }
+
+    /**
+     * Called by the screen that shows the result of press number [press], once the result has been in view for
+     * its time ([logStatusShowMs]): the status returns to [LogStatus.Idle]. A report for an earlier press, or one
+     * that comes while a save is in progress, changes nothing, so it cannot remove a newer status.
+     */
+    fun logResultShown(press: Int) {
+        synchronized(logLock) {
+            if (press == logPressCount.value && logStatusShowMs(logState.value) != null) logState.value = LogStatus.Idle
         }
     }
 
@@ -170,15 +199,22 @@ class CompassViewModel(app: Application, val locationSource: LocationSource) : A
 
     /** Waits for a fix taken since [pressedAt] and stores it. Never throws, except to pass a cancellation on. */
     private suspend fun saveFreshFix(pressedAt: Long): LogStatus {
+        var passedOver = 0
         val fix = try {
             // The location source already drops fixes older than ten seconds; this also drops any from before the press.
-            acquireFix(locationSource.updates(1_000), notBeforeMs = pressedAt) { logState.value = LogStatus.Saving(it.accuracyM) }
+            val fixes = locationSource.updates(1_000).onEach { if (!isFixSincePress(it, pressedAt)) passedOver++ }
+            acquireFix(fixes, notBeforeMs = pressedAt) { logState.value = LogStatus.Saving(it.accuracyM) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Log.w(TAG, "location updates failed while logging (" + e.javaClass.simpleName + ")")
             null
-        } ?: return LogStatus.Failed(LogFailure.NO_FIX)
+        }
+        if (fix == null) {
+            // A count only: it tells a search that got nothing from one that got only fixes from before the press.
+            if (passedOver > 0) Log.i(TAG, "no fix since the press; fixes from before it passed over: $passedOver")
+            return LogStatus.Failed(LogFailure.NO_FIX)
+        }
         return try {
             LogStatus.Saved(logWaypoint(fix).name, fix.accuracyM, fix.elapsedMs)
         } catch (e: CancellationException) {

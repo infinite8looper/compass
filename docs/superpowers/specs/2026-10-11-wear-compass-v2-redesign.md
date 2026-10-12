@@ -70,6 +70,7 @@ One instrument, one set of parts.
 - Every other target's line is a soft tint: a paler version of its own color (about 60 percent of the full color's saturation) at about 60 percent opacity, with no casing. Targets can still be told apart by color, but only the focused one is vivid.
 - The focused target also has an arrow: a triangle of the same shape and size as the blue heading pointer, in the waypoint's color, just inside the ring at the target's bearing, pointing outward.
 - The dot markers are gone.
+- A target within the arrival distance (under 10 m, or under 30 ft with feet and miles) has no line and no arrow: the direction to a point the wearer is standing on means nothing, and the readout says `Arrived at target`. Such a target is not faced. A waypoint that has just been logged therefore shows its line only once the wearer has moved away from it.
 - Breadcrumbs, when a trail exists, are short muted ticks inside the ring. While retracing, the crumb being walked to is drawn like a focused target, in the breadcrumb color.
 
 ### Facing the target
@@ -85,14 +86,9 @@ One instrument, one set of parts.
 - While it works, the distance slot shows a short status: `Saving…`, with the current accuracy once a fix is arriving; then `Saved Waypoint N` with the accuracy on the line under it, for about two seconds, with a light confirming tap; or a failure in red for about three seconds: `No GPS fix`, `Location is off`, `Needs location access`, or `Couldn't save`.
 - The first press on a fresh install shows the system's location permission dialog; if granted, the save continues without a second press.
 - The rules for which fix is saved are unchanged (15 m or better at once; the best fresh fix after 20 seconds), with one tightening: a fix taken before the press is never saved.
-- A second press while a save is in progress does nothing. A press while a result is still showing starts a new save.
+- A second press while a save is in progress does nothing.
 - `Saved Waypoint N` is in a soft green, the confirmation color. The accuracy under `Saving…` and `Saved Waypoint N` is small and dim, in the chosen units. `No GPS fix` has `Try again outdoors` under it in the same small dim text; the other failures are one line.
-- A status line that does not fit its slot at full size is drawn smaller, down to three quarters, before it is cut short.
 - With no targets the status appears alone under the heading and the compass is clean again when it clears.
-- While the status has a second line, that line takes the place of the words `Hold flat` or `Calibrate`. The hold-flat drawing keeps looping, and the words return when the status clears.
-- The save and the time its result is shown continue when the wearer moves to another screen; coming back to the compass within that time shows the result.
-- The confirming tap is given only if the compass is in view when the save completes.
-- Until the waypoints screen is redesigned, its `Log waypoint` row starts the same save and returns to the compass.
 - The separate logging screen is removed.
 
 ### Getting around
@@ -178,3 +174,14 @@ The logging screen; the separate color screen; the delete confirmation dialog; t
 - Whether a double press reaches the app as two presses close together.
 - The feel of tick feedback, of the lock pulse and of the heartbeat.
 - Everything already listed in the first spec.
+
+## Decided during the build, reported to the owner
+
+- While the logging status has a second line, that line takes the place of the words `Hold flat` or `Calibrate`, and the calibrate prompt's tap area goes with its word. The hold-flat drawing keeps looping, and the words return when the status clears.
+- A press while a result is waiting or showing starts a new save.
+- A status line that does not fit its slot at full size is drawn smaller, down to three quarters, before it is cut short. `Needs location access` is one that is drawn smaller.
+- The save continues when the wearer moves to another screen. The time a result is shown (about two seconds for a save, about three for a failure) counts only while the compass is in view; a result that arrives while it is not waits and is shown for its full time when the compass is next in view.
+- The screen stays on while a save is in progress, with or without targets.
+- The confirming tap is given once, when the saved result is first shown.
+- The first press asks for precise and approximate location together. If only approximate location is granted, nothing is saved, the compass shows `Needs location access`, and the next press asks again.
+- Until the waypoints screen is redesigned, its `Log waypoint` row starts the same save and returns to the compass.

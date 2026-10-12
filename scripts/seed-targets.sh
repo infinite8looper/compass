@@ -10,6 +10,7 @@
 #          thirtieth is at 77, the bearing of the seventh.
 #   none   no waypoints at all.
 # The rows go into the app's own database file with the app stopped, and the location permission is granted.
+# It refuses to run on anything but an emulator.
 # Rows are named Waypoint 1, 2, ... in the order given and the last one is the newest, so it has the focus unless
 # the focus stored in the app's settings names another row that exists. The settings are not touched, so the
 # number the app gives its next waypoint does not follow these names.
@@ -45,6 +46,13 @@ for i, spec in enumerate(specs, 1):
 print(" ".join(rows))
 PY
 ) || exit 1
+# This deletes every waypoint on the attached device, so it runs on an emulator only.
+serial=$($ADB get-serialno 2>/dev/null | tr -d '\r')
+qemu="$($ADB shell getprop ro.kernel.qemu 2>/dev/null | tr -d '\r')$($ADB shell getprop ro.boot.qemu 2>/dev/null | tr -d '\r')"
+if [[ "$serial" != emulator-* ]] || [[ "$qemu" != *1* ]]; then
+  echo "refusing: the attached device (${serial:-none, or more than one}) is not an emulator, and this would delete its waypoints" >&2
+  exit 1
+fi
 $ADB shell am force-stop $PKG
 sleep 1
 count=$($ADB shell "run-as $PKG sqlite3 databases/waypoints.db \"$sql SELECT count(*) FROM waypoints;\"" | tr -d '\r')

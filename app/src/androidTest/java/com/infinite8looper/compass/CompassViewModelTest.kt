@@ -3,6 +3,8 @@ package com.infinite8looper.compass
 import android.Manifest
 import android.app.Application
 import android.os.SystemClock
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -14,6 +16,7 @@ import com.infinite8looper.compass.nav.GeoPoint
 import com.infinite8looper.compass.nav.LogFailure
 import com.infinite8looper.compass.nav.LogStatus
 import com.infinite8looper.compass.nav.distanceMeters
+import com.infinite8looper.compass.nav.logStatusShowMs
 import com.infinite8looper.compass.sensors.LocationSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -147,12 +150,14 @@ class CompassViewModelTest {
     private suspend fun viewModelWithoutPermission() =
         withContext(Dispatchers.Main) { CompassViewModel(app, LocationSource(app) { false }) }
 
-    private suspend fun awaitSaved(vm: CompassViewModel) =
-        withTimeout(60_000) { vm.logStatus.first { it is LogStatus.Saved || it is LogStatus.Failed } } as? LogStatus.Saved
-            ?: throw AssertionError("not saved: ${vm.logStatus.value}")
+    /** Presses, waits for that press's save to end, and returns its result, which has to be Saved. */
+    private suspend fun pressAndAwaitSaved(vm: CompassViewModel): LogStatus.Saved {
+        withTimeout(60_000) { vm.logHere().join() }
+        return vm.logStatus.value as? LogStatus.Saved ?: throw AssertionError("not saved: ${vm.logStatus.value}")
+    }
 
     /** Waits, without collecting the status, until it is Idle again, and returns how long that took. */
-    private suspend fun msUntilIdle(vm: CompassViewModel, limitMs: Long = 8_000): Long {
+    private suspend fun msUntilIdle(vm: CompassViewModel, limitMs: Long = 10_000): Long {
         val start = SystemClock.elapsedRealtime()
         while (vm.logStatus.value != LogStatus.Idle) {
             assertTrue("still ${vm.logStatus.value} after $limitMs ms", SystemClock.elapsedRealtime() - start < limitMs)
@@ -161,16 +166,20 @@ class CompassViewModelTest {
         return SystemClock.elapsedRealtime() - start
     }
 
+    /** The view model the app's own screens use: the one the real activity holds. */
+    private fun viewModelOf(scenario: ActivityScenario<MainActivity>): CompassViewModel {
+        lateinit var vm: CompassViewModel
+        scenario.onActivity { vm = ViewModelProvider(it)[CompassViewModel::class.java] }
+        return vm
+    }
+
     @Test fun logHereGoesFromSavingToSavedAndStoresOneWaypoint() = runBlocking {
         ActivityScenario.launch(MainActivity::class.java).use {
             val vm = viewModel()
             assertEquals(LogStatus.Idle, vm.logStatus.value)
             val seen = CopyOnWriteArrayList<LogStatus>()
             val watching = launch(Dispatchers.Main) { vm.logStatus.collect { seen += it } }
-            vm.logHere()
-            val saved = awaitSaved(vm)
-            val shownFor = msUntilIdle(vm)
-            watching.cancel()
+            val saved = pressAndAwaitSaved(vm)
 
             val rows = dao.observeAll().first()
             assertEquals(1, rows.size)
@@ -181,14 +190,17 @@ class CompassViewModelTest {
             assertTrue(row.isTarget)
             assertTrue("off by ${distanceMeters(hanover.point, GeoPoint(row.lat, row.lon))} m", distanceMeters(hanover.point, GeoPoint(row.lat, row.lon)) < 100.0)
 
+            // The result goes once a screen reports that it has shown it for its time.
+            vm.logResultShown(vm.logPress.value)
+            withTimeout(10_000) { vm.logStatus.first { it == LogStatus.Idle } }
+            withTimeout(10_000) { while (seen.last() != LogStatus.Idle) delay(10) }
+            watching.cancel()
             // Idle, then Saving with no accuracy yet, then only Saving until the one Saved, then Idle again.
             assertEquals(LogStatus.Idle, seen.first())
             assertEquals(LogStatus.Saving(null), seen[1])
             val savedAt = seen.indexOf(saved)
             assertTrue("$seen", savedAt >= 2 && seen.subList(1, savedAt).all { it is LogStatus.Saving })
             assertEquals(listOf(saved, LogStatus.Idle), seen.subList(savedAt, seen.size))
-            // The result stays for about two seconds.
-            assertTrue("shown for $shownFor ms", shownFor in 1_500..3_500)
         }
     }
 
@@ -196,41 +208,118 @@ class CompassViewModelTest {
         ActivityScenario.launch(MainActivity::class.java).use {
             val vm = viewModel()
             // Two presses with nothing between them, and a third once the save is visibly under way.
-            withContext(Dispatchers.Main) { vm.logHere(); vm.logHere() }
+            val first = withContext(Dispatchers.Main) { vm.logHere().also { vm.logHere() } }
             withTimeout(60_000) { vm.logStatus.first { it != LogStatus.Idle } }
             if (vm.logStatus.value is LogStatus.Saving) vm.logHere()
-            val saved = awaitSaved(vm)
-            msUntilIdle(vm)
+            withTimeout(60_000) { first.join() }
+            val saved = vm.logStatus.value as? LogStatus.Saved ?: throw AssertionError("not saved: ${vm.logStatus.value}")
             // A second save would need a fix of its own: leave it the time to arrive before counting.
             delay(3_000)
-            assertEquals(LogStatus.Idle, vm.logStatus.value)
+            assertEquals(saved, vm.logStatus.value)
+            assertEquals(1, vm.logPress.value)
             assertEquals(listOf(saved.name), dao.observeAll().first().map { it.name })
         }
     }
 
     @Test fun logHereWithoutThePermissionReportsItAndSavesNothing() = runBlocking {
         val vm = viewModelWithoutPermission()
-        vm.logHere()
-        val status = withTimeout(10_000) { vm.logStatus.first { it !is LogStatus.Idle && it !is LogStatus.Saving } }
-        assertEquals(LogStatus.Failed(LogFailure.NO_PERMISSION), status)
-        // A failure stays for about three seconds, then the status clears with nothing collecting it.
-        val shownFor = msUntilIdle(vm)
-        assertTrue("shown for $shownFor ms", shownFor in 2_500..4_500)
+        withTimeout(10_000) { vm.logHere().join() }
+        assertEquals(LogStatus.Failed(LogFailure.NO_PERMISSION), vm.logStatus.value)
         assertTrue(dao.observeAll().first().isEmpty())
     }
 
-    @Test fun aPressWhileAResultShowsStartsAgainWithItsOwnDisplayTime() = runBlocking {
+    /** No screen shows this view model's status, as when the wearer is on another screen or the watch is asleep. */
+    @Test fun aResultNothingHasShownStaysUntilItIsReportedShown() = runBlocking {
         val vm = viewModelWithoutPermission()
-        vm.logHere()
-        withTimeout(10_000) { vm.logStatus.first { it is LogStatus.Failed } }
-        delay(2_000)
-        // One second before the first result would clear, a second press gives a second result.
-        vm.logHere()
-        delay(2_000)
-        // The first result's three seconds are over; the second one's are not.
-        assertEquals(LogStatus.Failed(LogFailure.NO_PERMISSION), vm.logStatus.value)
-        val rest = msUntilIdle(vm)
-        assertTrue("cleared after another $rest ms", rest in 500..2_500)
+        withTimeout(10_000) { vm.logHere().join() }
+        val failed = LogStatus.Failed(LogFailure.NO_PERMISSION)
+        assertEquals(failed, vm.logStatus.value)
+        // Well over the three seconds a failure is shown for, checked all the way.
+        val until = SystemClock.elapsedRealtime() + 6_000
+        while (SystemClock.elapsedRealtime() < until) {
+            assertEquals(failed, vm.logStatus.value)
+            delay(50)
+        }
+        vm.logResultShown(vm.logPress.value)
+        assertEquals(LogStatus.Idle, vm.logStatus.value)
+    }
+
+    @Test fun aNewPressReplacesAWaitingResultAndTheOldOnesClearCannotRemoveIt() = runBlocking {
+        val vm = viewModelWithoutPermission()
+        val failed = LogStatus.Failed(LogFailure.NO_PERMISSION)
+        withTimeout(10_000) { vm.logHere().join() }
+        val first = vm.logPress.value
+        assertEquals(failed, vm.logStatus.value)
+        // The first result is seen once, and is still waiting to be reported shown when the second press comes.
+        assertTrue(vm.logResultFirstSeen(first))
+        assertFalse(vm.logResultFirstSeen(first))
+        withTimeout(10_000) { vm.logHere().join() }
+        val second = vm.logPress.value
+        assertNotEquals(first, second)
+        assertEquals(failed, vm.logStatus.value)
+        // The second result reads the same as the first and is its own result all the same.
+        assertFalse(vm.logResultFirstSeen(first))
+        assertTrue(vm.logResultFirstSeen(second))
+        assertFalse(vm.logResultFirstSeen(second))
+        vm.logResultShown(first)
+        assertEquals(failed, vm.logStatus.value)
+        vm.logResultShown(second)
+        assertEquals(LogStatus.Idle, vm.logStatus.value)
+        // With nothing showing there is nothing to see or clear.
+        assertFalse(vm.logResultFirstSeen(second))
+    }
+
+    @Test fun aPressWhileASavedResultWaitsStartsANewSave() = runBlocking {
+        ActivityScenario.launch(MainActivity::class.java).use {
+            val vm = viewModel()
+            val first = pressAndAwaitSaved(vm)
+            val firstPress = vm.logPress.value
+            // Well over the two seconds a saved result is shown for: nothing has shown it, so it waits.
+            delay(4_000)
+            assertEquals(first, vm.logStatus.value)
+            val second = pressAndAwaitSaved(vm)
+            assertNotEquals(first.name, second.name)
+            assertTrue(second.fixElapsedMs > first.fixElapsedMs)
+            assertEquals(setOf(first.name, second.name), dao.observeAll().first().map { it.name }.toSet())
+            vm.logResultShown(firstPress)
+            assertEquals(second, vm.logStatus.value)
+            vm.logResultShown(vm.logPress.value)
+            assertEquals(LogStatus.Idle, vm.logStatus.value)
+        }
+    }
+
+    /** The real compass screen, in view, shows the result of its own view model for about two seconds. */
+    @Test fun theCompassInViewShowsASavedResultForItsTimeThenClearsIt() = runBlocking {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            val vm = viewModelOf(scenario)
+            val saved = pressAndAwaitSaved(vm)
+            val shownFor = msUntilIdle(vm)
+            assertTrue("shown for $shownFor ms", shownFor in 1_500..4_500)
+            assertEquals(listOf(saved.name), dao.observeAll().first().map { it.name })
+        }
+    }
+
+    /**
+     * The press comes with the app's screen not in view. Whatever the save ends in (the system gives an app that
+     * is not on screen no location, so it is likely "No GPS fix" after the 20 seconds) waits, and is shown for its
+     * full time once the compass is in view again.
+     */
+    @Test fun aResultThatArrivesWhileTheCompassIsNotInViewWaitsForIt() = runBlocking {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            val vm = viewModelOf(scenario)
+            scenario.moveToState(Lifecycle.State.CREATED)
+            withTimeout(60_000) { vm.logHere().join() }
+            val result = vm.logStatus.value
+            val showMs = logStatusShowMs(result) ?: throw AssertionError("no result: $result")
+            val until = SystemClock.elapsedRealtime() + showMs + 3_000
+            while (SystemClock.elapsedRealtime() < until) {
+                assertEquals(result, vm.logStatus.value)
+                delay(50)
+            }
+            scenario.moveToState(Lifecycle.State.RESUMED)
+            val shownFor = msUntilIdle(vm)
+            assertTrue("$result shown for $shownFor ms", shownFor in (showMs - 500)..(showMs + 2_500))
+        }
     }
 
     /**
@@ -247,14 +336,12 @@ class CompassViewModelTest {
                 withTimeout(60_000) { while (earlier.size < had + 2) delay(10) }
                 val newestBefore = earlier.last().elapsedMs
                 val pressedAt = SystemClock.elapsedRealtime()
-                vm.logHere()
-                val saved = awaitSaved(vm)
+                val saved = pressAndAwaitSaved(vm)
                 assertTrue("the press came ${pressedAt - newestBefore} ms after a fix", newestBefore <= pressedAt)
                 assertTrue(
                     "saved a fix from ${pressedAt - saved.fixElapsedMs} ms before the press",
                     saved.fixElapsedMs >= pressedAt,
                 )
-                msUntilIdle(vm)
             }
             running.cancel()
             assertEquals(3, dao.observeAll().first().size)
