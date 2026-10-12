@@ -10,12 +10,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
@@ -109,7 +111,21 @@ fun WaypointsScreen(vm: CompassViewModel, paneView: () -> PaneView, onEdit: (Lon
             .onPreviewKeyEvent { e -> sideButton.onKey(e.nativeKeyEvent, onPress = { inView(onLogHere) }) }
     ) {
       // The list and what is pinned over it are cut off at one circle inside the frame.
-      Box(Modifier.fillMaxSize().padding(r * (1f - LIST_RADIUS)).clip(CircleShape)) {
+      val statusShowing = status != LogStatus.Idle
+      val bandPx = with(density) { (r * STATUS_BAND).toPx() }
+      Box(
+          Modifier.fillMaxSize().padding(r * (1f - LIST_RADIUS)).clip(CircleShape)
+              // While the status band shows, a touch that goes down on it is no tap or long press on the row
+              // under it, which cannot be seen: its first contact is taken here, before the list sees it, and
+              // the rows then leave the touch alone. The rest of the touch is not taken, so a drag that starts
+              // on the band still scrolls the list and still turns to the next screen.
+              .pointerInput(statusShowing, bandPx) {
+                  if (statusShowing) awaitEachGesture {
+                      val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                      if (down.position.y < bandPx) down.consume()
+                  }
+              }
+      ) {
         ScalingLazyColumn(
             state = listState,
             // The rows keep their size and their spacing all the way: a row is as easy to hit near the edge as in
@@ -122,7 +138,8 @@ fun WaypointsScreen(vm: CompassViewModel, paneView: () -> PaneView, onEdit: (Lon
             item(key = "header") {
                 InstrumentRow(
                     Modifier.clickable(
-                        enabled = total > 0, role = Role.Button,
+                        // Not while a status stands over the top of the list, where the count cannot be read.
+                        enabled = total > 0 && status == LogStatus.Idle, role = Role.Button,
                         onClickLabel = if (setsAll) "Set all as targets" else "Clear all targets",
                     ) { inView { vm.setAllTargets(setsAll) } },
                     centered = true,
@@ -168,12 +185,11 @@ fun WaypointsScreen(vm: CompassViewModel, paneView: () -> PaneView, onEdit: (Lon
         val current = status
         if (current != LogStatus.Idle) {
             val (words, detail) = statusText(current, nav.units)
-            // A black band over the top of the list, soft at its lower edge, with the status on it. It takes the
-            // taps that land on it, so the header under it is not tapped by a finger that cannot see it.
+            // A black band over the top of the list, soft at its lower edge, with the status on it. It takes no
+            // touch itself; what a touch on it may do is decided above.
             Column(
                 Modifier.align(Alignment.TopCenter).fillMaxWidth().height(r * STATUS_BAND)
                     .background(Brush.verticalGradient(0f to Color.Black, STATUS_BAND_SOLID to Color.Black, 1f to Color.Transparent))
-                    .pointerInput(Unit) { detectTapGestures() }
                     .padding(top = r * STATUS_TOP),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {

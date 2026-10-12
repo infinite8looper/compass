@@ -83,11 +83,13 @@ import com.infinite8looper.compass.nav.WHEEL_BAND_INNER
 import com.infinite8looper.compass.nav.WHEEL_BAND_OUTER
 import com.infinite8looper.compass.nav.colorWriteWaitMs
 import com.infinite8looper.compass.nav.holdProgress
-import com.infinite8looper.compass.nav.isAlongWheel
+import com.infinite8looper.compass.nav.WheelTouch
 import com.infinite8looper.compass.nav.isBackSwipe
+import com.infinite8looper.compass.nav.nextWheelTouch
+import com.infinite8looper.compass.nav.wheelTapPicks
+import com.infinite8looper.compass.nav.wheelTouchHue
 import com.infinite8looper.compass.nav.normalizeDeg
 import com.infinite8looper.compass.nav.startsOnWheel
-import com.infinite8looper.compass.nav.staysOnWheel
 import com.infinite8looper.compass.nav.wheelHue
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -221,37 +223,27 @@ private fun EditWaypoint(vm: CompassViewModel, w: Waypoint, leave: () -> Unit) {
                     if (!startsOnWheel(from.getDistance(), r, tolerance)) return@awaitEachGesture
                     down.consume()
                     val before = hue.floatValue
+                    // What the touch is, sample by sample, is decided in nav/Controls.kt; here it is acted on.
                     var touch = WheelTouch.UNDECIDED
                     while (true) {
                         val change = awaitPointerEvent(PointerEventPass.Initial).changes.firstOrNull { it.id == down.id } ?: break
-                        val moved = change.position - down.position
                         if (!change.pressed) {
-                            when (touch) {
-                                // A finger that rests on the wheel and is lifted again, as one that missed
-                                // `Hold to delete` would, picks nothing.
-                                WheelTouch.UNDECIDED -> if (change.uptimeMillis - down.uptimeMillis < viewConfiguration.longPressTimeoutMillis) {
-                                    wheelHue(from.x, from.y, r)?.let { hue.floatValue = it }
-                                }
-                                WheelTouch.RECOLOR -> Unit
-                                WheelTouch.GIVEN_UP -> if (isBackSwipe(moved.x, size.width.toFloat())) leave()
+                            if (wheelTapPicks(touch, change.uptimeMillis - down.uptimeMillis, viewConfiguration.longPressTimeoutMillis)) {
+                                wheelHue(from.x, from.y, r)?.let { hue.floatValue = it }
+                            } else if (touch == WheelTouch.GIVEN_UP && isBackSwipe(change.position.x - down.position.x, size.width.toFloat())) {
+                                leave()
                             }
                             change.consume()
                             break
                         }
-                        if (touch == WheelTouch.UNDECIDED && moved.getDistance() > viewConfiguration.touchSlop) {
-                            // Not the wheel's: nothing of it has been taken but its first contact.
-                            if (!isAlongWheel(from.x, from.y, moved.x, moved.y)) return@awaitEachGesture
-                            touch = WheelTouch.RECOLOR
-                        }
                         val at = change.position - c
-                        if (touch == WheelTouch.RECOLOR) {
-                            if (staysOnWheel(at.getDistance(), r, leaveTolerance)) wheelHue(at.x, at.y, r)?.let { hue.floatValue = it }
-                            else {
-                                touch = WheelTouch.GIVEN_UP
-                                hue.floatValue = before
-                                writes.write(before)
-                            }
-                        }
+                        val was = touch
+                        touch = nextWheelTouch(touch, from.x, from.y, at.x, at.y, r, viewConfiguration.touchSlop, leaveTolerance)
+                        // Not the wheel's: nothing of it has been taken but its first contact.
+                        if (touch == WheelTouch.NOT_THE_WHEELS) return@awaitEachGesture
+                        hue.floatValue = wheelTouchHue(touch, before, hue.floatValue, at.x, at.y, r)
+                        // Given up: the color the finger found is stored again at once, over anything written since.
+                        if (touch == WheelTouch.GIVEN_UP && was != WheelTouch.GIVEN_UP) writes.write(before)
                         if (touch != WheelTouch.UNDECIDED) change.consume()
                     }
                     // Let go: what is drawn is written now.
@@ -405,16 +397,6 @@ private val WHEEL_TOLERANCE = 8.dp
  * gets to start on it, since a finger that follows the ring round wanders more than one that is put down on it.
  */
 private val WHEEL_LEAVE_TOLERANCE = 16.dp
-
-/** What a touch that went down on the wheel is. */
-private enum class WheelTouch {
-    /** It has not moved far enough to be a drag: a tap or a rest so far. */
-    UNDECIDED,
-    /** A drag on the wheel: the color follows the finger. */
-    RECOLOR,
-    /** A drag that left the wheel toward the middle: the color is back where it was and stays there. */
-    GIVEN_UP,
-}
 
 /** One click of the emulator's crown is 128 pixels: 32 degrees of hue, about eleven clicks to the turn. */
 private const val CROWN_DEG_PER_PIXEL = 0.25f

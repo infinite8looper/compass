@@ -85,6 +85,66 @@ fun staysOnWheel(touchRadius: Float, screenRadius: Float, tolerance: Float): Boo
 fun isBackSwipe(dxFromDown: Float, screenWidth: Float): Boolean =
     !dxFromDown.isNaN() && screenWidth > 0f && dxFromDown > screenWidth / 2f
 
+/** What a touch that went down on the wheel is, as it goes on. */
+enum class WheelTouch {
+    /** It has not moved far enough to be a drag: a tap or a rest so far. */
+    UNDECIDED,
+    /** A drag on the wheel: the color follows the finger. */
+    RECOLOR,
+    /** A drag that was on the wheel and left it toward the middle: the color is back where it was and stays there. */
+    GIVEN_UP,
+    /** A drag that set off toward the middle: an ordinary swipe, which the wheel leaves alone. */
+    NOT_THE_WHEELS,
+}
+
+/**
+ * What a touch on the wheel is after its next sample. The touch went down [downDx] to the right of and [downDy]
+ * below the center, and the finger is now at ([dx], [dy]) from the center, on a screen of radius [screenRadius].
+ *
+ * Undecided, it stays so until it is more than [slop] from where it went down. Then it is the wheel's if it has
+ * moved along the wheel ([isAlongWheel]) and not otherwise. The wheel's, it recolors for as long as the finger
+ * stays on the wheel ([staysOnWheel], with [leaveTolerance]), out over the rim included. Once it has left toward
+ * the middle it is given up, and coming back onto the wheel does not change that. A touch that is not the wheel's
+ * stays so. A sample with no place changes nothing.
+ */
+fun nextWheelTouch(
+    current: WheelTouch, downDx: Float, downDy: Float, dx: Float, dy: Float, screenRadius: Float, slop: Float, leaveTolerance: Float,
+): WheelTouch {
+    if (dx.isNaN() || dy.isNaN()) return current
+    val decided = when (current) {
+        WheelTouch.UNDECIDED -> {
+            val moveDx = dx - downDx
+            val moveDy = dy - downDy
+            when {
+                hypot(moveDx, moveDy).let { it.isNaN() || it <= slop } -> return WheelTouch.UNDECIDED
+                isAlongWheel(downDx, downDy, moveDx, moveDy) -> WheelTouch.RECOLOR
+                else -> WheelTouch.NOT_THE_WHEELS
+            }
+        }
+        else -> current
+    }
+    return if (decided == WheelTouch.RECOLOR && !staysOnWheel(hypot(dx, dy), screenRadius, leaveTolerance)) WheelTouch.GIVEN_UP else decided
+}
+
+/**
+ * The color to draw after a sample of a touch on the wheel: under the finger while the touch recolors (the last
+ * color, where the finger names none), the color the finger found when it came down ([hueAtDown]) once the touch
+ * is given up, and otherwise [hueNow], unchanged.
+ */
+fun wheelTouchHue(touch: WheelTouch, hueAtDown: Float, hueNow: Float, dx: Float, dy: Float, screenRadius: Float): Float = when (touch) {
+    WheelTouch.RECOLOR -> wheelHue(dx, dy, screenRadius) ?: hueNow
+    WheelTouch.GIVEN_UP -> hueAtDown
+    WheelTouch.UNDECIDED, WheelTouch.NOT_THE_WHEELS -> hueNow
+}
+
+/**
+ * Whether a touch on the wheel that lifts after [heldMs] is a tap, which picks the color it landed on: only one
+ * that never became a drag and was shorter than the long-press time. A finger that rests on the wheel and is
+ * lifted again picks nothing.
+ */
+fun wheelTapPicks(touch: WheelTouch, heldMs: Long, longPressMs: Long): Boolean =
+    touch == WheelTouch.UNDECIDED && heldMs in 0 until longPressMs
+
 /**
  * The hue under a finger that is [dx] to the right of and [dy] below the center of a screen of radius
  * [screenRadius]: 0 at 12 o'clock, growing clockwise, below 360. Null within [WHEEL_DEAD_CENTER] of the center.

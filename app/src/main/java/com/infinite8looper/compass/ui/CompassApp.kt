@@ -32,9 +32,7 @@ import com.infinite8looper.compass.nav.backPage
 import com.infinite8looper.compass.nav.pageToward
 import com.infinite8looper.compass.nav.pageView
 import com.infinite8looper.compass.nav.paneOf
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 
 @Composable
@@ -99,29 +97,19 @@ private fun Panes(vm: CompassViewModel, panes: PagerState, onLogHere: () -> Unit
     // Backs made close together each count. The page the Backs so far lead to is kept here while the row slides
     // there, and a Back that comes meanwhile moves it one page on. One slide runs at a time and goes on to the page
     // kept here when it ends: a second slide started over the first would stop it half way.
-    // A slide can be stopped from outside. A finger on the screens does it; and a slide from waypoints on through
-    // the compass was stopped at the compass every time it was tried, with no finger, by something this code does
-    // not start. A slide that was stopped is started again, a few times at most: a finger that holds the screens
-    // wins, and a slide stopped on its way is finished.
     val backSlide = remember(panes) { object { var to: Int? = null; var job: Job? = null } }
     BackHandler {
         backSlide.to = backPage(panes.currentPage, backSlide.to ?: panes.targetPage, backSlide.to != null || panes.isScrollInProgress)
         if (backSlide.job?.isActive != true) {
             backSlide.job = scope.launch {
-                var stopped = 0
                 try {
                     while (true) {
                         val to = backSlide.to ?: break
-                        try {
-                            panes.animateScrollToPage(to)
-                            if (backSlide.to == to) backSlide.to = null
-                        } catch (e: CancellationException) {
-                            // This coroutine's own end passes on; a slide that something else stopped does not.
-                            ensureActive()
-                            if (++stopped > BACK_SLIDE_RESTARTS) break
-                        }
+                        panes.animateScrollToPage(to)
+                        if (backSlide.to == to) backSlide.to = null
                     }
                 } finally {
+                    // Ended, or stopped by a finger on the screens: nothing is owed.
                     backSlide.to = null
                 }
             }
@@ -182,9 +170,6 @@ private val EveryTouchPages = object : GestureInclusion {
 
 /** The route of the three side-by-side screens, the navigation host's first destination. */
 private const val PANES_ROUTE = "panes"
-
-/** How many times a slide that Back started is started again after something else has stopped it. */
-private const val BACK_SLIDE_RESTARTS = 3
 
 /** The route of the screen that edits the waypoint with the given id. */
 private const val EDIT_ROUTE = "edit/{id}"

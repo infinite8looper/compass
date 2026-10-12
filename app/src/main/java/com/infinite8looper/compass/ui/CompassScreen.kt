@@ -8,7 +8,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.focusable
+import androidx.compose.ui.focus.focusTarget
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -224,7 +224,11 @@ fun CompassScreen(
             .onPreviewKeyEvent { e ->
                 sideButton.onKey(e.nativeKeyEvent, onPress = { if (paneView() == PaneView.IN_VIEW) onLogHere() })
             }
-            .requestFocusOnHierarchyActive().focusable()
+            // A plain focus target, not `focusable()`: that one also asks, on taking the focus, to be brought into
+            // view, and the pager answers by scrolling to this page. The pager gives a page the focus half way
+            // through a slide, so that scroll stopped every slide the app itself made onto the compass (Back from
+            // waypoints, a second Back on through it) at the half-way point.
+            .requestFocusOnHierarchyActive().focusTarget()
             // Three gestures start on the dial, and a touch becomes at most one of them. A sideways swipe is the
             // pager's, around this screen. The two below are the compass's own: a vertical swipe moves the focus
             // among the targets, and a long press opens the waypoints. Whichever of the pager and the vertical

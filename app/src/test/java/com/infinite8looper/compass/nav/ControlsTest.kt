@@ -290,4 +290,106 @@ class ControlsTest {
         assertFalse(isBackSwipe(300f, 0f))
         assertFalse(isBackSwipe(300f, Float.NaN))
     }
+
+    // A touch on the wheel, sample by sample. The screen's radius is 100, the wheel's band starts at 86, a drag
+    // begins 8 from where the finger came down, and a drag may stray 16 inside the band.
+    private fun step(touch: WheelTouch, downX: Float, downY: Float, x: Float, y: Float) =
+        nextWheelTouch(touch, downX, downY, x, y, screenRadius = 100f, slop = 8f, leaveTolerance = 16f)
+    private fun follow(downX: Float, downY: Float, vararg path: Pair<Float, Float>): List<WheelTouch> {
+        var touch = WheelTouch.UNDECIDED
+        return path.map { (x, y) -> step(touch, downX, downY, x, y).also { touch = it } }
+    }
+    private fun onRing(degrees: Float, radius: Float = 92f): Pair<Float, Float> {
+        val a = Math.toRadians(degrees.toDouble())
+        return (radius * Math.sin(a)).toFloat() to (-radius * Math.cos(a)).toFloat()
+    }
+
+    @Test fun aTouchThatHasNotMovedFarIsUndecided() {
+        assertEquals(WheelTouch.UNDECIDED, step(WheelTouch.UNDECIDED, 0f, -92f, 0f, -92f))
+        assertEquals(WheelTouch.UNDECIDED, step(WheelTouch.UNDECIDED, 0f, -92f, 7.9f, -92f))
+        assertEquals(WheelTouch.UNDECIDED, step(WheelTouch.UNDECIDED, 0f, -92f, 8f, -92f))
+        assertEquals(WheelTouch.RECOLOR, step(WheelTouch.UNDECIDED, 0f, -92f, 8.1f, -92f))
+    }
+
+    @Test fun aDragRoundTheWheelRecolorsAllTheWay() {
+        val (dx, dy) = onRing(30f)
+        val states = follow(dx, dy, *(31..120).map { onRing(it.toFloat()) }.toTypedArray())
+        assertEquals(WheelTouch.UNDECIDED, states.first())
+        assertEquals(WheelTouch.RECOLOR, states.last())
+        assertTrue(states.dropWhile { it == WheelTouch.UNDECIDED }.all { it == WheelTouch.RECOLOR })
+    }
+
+    @Test fun aSwipeInFromTheEdgeIsNeverTheWheels() {
+        val states = follow(-95f, 0f, -90f to 0f, -80f to 0f, -40f to 0f, 0f to 0f, 60f to 0f, 92f to 0f)
+        assertEquals(WheelTouch.UNDECIDED, states[0])
+        assertTrue(states.drop(1).all { it == WheelTouch.NOT_THE_WHEELS })
+    }
+
+    @Test fun aDragThatLeavesTheWheelInwardIsGivenUpAndStaysSoOnComingBack() {
+        // Along the wheel from 9 o'clock, then in to the middle, then out to the band again and round it.
+        val states = follow(-92f, 0f, -92f to -12f, -90f to -20f, -71f to -15f, -68f to -10f, -30f to 0f, -92f to 0f, -92f to 20f, -65f to 65f)
+        assertEquals(listOf(WheelTouch.RECOLOR, WheelTouch.RECOLOR, WheelTouch.RECOLOR), states.take(3))
+        // 70 from the center is the limit (86 - 16); just inside it the drag has left.
+        assertEquals(WheelTouch.GIVEN_UP, states[3])
+        assertTrue(states.drop(3).all { it == WheelTouch.GIVEN_UP })
+    }
+
+    @Test fun aDragThatGoesOutOverTheRimStillRecolors() {
+        val states = follow(0f, -92f, 12f to -92f, 30f to -100f, 60f to -120f, 80f to -140f)
+        assertTrue(states.all { it == WheelTouch.RECOLOR })
+    }
+
+    @Test fun aTouchThatIsNotTheWheelsStaysSo() {
+        assertEquals(WheelTouch.NOT_THE_WHEELS, step(WheelTouch.NOT_THE_WHEELS, -95f, 0f, -92f, 30f))
+        assertEquals(WheelTouch.NOT_THE_WHEELS, step(WheelTouch.NOT_THE_WHEELS, -95f, 0f, 0f, -92f))
+    }
+
+    @Test fun aSampleWithNoPlaceChangesNothing() {
+        assertEquals(WheelTouch.UNDECIDED, step(WheelTouch.UNDECIDED, 0f, -92f, Float.NaN, -92f))
+        assertEquals(WheelTouch.RECOLOR, step(WheelTouch.RECOLOR, 0f, -92f, Float.NaN, Float.NaN))
+    }
+
+    @Test fun theColorFollowsTheFingerOnlyWhileTheDragRecolors() {
+        val (x, y) = onRing(120f)
+        assertEquals(120f, wheelTouchHue(WheelTouch.RECOLOR, hueAtDown = 30f, hueNow = 90f, dx = x, dy = y, screenRadius = 100f), 1e-2f)
+        assertEquals(90f, wheelTouchHue(WheelTouch.UNDECIDED, 30f, 90f, x, y, 100f), 0f)
+        assertEquals(90f, wheelTouchHue(WheelTouch.NOT_THE_WHEELS, 30f, 90f, x, y, 100f), 0f)
+    }
+
+    @Test fun liftedBeyondTheRimTheColorIsKept() {
+        // The drag went round to 120 and out over the rim there: the last color drawn stands.
+        val (x, y) = onRing(120f, radius = 130f)
+        assertEquals(WheelTouch.RECOLOR, step(WheelTouch.RECOLOR, 0f, -92f, x, y))
+        assertEquals(120f, wheelTouchHue(WheelTouch.RECOLOR, hueAtDown = 30f, hueNow = 118f, dx = x, dy = y, screenRadius = 100f), 1e-2f)
+    }
+
+    @Test fun onceGivenUpTheColorIsWhatItWasWhenTheFingerCameDown() {
+        val (x, y) = onRing(200f)
+        assertEquals(30f, wheelTouchHue(WheelTouch.GIVEN_UP, hueAtDown = 30f, hueNow = 150f, dx = x, dy = y, screenRadius = 100f), 0f)
+        assertEquals(30f, wheelTouchHue(WheelTouch.GIVEN_UP, 30f, 150f, 0f, 0f, 100f), 0f)
+        // Lifted in the middle after a drag that left the wheel: the whole touch ends on the color it began with.
+        var touch = WheelTouch.UNDECIDED
+        var hue = 30f
+        for ((px, py) in listOf(-92f to -12f, -90f to -20f, -60f to -10f, 0f to 0f)) {
+            touch = step(touch, -92f, 0f, px, py)
+            hue = wheelTouchHue(touch, 30f, hue, px, py, 100f)
+        }
+        assertEquals(WheelTouch.GIVEN_UP, touch)
+        assertEquals(30f, hue, 0f)
+    }
+
+    @Test fun aRecoloringFingerNearTheCenterKeepsTheLastColor() {
+        assertEquals(90f, wheelTouchHue(WheelTouch.RECOLOR, 30f, 90f, 5f, 5f, 100f), 0f)
+    }
+
+    @Test fun onlyAQuickTouchThatNeverMovedIsATap() {
+        assertTrue(wheelTapPicks(WheelTouch.UNDECIDED, heldMs = 120, longPressMs = 400))
+        assertTrue(wheelTapPicks(WheelTouch.UNDECIDED, 399, 400))
+        assertFalse(wheelTapPicks(WheelTouch.UNDECIDED, 400, 400))
+        assertFalse(wheelTapPicks(WheelTouch.UNDECIDED, 900, 400))
+        assertFalse(wheelTapPicks(WheelTouch.RECOLOR, 120, 400))
+        assertFalse(wheelTapPicks(WheelTouch.GIVEN_UP, 120, 400))
+        assertFalse(wheelTapPicks(WheelTouch.NOT_THE_WHEELS, 120, 400))
+        assertFalse(wheelTapPicks(WheelTouch.UNDECIDED, -5, 400))
+    }
 }
