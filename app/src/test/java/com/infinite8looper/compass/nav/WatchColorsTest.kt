@@ -56,9 +56,18 @@ class WatchColorsTest {
         // Just enough and no more: it stops within a step of the least contrast.
         assertTrue(contrastOnBlack(accent) < MIN_CONTRAST + 0.15)
         assertEquals(240f, hueOf(accent), 1.5f)
-        // Lightened, never darkened: no channel went down.
-        assertTrue((accent shr 16 and 0xFF) >= 0x00 && (accent shr 8 and 0xFF) >= 0x00 && (accent and 0xFF) >= 0x80)
         assertTrue(saturationOf(accent) >= MIN_SATURATION)
+    }
+    @Test fun lighteningNeverTakesAChannelDown() {
+        // Dark colors with something in every channel, so each of the three comparisons can fail.
+        for (dark in listOf(0x402010, 0x103050, 0x083A12, 0x30103A, 0x000080)) {
+            val accent = roles(dark, paleRed).accent
+            assertNotEquals(dark, accent)
+            assertTrue("%06X red".format(dark), (accent shr 16 and 0xFF) > (dark shr 16 and 0xFF))
+            assertTrue("%06X green".format(dark), (accent shr 8 and 0xFF) > (dark shr 8 and 0xFF))
+            assertTrue("%06X blue".format(dark), (accent and 0xFF) >= (dark and 0xFF))
+            assertTrue(contrastOnBlack(accent) >= MIN_CONTRAST)
+        }
     }
     @Test fun pureBlueIsTooDarkAndIsLightened() {
         val accent = roles(0x0000FF, paleRed).accent
@@ -217,14 +226,97 @@ class WatchColorsTest {
         assertEquals(0xFF5040, roles.accent)
         assertEquals(MIN_HUE_APART, hueApart(roles.accent, roles.north), 1.5f)
     }
-    @Test fun whenTheBlueStandsInForAGrayPrimaryNorthIsKeptApartFromTheBlue() {
-        val roles = roles(0x808080, 0x2F6BFF)
-        assertEquals(blue, roles.accent)
-        assertEquals(MIN_HUE_APART, hueApart(blue, roles.north), 1.5f)
+    // A primary that cannot be used: all three are the app's own
+
+    @Test fun aSchemeWhosePrimaryIsRejectedGivesTheWholeFallbackSet() {
+        val own = roleColors(null)
+        // A gray primary beside a tertiary and an error color that could both have been used.
+        assertEquals(own, roles(0x808080, 0x2F6BFF, paleRed))
+        assertEquals(own, roles(0x808080, 0xFF7AA8, 0xFFBEB9))
+        // A near-black one, and one just under the least saturation.
+        assertEquals(own, roles(0x101010, 0xFF7AA8, paleRed))
+        assertEquals(own, roles(0xDBDBFF, 0xFF7AA8, paleRed))
+        // The fixed colors of the Wear OS 5.1 image: its primary has 0.149.
+        assertEquals(own, roles(0xD9E2FF, 0xFDD7FA, 0xF2B8B5))
     }
-    @Test fun theErrorColorIsNotMovedForNorthOrForThePointer() {
-        // The scheme's error color is used as it is, whether or not it matches north or the pointer.
-        assertEquals(paleRed, roles(paleBlue, paleRed, error = paleRed).error)
-        assertEquals(paleRed, roles(0xFFBEC7, 0xFDC3EF, error = paleRed).error)
+    @Test fun aPrimaryThatOnlyHadToBeLightenedKeepsTheScheme() {
+        val roles = roles(0x000080, 0xFF7AA8, paleRed)
+        assertEquals(240f, hueOf(roles.accent), 1.5f)
+        assertEquals(0xFF7AA8, roles.north)
+        assertEquals(paleRed, roles.error)
+    }
+    @Test fun aRejectedTertiaryOrErrorColorAloneCostsOnlyItsOwnRole() {
+        assertEquals(RoleColors(paleBlue, red, paleRed), roles(paleBlue, 0x808080, paleRed))
+        assertEquals(paleBlue, roles(paleBlue, 0xFF7AA8, 0x909090).accent)
+        assertEquals(0xFF7AA8, roles(paleBlue, 0xFF7AA8, 0x909090).north)
+        assertEquals(red, roles(paleBlue, 0xFF7AA8, 0x909090).error)
+    }
+
+    // The error color apart from the accent
+
+    @Test fun anErrorColorThatLooksLikeTheAccentGivesTheRed() {
+        assertEquals(60f, ERROR_MIN_HUE_APART, 0f)
+        assertEquals(0.3f, ERROR_MIN_SATURATION_APART, 0f)
+        // The pink scheme: 13 degrees of hue and 0.02 of saturation apart.
+        assertEquals(13f, hueApart(0xFFBEC7, 0xFFBEB9), 1f)
+        val pink = roles(0xFFBEC7, 0xFDC3EF, 0xFFBEB9)
+        assertEquals(0xFFBEC7, pink.accent)
+        assertEquals(red, pink.error)
+        // Close in hue and as pale: 43 degrees apart at the same saturation.
+        assertEquals(red, roles(0x76FF76, 0xFF7AA8, 0xD8FF76).error)
+        // The same color.
+        assertEquals(red, roles(0xFFBEB9, 0x7AA8FF, 0xFFBEB9).error)
+    }
+    @Test fun anErrorColorFarFromTheAccentInHueIsKept() {
+        assertEquals(paleRed, roles(paleBlue, paleViolet, paleRed).error)
+        assertEquals(paleRed, roles(0xB8FEC4, 0xFFBCD7, paleRed).error)
+        // Exactly the least angle away, at the same saturation: 120 and 60 degrees.
+        assertEquals(0xFFFF76, roles(0x76FF76, 0xFF7AA8, 0xFFFF76).error)
+    }
+    @Test fun anErrorColorCloseInHueButFarInSaturationIsKept() {
+        // A strong red pointer and the pale red: 1 degree apart, 0.48 of saturation apart.
+        assertEquals(paleRed, roles(0xFF5040, 0x808080, paleRed).error)
+        // A pale pink pointer and a strong red: 0.31 apart.
+        assertEquals(0xFF7070, roles(0xFFBEC7, 0xFDC3EF, 0xFF7070).error)
+        // 0.29 apart is not enough.
+        assertEquals(red, roles(0xFFBEC7, 0xFDC3EF, 0xFF7575).error)
+    }
+    @Test fun theErrorColorIsNotComparedWithNorth() {
+        // North is made from a tertiary equal to the error color, and both stand.
+        val roles = roles(paleBlue, 0xFF7070, 0xFF7070)
+        assertEquals(0xFF7070, roles.north)
+        assertEquals(0xFF7070, roles.error)
+    }
+    @Test fun theAppsOwnSetIsUnchangedByEveryRule() {
+        assertEquals(RoleColors(blue, red, red), roleColors(null))
+        assertEquals(RoleColors(blue, red, red), roles(blue, red, red))
+        assertTrue(hueApart(blue, red) >= ERROR_MIN_HUE_APART)
+    }
+
+    // North keeps its depth
+
+    @Test fun aNorthThatHadToBeBrightenedStillHasItsLeastSaturation() {
+        // A green pointer and a tertiary that is nearly black: lightened, turned and deepened it was too dark, and
+        // mixing it with white once more left it at 0.33.
+        val north = roles(0x35BF99, 0x18072E).north
+        assertTrue("%06X".format(north), saturationOf(north) >= NORTH_MIN_SATURATION - 0.01f)
+        assertTrue(contrastOnBlack(north) >= MIN_CONTRAST)
+        assertTrue(hueApart(roles(0x35BF99, 0x18072E).accent, north) >= MIN_HUE_APART - 1.5f)
+    }
+    @Test fun everySchemeGivesANorthThatReadsIsDeepAndIsApartFromThePointer() {
+        // The least saturation is met to within 0.01, which is what whole channel values can hold at low brightness.
+        val channel = listOf(0x00, 0x18, 0x35, 0x6A, 0x99, 0xBF, 0xFF)
+        val colors = channel.flatMap { r -> channel.flatMap { g -> channel.map { b -> (r shl 16) or (g shl 8) or b } } }
+        for (primary in listOf(0x35BF99, paleBlue, 0xFFBEC7, 0x000080, 0xFFD000, blue, 0x808080)) {
+            for (tertiary in colors) {
+                val roles = roles(primary, tertiary)
+                val what = "%06X %06X -> %s".format(primary, tertiary, roles)
+                assertTrue(what, contrastOnBlack(roles.north) >= MIN_CONTRAST)
+                assertTrue(what, contrastOnBlack(roles.accent) >= MIN_CONTRAST)
+                assertTrue(what, saturationOf(roles.north) >= NORTH_MIN_SATURATION - 0.01f)
+                // Whole channel values move a dark color's hue by up to about two degrees.
+                assertTrue(what, hueApart(roles.accent, roles.north) >= MIN_HUE_APART - 3f)
+            }
+        }
     }
 }

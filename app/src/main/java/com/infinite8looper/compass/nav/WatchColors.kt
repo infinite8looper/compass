@@ -29,11 +29,18 @@ const val MIN_SATURATION = 0.15f
 const val MIN_HUE_APART = 60f
 
 /**
- * North has at least this much saturation. It is one heavy tick among heavy ticks in the ink color, and the colors
+ * North has at least this much saturation, whatever else is done to it. It is one heavy tick among heavy ticks in the ink color, and the colors
  * of a watch's scheme are pale (mostly 0.19 to 0.31 from the Wear OS 7.0 emulator's system), which next to the ink is
  * hard to pick out at a glance.
  */
 const val NORTH_MIN_SATURATION = 0.5f
+
+/**
+ * The error color is told from the accent by its hue or by how strong it is: one that is less than this many
+ * degrees of hue and less than [ERROR_MIN_SATURATION_APART] of saturation from the accent looks like it.
+ */
+const val ERROR_MIN_HUE_APART = 60f
+const val ERROR_MIN_SATURATION_APART = 0.3f
 
 /** The three colors the app reads from the watch's color scheme. */
 data class WatchScheme(val primary: Int, val tertiary: Int, val error: Int)
@@ -49,31 +56,58 @@ data class RoleColors(val accent: Int, val north: Int, val error: Int)
  *
  * - It must read on black. A color with less than [MIN_CONTRAST] is mixed with white, just far enough to have it,
  *   which keeps its hue.
- * - It must be a color. One with less than [MIN_SATURATION], as it stands or once lightened, gives its place to
- *   the app's own color for that role: a gray pointer could not be told from the ticks, nor a gray switch that is
- *   on from one that is off.
+ * - It must be a color: one with less than [MIN_SATURATION], as it stands or once lightened, is not used. A gray
+ *   pointer could not be told from the ticks, nor a gray switch that is on from one that is off.
  *
- * Then north is kept apart from the accent, whatever the two came from. If their hues are less than
- * [MIN_HUE_APART] apart, north's hue is turned to exactly that far from the accent's, the way round it already
- * leans (clockwise when the two are the same), keeping how pale and how bright it was.
+ * A scheme whose primary is not used is not used at all: all three colors are the app's own, so the app's blue
+ * never stands beside a north from the watch. A tertiary or an error color that is not used gives only its own
+ * role the app's red.
  *
- * Last, north alone is deepened: with less than [NORTH_MIN_SATURATION] it is given that much, keeping its hue and
- * its brightness. If turning or deepening left it too dark to read on black it is lightened again, which comes
- * last, so reading on black is never given up for the other two.
+ * Then north is kept apart from the accent. If their hues are less than [MIN_HUE_APART] apart, north's hue is
+ * turned to exactly that far from the accent's, the way round it already leans (clockwise when the two are the
+ * same). North alone is also deepened: with less than [NORTH_MIN_SATURATION] it is given that much, at its own
+ * hue. If turning or deepening left it too dark to read on black it is made brighter at the saturation it has,
+ * and only a north that is still too dark at full brightness is mixed with white, which stops above
+ * [NORTH_MIN_SATURATION] at every hue. So north always reads, is always that deep and is always that far round.
  *
- * The error color is not compared with the other two: it may match north, as the app's own red does.
+ * Last, an error color that looks like the accent (less than [ERROR_MIN_HUE_APART] of hue and less than
+ * [ERROR_MIN_SATURATION_APART] of saturation from it) gives its place to the app's red, so that deleting is not
+ * drawn like something to tap. The error color is not compared with north: it may match it, as the app's own red
+ * does.
  */
 fun roleColors(scheme: WatchScheme?): RoleColors {
-    if (scheme == null) return RoleColors(FALLBACK_ACCENT, FALLBACK_NORTH, FALLBACK_ERROR)
-    val accent = usable(scheme.primary, FALLBACK_ACCENT)
-    val north = readable(deepened(apartFrom(accent, usable(scheme.tertiary, FALLBACK_NORTH))))
-    return RoleColors(accent, north, usable(scheme.error, FALLBACK_ERROR))
+    val own = RoleColors(FALLBACK_ACCENT, FALLBACK_NORTH, FALLBACK_ERROR)
+    val accent = scheme?.let { usable(it.primary) } ?: return own
+    val north = brightEnough(deepened(apartFrom(accent, usable(scheme.tertiary) ?: FALLBACK_NORTH)))
+    val error = usable(scheme.error)?.takeUnless { looksLike(it, accent) } ?: FALLBACK_ERROR
+    return RoleColors(accent, north, error)
 }
 
-/** [rgb] lightened until it reads on black, or [fallback] when that leaves a gray. */
-private fun usable(rgb: Int, fallback: Int): Int {
-    val light = readable(rgb and 0xFFFFFF)
-    return if (saturationOf(light) < MIN_SATURATION) fallback else light
+/** [rgb] lightened until it reads on black, or null when that leaves a gray. */
+private fun usable(rgb: Int): Int? = readable(rgb and 0xFFFFFF).takeUnless { saturationOf(it) < MIN_SATURATION }
+
+/** Whether [error] is too near [accent] in both hue and saturation to be told from it. */
+private fun looksLike(error: Int, accent: Int): Boolean =
+    hueApart(error, accent) < ERROR_MIN_HUE_APART && abs(saturationOf(error) - saturationOf(accent)) < ERROR_MIN_SATURATION_APART
+
+/**
+ * [north] if it has [MIN_CONTRAST] on black; otherwise the same hue and saturation at the least brightness that
+ * has it; and if full brightness is not enough, that color mixed with white as far as needed.
+ */
+private fun brightEnough(north: Int): Int {
+    if (contrastOnBlack(north) >= MIN_CONTRAST) return north
+    val hue = hueOf(north)
+    val saturation = saturationOf(north)
+    val full = fromHsv(hue, saturation, 1f)
+    if (contrastOnBlack(full) < MIN_CONTRAST) return readable(full)
+    // Brighter is always lighter, so the least brightness that is enough is found by halving.
+    var low = valueOf(north)
+    var high = 1f
+    repeat(16) {
+        val mid = (low + high) / 2f
+        if (contrastOnBlack(fromHsv(hue, saturation, mid)) >= MIN_CONTRAST) high = mid else low = mid
+    }
+    return fromHsv(hue, saturation, high)
 }
 
 /** [rgb] if it has [MIN_CONTRAST] on black, and otherwise the least mix of it with white that has. */

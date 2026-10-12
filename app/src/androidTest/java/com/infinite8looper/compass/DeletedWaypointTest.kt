@@ -47,12 +47,13 @@ class DeletedWaypointTest {
 
     private fun removeFiles() {
         for (n in listOf(name, sourceName)) { ctx.deleteDatabase(n); marker(n).delete() }
-        scripts().forEach { it.delete() }
+        heldCopies().forEach { it.delete() }
     }
 
     /** Where the app records that the database of that name has been rebuilt; this folder is never backed up. */
     private fun marker(dbName: String) = File(ctx.noBackupFilesDir, "$dbName.sanitized")
-    private fun scripts() = listOf(File(ctx.filesDir, "hot-journal.sql"), File(ctx.filesDir, "hot-journal.sh"))
+    /** Where the hot-journal test keeps the database and its journal as they were in the middle of a transaction. */
+    private fun heldCopies() = listOf(File(ctx.filesDir, "hot-journal-held.db"), File(ctx.filesDir, "hot-journal-held.db-journal"))
 
     private fun isEmulator() = Build.HARDWARE in setOf("ranchu", "goldfish") || Build.PRODUCT.startsWith("sdk_")
 
@@ -489,9 +490,13 @@ class DeletedWaypointTest {
     }
 
     /**
-     * A real hot journal: another process (the device's sqlite3 tool, started through the shell) changes the
-     * database inside a transaction large enough to be written into the main file early, and is killed before it
-     * commits. What that transaction wrote, and the journal it left, must not be in the files at the time of a copy.
+     * A real hot journal: the database file and the journal as a process leaves them when it is killed in the
+     * middle of a transaction large enough to have been written into the main file early. They are made here, in
+     * the test's own process, so the test needs no tool on the device: a plain connection of the platform's, with
+     * a rollback journal and a cache of two pages, runs the statements inside a transaction; while the transaction
+     * is open the two files are copied; the connection then rolls back and closes, and the copies are put where
+     * the files were. What that transaction wrote, and the journal it left, must not be in the files at the time
+     * of a copy.
      */
     @Test fun hotJournalFromAKilledProcessDoesNotReachACopy() = runBlocking {
         val file = ctx.getDatabasePath(name)
@@ -502,28 +507,41 @@ class DeletedWaypointTest {
         first.close()
         val sizeBefore = file.length()
 
-        val (sql, script) = scripts()
-        sql.writeText(
-            "PRAGMA cache_size = 2;\nBEGIN;\n" +
-                "UPDATE waypoints SET name = 'Hotjournalname' WHERE name = '${kept[0]}';\n" +
-                "DELETE FROM waypoints WHERE name = '${kept[1]}';\n" +
-                "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 3000) " +
-                "INSERT INTO waypoints(name, lat, lon, accuracyM, createdAt, hue, isTarget) " +
-                "SELECT 'Spillfiller' || i, 0, 0, 0, i, 0, 0 FROM n;\n",
-        )
-        script.writeText("(cat ${sql.path}; sleep 30) | sqlite3 ${file.path}\n")
-        val pkg = ctx.packageName
-        val running = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand("run-as $pkg sh ${script.path}")
+        val (heldFile, heldJournal) = heldCopies()
+        val raw = SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READWRITE)
         try {
-            // Wait until the uncommitted changes are in the main file and the journal holds the old pages.
-            val deadline = System.currentTimeMillis() + 20_000
-            while ((journal.length() == 0L || file.length() <= sizeBefore) && System.currentTimeMillis() < deadline) Thread.sleep(100)
-            Thread.sleep(500)
+            raw.rawQuery("PRAGMA journal_mode = DELETE", null).use { c -> assertTrue(c.moveToFirst()); assertEquals("delete", c.getString(0)) }
+            raw.rawQuery("PRAGMA cache_size = 2", null).use { it.moveToFirst() }
+            raw.beginTransaction()
+            try {
+                raw.execSQL("UPDATE waypoints SET name = 'Hotjournalname' WHERE name = '${kept[0]}'")
+                raw.execSQL("DELETE FROM waypoints WHERE name = '${kept[1]}'")
+                raw.execSQL(
+                    "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 3000) " +
+                        "INSERT INTO waypoints(name, lat, lon, accuracyM, createdAt, hue, isTarget) " +
+                        "SELECT 'Spillfiller' || i, 0, 0, 0, i, 0, 0 FROM n",
+                )
+                // The transaction is open: its changes are in the main file already and the journal holds the old pages.
+                assertTrue("journal ${journal.length()} bytes in the open transaction", journal.length() > 0)
+                assertTrue("database ${file.length()} bytes, was $sizeBefore", file.length() > sizeBefore)
+                file.copyTo(heldFile, overwrite = true)
+                journal.copyTo(heldJournal, overwrite = true)
+            } finally {
+                // Not marked successful: the connection rolls its transaction back and removes its journal.
+                raw.endTransaction()
+            }
         } finally {
-            shell("run-as $pkg pkill -9 sqlite3")
-            shell("run-as $pkg pkill -9 sleep")
-            ParcelFileDescriptor.AutoCloseInputStream(running).use { it.readBytes() }
+            raw.close()
         }
+        // Closed in good order the database is whole again, which is not what is under test.
+        assertEquals(0L, journal.length())
+        assertEquals(sizeBefore, file.length())
+        // The copies are what a killed process would have left.
+        assertTrue("held journal ${heldJournal.length()} bytes", heldJournal.length() > 0)
+        assertTrue(occurrences(heldJournal.readBytes(), kept[0]) > 0)
+        assertTrue(occurrences(heldFile.readBytes(), "Spillfiller") > 0)
+        heldFile.copyTo(file, overwrite = true)
+        heldJournal.copyTo(journal, overwrite = true)
         // Controls: the journal is there with the old content, and the main file holds uncommitted rows.
         assertTrue("journal ${journal.length()} bytes", journal.length() > 0)
         assertTrue(WaypointDatabase.hasJournalData(file))

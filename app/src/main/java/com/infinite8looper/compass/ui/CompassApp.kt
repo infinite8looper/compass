@@ -1,6 +1,10 @@
 package com.infinite8looper.compass.ui
 
+import android.os.Build
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -9,13 +13,16 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.platform.LocalView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.wear.compose.foundation.BasicSwipeToDismissBox
 import androidx.wear.compose.foundation.GestureInclusion
 import androidx.wear.compose.foundation.pager.HorizontalPager
 import androidx.wear.compose.foundation.pager.PagerState
@@ -94,9 +101,11 @@ fun CompassApp() {
                 // screen is already gone, it finds no edit screen and does nothing.
                 val leave = { nav.popBackStack(EDIT_ROUTE, inclusive = true); Unit }
                 val id = entry.arguments?.getString("id")?.toLongOrNull()
-                if (id == null) LeaveOnce(leave) else EditScreen(vm, id, onDone = leave)
+                if (id == null) LeaveOnce(leave) else SwipeBack(leave) { EditScreen(vm, id, onDone = leave) }
             }
-            composable(CALIBRATE_ROUTE) { CalibrationScreen(vm) }
+            composable(CALIBRATE_ROUTE) {
+                SwipeBack(onLeave = { nav.popBackStack(CALIBRATE_ROUTE, inclusive = true) }) { CalibrationScreen(vm) }
+            }
         }
     }
 }
@@ -187,6 +196,27 @@ private fun KeepAwake(vm: CompassViewModel, compassInView: () -> Boolean) {
  */
 private val EveryTouchPages = object : GestureInclusion {
     override fun ignoreGestureStart(offset: Offset, layoutCoordinates: LayoutCoordinates): Boolean = false
+}
+
+/**
+ * Whether the navigation host leaves the right swipe that goes back to the system. Above API level 35 it does: it
+ * only listens for the system's back gesture, and this app's window has the system's swipe switched off (see
+ * res/values/themes.xml), so there no swipe would go back. This is the one place that knows the level.
+ */
+private val hostLeavesSwipeBackToSystem = Build.VERSION.SDK_INT > 35
+
+/**
+ * A screen opened from a row, with its swipe back. Up to API level 35 the navigation host swipes its screens back
+ * itself and [content] is shown as it is. Above that, [content] is put in the same swipe box the host uses on the
+ * older levels: a right swipe slides the screen away over black and then calls [onLeave], once. Back is the
+ * host's on every level.
+ */
+@Composable
+private fun SwipeBack(onLeave: () -> Unit, content: @Composable () -> Unit) {
+    if (!hostLeavesSwipeBackToSystem) content()
+    else BasicSwipeToDismissBox(onDismissed = onLeave) { isBackground ->
+        if (isBackground) Box(Modifier.fillMaxSize().background(Color.Black)) else content()
+    }
 }
 
 /** A route reached with an unusable id has nothing to show, so it goes back, once. */

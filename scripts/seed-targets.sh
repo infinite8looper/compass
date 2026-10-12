@@ -69,7 +69,12 @@ else
     fi
   done
   if [ -s "$work/waypoints.db" ]; then
-    count=$(sqlite3 "$work/waypoints.db" "PRAGMA wal_checkpoint(TRUNCATE); $sql PRAGMA journal_mode=DELETE; SELECT count(*) FROM waypoints;" 2>&1 | tail -1)
+    # The device's database is replaced only by a copy this machine's sqlite3 changed without an error and can
+    # count the rows of. Anything else stops here and leaves the device's files as they were.
+    if ! count=$(sqlite3 -bail "$work/waypoints.db" "PRAGMA wal_checkpoint(TRUNCATE); $sql PRAGMA journal_mode=DELETE; SELECT count(*) FROM waypoints;" 2>&1 | tail -1) || [[ "$count" != <-> ]]; then
+      echo "this machine's sqlite3 could not change the copy; the device's database is untouched: $count" >&2
+      exit 1
+    fi
     $ADB push "$work/waypoints.db" /data/local/tmp/seed-waypoints.db > /dev/null 2>&1 &&
       $ADB shell "run-as $PKG sh -c 'cp /data/local/tmp/seed-waypoints.db databases/waypoints.db && rm -f databases/waypoints.db-wal databases/waypoints.db-shm'" || count="could not copy the database back"
   fi
