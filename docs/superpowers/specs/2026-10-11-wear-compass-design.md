@@ -28,12 +28,12 @@ Success means:
 | Heading source | System fused rotation-vector sensor with light smoothing |
 | Drawing | One Compose Canvas |
 | Location | Google Play services fused location |
-| Storage | Room for waypoints, DataStore for settings |
+| Storage | Room for waypoints, DataStore for settings; the system backs both up when the wearer has backup turned on |
 | Package | `com.infinite8looper.compass`, min SDK 33, target SDK 35 |
 
 ## Out of scope
 
-Phone companion app, cloud sync or accounts, maps, track recording, tiles, complications, ambient mode, and any network access.
+Phone companion app, cloud sync or accounts of the app's own, maps, track recording, tiles, complications, ambient mode, and any network access by the app itself. (The system's backup of the app's data, described under Behavior, is done by the system.)
 
 ## Screens
 
@@ -96,6 +96,7 @@ The compass screen also shows a small prompt that leads here when the reported a
 - Units: metric or imperial, defaulting from the watch's locale.
 - Tick feedback (default on): a faint vibration as the heading crosses the dial's minor tick marks.
 - Show coordinates (default off): shows the current GPS position on the compass screen. Turning it on asks for location access with the system dialog if it has not been granted; if the wearer denies it, the switch stays off and a line under it says "Needs location access". If access is already granted it turns on without asking, and turning it off never asks for anything.
+- Back up waypoints (default on): includes the saved waypoints and settings in the watch's system backup and in device-to-device transfer. See "Backup and transfer" under Behavior for what turning it off does and does not do.
 - Calibrate.
 - About: version and the MIT license.
 
@@ -132,6 +133,16 @@ The wearer can change any waypoint's hue on the edit screen.
 
 If the permission is denied, the compass still works, and pressing the side button explains that waypoints need location access.
 
+### Backup and transfer
+
+The saved waypoints (the `waypoints.db` database) and the settings (the DataStore file `settings.preferences_pb`) are included in the system's cloud backup and in device-to-device transfer, so they come back on a replacement or reset watch. Nothing else is included. The system does the backup and the transfer; the app has no network permission and makes no network requests of its own.
+
+- The "Back up waypoints" switch in Settings controls both, and is on by default. The app's backup agent checks the switch each time the system asks for a backup, and with the switch off it hands over nothing.
+- If the app cannot read the switch at that moment, it hands over nothing.
+- Turning the switch off does not remove a backup that already exists in the system's backup storage by itself. On the emulator's local backup transport, a backup pass made with the switch off was rejected and the earlier backup was no longer restorable afterward (a restore brought back nothing); how the Google backup transport treats that case was not tested.
+- Changing the switch tells the system the app's data has changed; with the switch back on, the data is included from the next backup pass.
+- A restore brings back the waypoints with their names, positions, colors and target flags, and the settings; the next waypoint logged continues the numbering instead of reusing a number.
+
 ### Navigating
 
 - Any number of waypoints, up to all of them, can be targets at the same time. One position update refreshes every target's bearing and distance.
@@ -157,7 +168,7 @@ If the permission is denied, the compass still works, and pressing the side butt
 | `LocationSource` | One-shot fresh fix; periodic updates while navigating | Play services location |
 | `Navigation` | Pure functions: bearing, distance, declination correction, angle smoothing, distance formatting, hue assignment | Nothing from Android except the declination lookup, which sits behind one function |
 | `WaypointStore` | Create, read, update, delete waypoints | Room |
-| `SettingsStore` | North reference, units, tick feedback, show coordinates, focused target, last known position | DataStore |
+| `SettingsStore` | North reference, units, tick feedback, show coordinates, backup switch, focused target, last known position | DataStore |
 | `CompassViewModel` | Combines the above into one screen state | The units above |
 | One file per screen | Drawing and gestures | Compose for Wear OS |
 
@@ -192,5 +203,5 @@ These are stated from memory and are checked before code depends on them:
 
 - The app is marked standalone so it installs without a phone app.
 - The build produces a signed app bundle for Play.
-- The privacy statement needs to say that location is used only on the watch and is never transmitted. Wording for the Play listing and for `infinite8looper.github.io/privacy.html` is drafted for the owner's approval and not published without it.
+- The privacy statement has to match these facts: the app itself makes no network requests and requests no network permission; saved waypoints and settings are included in the watch's system backup and device-to-device transfer when the wearer has backup turned on and the "Back up waypoints" switch is on. Wording for the Play listing and for `infinite8looper.github.io/privacy.html` is drafted for the owner's approval and not published without it.
 - Uploading to Play and publishing are done only on the owner's explicit go-ahead.

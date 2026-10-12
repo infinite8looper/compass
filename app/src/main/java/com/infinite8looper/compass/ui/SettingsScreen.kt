@@ -11,6 +11,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
@@ -75,9 +76,17 @@ fun SettingsScreen(vm: CompassViewModel, onCalibrate: () -> Unit) {
                     label = { Text("Show coordinates") }, secondaryLabel = { Text("GPS position on the compass") },
                 )
             }
-            if (needsAccess) item { Text("Needs location access", color = NorthRed) }
+            if (needsAccess) item { Text("Needs location access", color = NorthRed, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) }
+            item {
+                SwitchButton(
+                    checked = nav.backupEnabled,
+                    onCheckedChange = { vm.setBackupEnabled(it) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Back up waypoints") }, secondaryLabel = { Text("With this watch's backup") },
+                )
+            }
             item { Button(onClick = onCalibrate, modifier = Modifier.fillMaxWidth()) { Text("Calibrate") } }
-            item { Text("Compass ${BuildConfig.VERSION_NAME}\nMIT License") }
+            item { Text("Compass ${BuildConfig.VERSION_NAME}\nMIT License", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) }
         }
     }
 }

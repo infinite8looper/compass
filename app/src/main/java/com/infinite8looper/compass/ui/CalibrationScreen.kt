@@ -10,6 +10,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -24,18 +25,30 @@ import androidx.wear.compose.material3.Text
 import com.infinite8looper.compass.CompassViewModel
 import com.infinite8looper.compass.nav.accuracyLabel
 import com.infinite8looper.compass.nav.isFieldNormal
+import com.infinite8looper.compass.sensors.HeadingReading
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
+/** What the screen shows. The sensor reports about 50 times a second; this changes about once a second. */
+private data class CalibrationView(val accuracy: Int?, val fieldMicroTesla: Int?, val interference: Boolean)
+
+private fun HeadingReading?.toView() = CalibrationView(
+    this?.accuracy, this?.fieldMicroTesla?.roundToInt(), this?.fieldMicroTesla?.let { !isFieldNormal(it) } ?: false,
+)
+
 @Composable
 fun CalibrationScreen(vm: CompassViewModel) {
-    val reading by vm.heading.collectAsStateWithLifecycle()
+    // Collect only the displayed values, so the screen recomposes when one of them changes, not on every reading.
+    val shown by remember(vm) { vm.heading.map { it.toView() }.distinctUntilChanged() }
+        .collectAsStateWithLifecycle(CalibrationView(null, null, false))
     val phase by rememberInfiniteTransition(label = "figure8")
         .animateFloat(0f, (2 * PI).toFloat(), infiniteRepeatable(tween(2600, easing = LinearEasing)), label = "t")
-    val accuracy = reading?.accuracy
-    val field = reading?.fieldMicroTesla
+    val accuracy = shown.accuracy
+    val field = shown.fieldMicroTesla
     Column(
         Modifier.fillMaxSize().background(Color.Black).padding(horizontal = 22.dp),
         verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally,
@@ -56,8 +69,8 @@ fun CalibrationScreen(vm: CompassViewModel) {
             color = if (accuracy != null && accuracy >= 2) Color(0xFF7BE07B) else NorthRed, fontSize = 13.sp,
         )
         if (field != null) {
-            Text("Field: ${field.roundToInt()} µT", color = Color(0xFF9E9E9E), fontSize = 10.sp)
-            if (!isFieldNormal(field)) {
+            Text("Field: $field µT", color = Color(0xFF9E9E9E), fontSize = 10.sp)
+            if (shown.interference) {
                 Text("Magnetic interference nearby. Move away from chargers, magnets and steel.",
                     color = NorthRed, fontSize = 10.sp, textAlign = TextAlign.Center)
             }

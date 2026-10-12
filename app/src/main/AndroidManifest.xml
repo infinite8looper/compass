@@ -7,7 +7,10 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
     <application
-        android:allowBackup="false"
+        android:allowBackup="true"
+        android:backupAgent=".data.SettingsBackupAgent"
+        android:fullBackupOnly="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:theme="@android:style/Theme.DeviceDefault">

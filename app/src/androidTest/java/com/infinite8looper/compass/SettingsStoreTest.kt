@@ -35,7 +35,7 @@ class SettingsStoreTest {
         val v = s.settings.first()
         assertEquals(NorthRef.TRUE, v.north); assertEquals(defaultUnits(Locale.getDefault()), v.units)
         assertNull(v.focusedId); assertNull(v.lastPosition); assertNull(v.lastAltitudeM)
-        assertTrue(v.tickFeedback); assertFalse(v.showCoordinates)
+        assertTrue(v.tickFeedback); assertFalse(v.showCoordinates); assertTrue(v.backupEnabled)
     }
     @Test fun valuesRoundTrip() = withStore { s, _ ->
         s.setNorth(NorthRef.MAGNETIC); s.setUnits(Units.IMPERIAL); s.setFocused(7)
@@ -52,6 +52,12 @@ class SettingsStoreTest {
         s.setTickFeedback(true); s.setShowCoordinates(false)
         v = s.settings.first()
         assertTrue(v.tickFeedback); assertFalse(v.showCoordinates)
+    }
+    @Test fun backupEnabledRoundTripsBothWays() = withStore { s, _ ->
+        s.setBackupEnabled(false)
+        assertFalse(s.settings.first().backupEnabled)
+        s.setBackupEnabled(true)
+        assertTrue(s.settings.first().backupEnabled)
     }
     @Test fun focusCanBeCleared() = withStore { s, _ ->
         s.setFocused(7); s.setFocused(null); assertNull(s.settings.first().focusedId)
@@ -74,7 +80,7 @@ class SettingsStoreTest {
             val v = s.settings.first()
             assertEquals(NorthRef.TRUE, v.north); assertEquals(defaultUnits(Locale.getDefault()), v.units)
             assertNull(v.focusedId); assertNull(v.lastPosition); assertNull(v.lastAltitudeM)
-            assertTrue(v.tickFeedback); assertFalse(v.showCoordinates)
+            assertTrue(v.tickFeedback); assertFalse(v.showCoordinates); assertTrue(v.backupEnabled)
             s.setNorth(NorthRef.MAGNETIC)
             assertEquals(NorthRef.MAGNETIC, s.settings.first().north)
         } finally { job.cancelAndJoin(); f.delete() }
@@ -86,7 +92,7 @@ class SettingsStoreTest {
             val first = SettingsStore(ctx, file, CoroutineScope(Dispatchers.IO + job1))
             first.setNorth(NorthRef.MAGNETIC); first.setUnits(Units.IMPERIAL); first.setFocused(42)
             first.setLastPosition(GeoPoint(43.7022, -72.2896), 160f)
-            first.setTickFeedback(false); first.setShowCoordinates(true)
+            first.setTickFeedback(false); first.setShowCoordinates(true); first.setBackupEnabled(false)
             assertEquals(listOf(1, 2), listOf(first.nextWaypointNumber(), first.nextWaypointNumber()))
             job1.cancelAndJoin()
             val second = SettingsStore(ctx, file, CoroutineScope(Dispatchers.IO + job2))
@@ -94,7 +100,7 @@ class SettingsStoreTest {
             assertEquals(NorthRef.MAGNETIC, v.north); assertEquals(Units.IMPERIAL, v.units); assertEquals(42L, v.focusedId)
             assertEquals(43.7022, v.lastPosition!!.lat, 1e-9); assertEquals(-72.2896, v.lastPosition.lon, 1e-9)
             assertEquals(160f, v.lastAltitudeM!!, 0f)
-            assertFalse(v.tickFeedback); assertTrue(v.showCoordinates)
+            assertFalse(v.tickFeedback); assertTrue(v.showCoordinates); assertFalse(v.backupEnabled)
             assertEquals(3, second.nextWaypointNumber())
         } finally { job1.cancelAndJoin(); job2.cancelAndJoin(); ctx.preferencesDataStoreFile(file).delete() }
     }

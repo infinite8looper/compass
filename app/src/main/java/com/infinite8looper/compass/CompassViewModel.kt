@@ -1,6 +1,7 @@
 package com.infinite8looper.compass
 
 import android.app.Application
+import android.app.backup.BackupManager
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -27,6 +28,7 @@ data class NavUi(
     val loaded: Boolean = true,
     val tickFeedback: Boolean = true,
     val showCoordinates: Boolean = false,
+    val backupEnabled: Boolean = true,
 ) {
     companion object {
         val EMPTY = NavUi(emptyList(), null, Units.METRIC, NorthRef.TRUE, null, null, emptyList(), emptyMap(), loaded = false)
@@ -76,7 +78,7 @@ class CompassViewModel(app: Application) : AndroidViewModel(app) {
         // Only a live fix gives distances; the saved last position is not presented as where the wearer is now.
         val distances = f?.let { live -> ws.associate { it.id to distanceMeters(live.point, GeoPoint(it.lat, it.lon)) } }.orEmpty()
         NavUi(targets, targets.firstOrNull { it.focused }, s.units, s.north, declination, f?.elapsedMs, ws, distances,
-            tickFeedback = s.tickFeedback, showCoordinates = s.showCoordinates)
+            tickFeedback = s.tickFeedback, showCoordinates = s.showCoordinates, backupEnabled = s.backupEnabled)
     }
         .catch { Log.w(TAG, "screen state stopped updating", it) }
         .stateIn(viewModelScope, sharing, NavUi.EMPTY)
@@ -121,6 +123,12 @@ class CompassViewModel(app: Application) : AndroidViewModel(app) {
     fun setUnits(u: Units) = launchQuietly("set units") { settingsStore.setUnits(u) }
     fun setTickFeedback(on: Boolean) = launchQuietly("set tick feedback") { settingsStore.setTickFeedback(on) }
     fun setShowCoordinates(on: Boolean) = launchQuietly("set show coordinates") { settingsStore.setShowCoordinates(on) }
+
+    fun setBackupEnabled(on: Boolean) = launchQuietly("set backup") {
+        settingsStore.setBackupEnabled(on)
+        // Tells the system the data is worth backing up again; the backup agent decides what is actually saved.
+        BackupManager.dataChanged(getApplication<Application>().packageName)
+    }
 
     /** Runs a write whose failure must not take the app down. Cancellation still propagates. */
     private suspend fun quietly(what: String, block: suspend () -> Unit) {

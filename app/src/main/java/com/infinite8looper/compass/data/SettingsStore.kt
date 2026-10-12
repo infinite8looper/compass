@@ -21,6 +21,7 @@ data class Settings(
     val north: NorthRef, val units: Units, val focusedId: Long?,
     val lastPosition: GeoPoint?, val lastAltitudeM: Float?,
     val tickFeedback: Boolean = true, val showCoordinates: Boolean = false,
+    val backupEnabled: Boolean = true,
 )
 
 fun defaultUnits(locale: Locale): Units =
@@ -47,6 +48,7 @@ class SettingsStore(
             lastAltitudeM = p[ALT],
             tickFeedback = p[TICK_FEEDBACK] ?: true,
             showCoordinates = p[SHOW_COORDINATES] ?: false,
+            backupEnabled = p[BACKUP_ENABLED] ?: true,
         )
     }
 
@@ -54,6 +56,7 @@ class SettingsStore(
     suspend fun setUnits(u: Units) { store.edit { it[IMPERIAL] = u == Units.IMPERIAL } }
     suspend fun setTickFeedback(on: Boolean) { store.edit { it[TICK_FEEDBACK] = on } }
     suspend fun setShowCoordinates(on: Boolean) { store.edit { it[SHOW_COORDINATES] = on } }
+    suspend fun setBackupEnabled(on: Boolean) { store.edit { it[BACKUP_ENABLED] = on } }
     suspend fun setFocused(id: Long?) { store.edit { if (id == null) it.remove(FOCUSED) else it[FOCUSED] = id } }
     suspend fun setLastPosition(p: GeoPoint, altitudeM: Float) {
         store.edit { it[LAT] = p.lat; it[LON] = p.lon; it[ALT] = altitudeM }
@@ -69,6 +72,7 @@ class SettingsStore(
         private val IMPERIAL = booleanPreferencesKey("imperial")
         private val TICK_FEEDBACK = booleanPreferencesKey("tick_feedback")
         private val SHOW_COORDINATES = booleanPreferencesKey("show_coordinates")
+        private val BACKUP_ENABLED = booleanPreferencesKey("backup_enabled")
         private val FOCUSED = longPreferencesKey("focused_id")
         private val LAT = doublePreferencesKey("last_lat")
         private val LON = doublePreferencesKey("last_lon")
