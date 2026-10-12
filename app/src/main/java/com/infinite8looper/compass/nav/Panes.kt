@@ -47,27 +47,31 @@ enum class PaneView {
     IN_VIEW,
 }
 
-/** A page counts as at rest within this fraction of a page of its place: a few pixels, less than a touch moves it. */
+/** A page is in its place within this fraction of a page of it: a few pixels, less than a touch moves it. */
 const val PANE_SETTLED_WITHIN = 0.01f
 /** Less of a page than one pixel of any watch screen: an offset below it puts nothing of the next page on screen. */
 private const val PANE_ON_SCREEN = 0.001f
 
 /**
  * What the wearer has of the row's page number [page] when the row is at [nearestPage], the page nearest its
- * resting place, has moved [offsetFraction] of a page from there (-0.5 to 0.5, positive toward the next page), and
- * is headed for [targetPage], which is the page it rests on when it is not moving.
+ * resting place, has moved [offsetFraction] of a page from there (-0.5 to 0.5, positive toward the next page), is
+ * headed for [targetPage], which is the page it rests on when it is not moving, and is or is not being moved
+ * ([scrollInProgress]: a finger has it, or a fling or a slide the app started is still running).
  *
- * A page is in view only when it is in its place and the row is staying there. A page that a long swipe carries
- * across the middle of the screen on the way to another is in its place for a frame and is still only passing.
+ * A page is in view only when the row is at rest on it: in its place, staying there, and let go. While the row is
+ * being moved the most a page can be is passing, however close to its place it is at that moment: a page that a
+ * second swipe carries across the middle of the screen, or that a finger catches and drags on, is never in view on
+ * the way. What a page starts when it comes into view therefore starts when the movement has ended.
  *
  * This is the one definition of "in view" for the three screens: everything a screen does only while it is the
  * one in view asks this. It is asked about a page, not about a pane, because the same pane is on every third page
  * and the pager may have built two pages of one pane at once, the one the wearer sees and one further along the
  * row; only the first of them is anywhere near the screen.
  */
-fun pageView(page: Int, nearestPage: Int, offsetFraction: Float, targetPage: Int): PaneView = when {
+fun pageView(page: Int, nearestPage: Int, offsetFraction: Float, targetPage: Int, scrollInProgress: Boolean): PaneView = when {
     page == nearestPage ->
-        if (targetPage == page && abs(offsetFraction) <= PANE_SETTLED_WITHIN) PaneView.IN_VIEW else PaneView.PASSING
+        if (!scrollInProgress && targetPage == page && abs(offsetFraction) <= PANE_SETTLED_WITHIN) PaneView.IN_VIEW
+        else PaneView.PASSING
     page == nearestPage + 1 && offsetFraction > PANE_ON_SCREEN -> PaneView.PASSING
     page == nearestPage - 1 && offsetFraction < -PANE_ON_SCREEN -> PaneView.PASSING
     else -> PaneView.HIDDEN

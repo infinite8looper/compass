@@ -49,7 +49,7 @@ fun CompassApp() {
         derivedStateOf {
             val page = panes.currentPage
             route?.destination?.route == PANES_ROUTE && paneOf(page) == Pane.COMPASS &&
-                pageView(page, page, panes.currentPageOffsetFraction, panes.targetPage) == PaneView.IN_VIEW
+                pageView(page, page, panes.currentPageOffsetFraction, panes.targetPage, panes.isScrollInProgress) == PaneView.IN_VIEW
         }
     }
     KeepAwake(vm, compassInView = { compassInView.value })
@@ -102,7 +102,7 @@ private fun Panes(vm: CompassViewModel, panes: PagerState, onLogHere: () -> Unit
         // How much of this page the wearer has. The pager can have two pages of one pane built at a time (the one
         // on screen and one it has prepared further along the row), so each page is told about itself.
         val view: () -> PaneView = remember(panes, page) {
-            val state = derivedStateOf { pageView(page, panes.currentPage, panes.currentPageOffsetFraction, panes.targetPage) }
+            val state = derivedStateOf { pageView(page, panes.currentPage, panes.currentPageOffsetFraction, panes.targetPage, panes.isScrollInProgress) }
             return@remember { state.value }
         }
         when (val pane = paneOf(page)) {

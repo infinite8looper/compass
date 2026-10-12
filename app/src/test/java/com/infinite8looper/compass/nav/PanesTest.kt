@@ -82,63 +82,91 @@ class PanesTest {
     private val settings = start - 1
 
     @Test fun aPageAtRestIsInViewAndItsNeighborsAreHidden() {
-        assertEquals(PaneView.IN_VIEW, pageView(compass, compass, 0f, targetPage = compass))
-        assertEquals(PaneView.HIDDEN, pageView(waypoints, compass, 0f, targetPage = compass))
-        assertEquals(PaneView.HIDDEN, pageView(settings, compass, 0f, targetPage = compass))
-        assertEquals(PaneView.IN_VIEW, pageView(waypoints, waypoints, 0f, targetPage = waypoints))
-        assertEquals(PaneView.HIDDEN, pageView(compass, waypoints, 0f, targetPage = waypoints))
-        assertEquals(PaneView.IN_VIEW, pageView(settings, settings, 0f, targetPage = settings))
-        assertEquals(PaneView.HIDDEN, pageView(compass, settings, 0f, targetPage = settings))
+        assertEquals(PaneView.IN_VIEW, pageView(compass, compass, 0f, targetPage = compass, scrollInProgress = false))
+        assertEquals(PaneView.HIDDEN, pageView(waypoints, compass, 0f, targetPage = compass, scrollInProgress = false))
+        assertEquals(PaneView.HIDDEN, pageView(settings, compass, 0f, targetPage = compass, scrollInProgress = false))
+        assertEquals(PaneView.IN_VIEW, pageView(waypoints, waypoints, 0f, targetPage = waypoints, scrollInProgress = false))
+        assertEquals(PaneView.HIDDEN, pageView(compass, waypoints, 0f, targetPage = waypoints, scrollInProgress = false))
+        assertEquals(PaneView.IN_VIEW, pageView(settings, settings, 0f, targetPage = settings, scrollInProgress = false))
+        assertEquals(PaneView.HIDDEN, pageView(compass, settings, 0f, targetPage = settings, scrollInProgress = false))
     }
     @Test fun aPageBeingDraggedAwayIsPassingAndSoIsTheOneComingIn() {
         // A positive offset is toward the next page, which from the compass is waypoints.
-        assertEquals(PaneView.PASSING, pageView(compass, compass, 0.3f, targetPage = compass))
-        assertEquals(PaneView.PASSING, pageView(waypoints, compass, 0.3f, targetPage = compass))
-        assertEquals(PaneView.HIDDEN, pageView(settings, compass, 0.3f, targetPage = compass))
-        assertEquals(PaneView.PASSING, pageView(compass, compass, -0.3f, targetPage = compass))
-        assertEquals(PaneView.PASSING, pageView(settings, compass, -0.3f, targetPage = compass))
-        assertEquals(PaneView.HIDDEN, pageView(waypoints, compass, -0.3f, targetPage = compass))
+        assertEquals(PaneView.PASSING, pageView(compass, compass, 0.3f, targetPage = compass, scrollInProgress = false))
+        assertEquals(PaneView.PASSING, pageView(waypoints, compass, 0.3f, targetPage = compass, scrollInProgress = false))
+        assertEquals(PaneView.HIDDEN, pageView(settings, compass, 0.3f, targetPage = compass, scrollInProgress = false))
+        assertEquals(PaneView.PASSING, pageView(compass, compass, -0.3f, targetPage = compass, scrollInProgress = false))
+        assertEquals(PaneView.PASSING, pageView(settings, compass, -0.3f, targetPage = compass, scrollInProgress = false))
+        assertEquals(PaneView.HIDDEN, pageView(waypoints, compass, -0.3f, targetPage = compass, scrollInProgress = false))
     }
     @Test fun pastHalfwayTheNearestPageChangesAndBothAreStillPassing() {
-        assertEquals(PaneView.PASSING, pageView(compass, waypoints, -0.4f, targetPage = waypoints))
-        assertEquals(PaneView.PASSING, pageView(waypoints, waypoints, -0.4f, targetPage = waypoints))
-        assertEquals(PaneView.HIDDEN, pageView(waypoints + 1, waypoints, -0.4f, targetPage = waypoints))
+        assertEquals(PaneView.PASSING, pageView(compass, waypoints, -0.4f, targetPage = waypoints, scrollInProgress = false))
+        assertEquals(PaneView.PASSING, pageView(waypoints, waypoints, -0.4f, targetPage = waypoints, scrollInProgress = false))
+        assertEquals(PaneView.HIDDEN, pageView(waypoints + 1, waypoints, -0.4f, targetPage = waypoints, scrollInProgress = false))
     }
     @Test fun aPageCountsAsInViewOnlyWithinAHundredthOfItsPlace() {
-        assertEquals(PaneView.IN_VIEW, pageView(compass, compass, PANE_SETTLED_WITHIN, targetPage = compass))
-        assertEquals(PaneView.IN_VIEW, pageView(compass, compass, -PANE_SETTLED_WITHIN, targetPage = compass))
-        assertEquals(PaneView.PASSING, pageView(compass, compass, PANE_SETTLED_WITHIN + 0.001f, targetPage = compass))
-        assertEquals(PaneView.PASSING, pageView(compass, compass, -PANE_SETTLED_WITHIN - 0.001f, targetPage = compass))
+        assertEquals(PaneView.IN_VIEW, pageView(compass, compass, PANE_SETTLED_WITHIN, targetPage = compass, scrollInProgress = false))
+        assertEquals(PaneView.IN_VIEW, pageView(compass, compass, -PANE_SETTLED_WITHIN, targetPage = compass, scrollInProgress = false))
+        assertEquals(PaneView.PASSING, pageView(compass, compass, PANE_SETTLED_WITHIN + 0.001f, targetPage = compass, scrollInProgress = false))
+        assertEquals(PaneView.PASSING, pageView(compass, compass, -PANE_SETTLED_WITHIN - 0.001f, targetPage = compass, scrollInProgress = false))
         assertEquals(0.01f, PANE_SETTLED_WITHIN, 0f)
     }
     @Test fun theNeighborIsOnScreenAsSoonAsAPixelOfItShows() {
         // One pixel of a 192 px screen is 0.0052 of a page, and of a 454 px screen 0.0022.
-        assertEquals(PaneView.PASSING, pageView(waypoints, compass, 0.0022f, targetPage = compass))
-        assertEquals(PaneView.PASSING, pageView(settings, compass, -0.0022f, targetPage = compass))
-        assertEquals(PaneView.IN_VIEW, pageView(compass, compass, 0.0022f, targetPage = compass))
+        assertEquals(PaneView.PASSING, pageView(waypoints, compass, 0.0022f, targetPage = compass, scrollInProgress = false))
+        assertEquals(PaneView.PASSING, pageView(settings, compass, -0.0022f, targetPage = compass, scrollInProgress = false))
+        assertEquals(PaneView.IN_VIEW, pageView(compass, compass, 0.0022f, targetPage = compass, scrollInProgress = false))
         // Less than any pixel is the pager's own rounding, not a page on screen.
-        assertEquals(PaneView.HIDDEN, pageView(waypoints, compass, 0.0005f, targetPage = compass))
-        assertEquals(PaneView.HIDDEN, pageView(settings, compass, -0.0005f, targetPage = compass))
+        assertEquals(PaneView.HIDDEN, pageView(waypoints, compass, 0.0005f, targetPage = compass, scrollInProgress = false))
+        assertEquals(PaneView.HIDDEN, pageView(settings, compass, -0.0005f, targetPage = compass, scrollInProgress = false))
     }
     @Test fun aPageTheRowIsOnlyPassingThroughIsNotInView() {
         // A long swipe from settings toward waypoints carries the compass across the middle of the screen. On the
         // frame it is exactly centered it is still on its way out.
-        assertEquals(PaneView.PASSING, pageView(compass, compass, 0f, targetPage = waypoints))
-        assertEquals(PaneView.PASSING, pageView(compass, compass, 0.004f, targetPage = waypoints))
-        assertEquals(PaneView.PASSING, pageView(compass, compass, -0.004f, targetPage = settings))
-        assertEquals(PaneView.PASSING, pageView(compass, compass, 0f, targetPage = compass + 3))
+        assertEquals(PaneView.PASSING, pageView(compass, compass, 0f, targetPage = waypoints, scrollInProgress = false))
+        assertEquals(PaneView.PASSING, pageView(compass, compass, 0.004f, targetPage = waypoints, scrollInProgress = false))
+        assertEquals(PaneView.PASSING, pageView(compass, compass, -0.004f, targetPage = settings, scrollInProgress = false))
+        assertEquals(PaneView.PASSING, pageView(compass, compass, 0f, targetPage = compass + 3, scrollInProgress = false))
+    }
+    @Test fun aPageIsInViewOnlyOnceTheRowIsAtRestOnIt() {
+        // In its place and the row headed for it, but a finger, a fling or a slide still has the row: passing.
+        assertEquals(PaneView.PASSING, pageView(compass, compass, 0f, targetPage = compass, scrollInProgress = true))
+        assertEquals(PaneView.PASSING, pageView(compass, compass, 0.004f, targetPage = compass, scrollInProgress = true))
+        assertEquals(PaneView.PASSING, pageView(compass, compass, -0.01f, targetPage = compass, scrollInProgress = true))
+        // The same place with the row let go and still: in view.
+        assertEquals(PaneView.IN_VIEW, pageView(compass, compass, 0f, targetPage = compass, scrollInProgress = false))
+        assertEquals(PaneView.IN_VIEW, pageView(compass, compass, 0.004f, targetPage = compass, scrollInProgress = false))
+    }
+    @Test fun aPageDraggedAcrossTheMiddleByAFingerThatCaughtTheRowIsPassingAllTheWay() {
+        // A swipe from settings toward the compass is caught in flight and dragged on to waypoints. Under the
+        // finger the pager reports the compass as where it is headed until the drag is well past it.
+        for (offset in listOf(-0.3f, -0.01f, -0.004f, 0f, 0.004f, 0.01f, 0.3f)) {
+            assertEquals(
+                "offset $offset", PaneView.PASSING,
+                pageView(compass, compass, offset, targetPage = compass, scrollInProgress = true),
+            )
+        }
+        // A fling that was cut short leaves its old target behind: still passing while the finger has the row.
+        assertEquals(PaneView.PASSING, pageView(compass, compass, 0f, targetPage = waypoints, scrollInProgress = true))
+        assertEquals(PaneView.PASSING, pageView(waypoints, waypoints, 0f, targetPage = waypoints, scrollInProgress = true))
+    }
+    @Test fun aRowInMotionHidesAndShowsPagesAsAtRest() {
+        assertEquals(PaneView.PASSING, pageView(waypoints, compass, 0.3f, targetPage = waypoints, scrollInProgress = true))
+        assertEquals(PaneView.HIDDEN, pageView(settings, compass, 0.3f, targetPage = waypoints, scrollInProgress = true))
+        assertEquals(PaneView.HIDDEN, pageView(waypoints, compass, 0f, targetPage = compass, scrollInProgress = true))
+        assertEquals(PaneView.HIDDEN, pageView(compass + 3, compass, 0f, targetPage = compass, scrollInProgress = true))
     }
     @Test fun aPageTheRowIsHeadedForIsInViewOnceItIsInPlace() {
-        assertEquals(PaneView.IN_VIEW, pageView(compass, compass, 0.004f, targetPage = compass))
-        assertEquals(PaneView.IN_VIEW, pageView(compass, compass, -0.01f, targetPage = compass))
-        assertEquals(PaneView.PASSING, pageView(compass, compass, 0.2f, targetPage = compass))
+        assertEquals(PaneView.IN_VIEW, pageView(compass, compass, 0.004f, targetPage = compass, scrollInProgress = false))
+        assertEquals(PaneView.IN_VIEW, pageView(compass, compass, -0.01f, targetPage = compass, scrollInProgress = false))
+        assertEquals(PaneView.PASSING, pageView(compass, compass, 0.2f, targetPage = compass, scrollInProgress = false))
     }
     @Test fun whereTheRowIsHeadedDoesNotChangeWhatIsOnScreen() {
         for (target in listOf(settings, compass, waypoints)) {
-            assertEquals(PaneView.PASSING, pageView(waypoints, compass, 0.3f, targetPage = target))
-            assertEquals(PaneView.HIDDEN, pageView(settings, compass, 0.3f, targetPage = target))
-            assertEquals(PaneView.HIDDEN, pageView(waypoints, compass, 0f, targetPage = target))
-            assertEquals(PaneView.PASSING, pageView(compass, compass, 0.3f, targetPage = target))
+            assertEquals(PaneView.PASSING, pageView(waypoints, compass, 0.3f, targetPage = target, scrollInProgress = false))
+            assertEquals(PaneView.HIDDEN, pageView(settings, compass, 0.3f, targetPage = target, scrollInProgress = false))
+            assertEquals(PaneView.HIDDEN, pageView(waypoints, compass, 0f, targetPage = target, scrollInProgress = false))
+            assertEquals(PaneView.PASSING, pageView(compass, compass, 0.3f, targetPage = target, scrollInProgress = false))
         }
     }
     @Test fun anotherPageOfTheSamePaneFurtherAlongTheRowIsHidden() {
@@ -146,23 +174,23 @@ class PanesTest {
         assertEquals(Pane.COMPASS, paneOf(compass + 3))
         for (offset in listOf(-0.5f, -0.3f, 0f, 0.3f, 0.5f)) {
             for (nearest in compass - 1..compass + 1) {
-                assertEquals(PaneView.HIDDEN, pageView(compass + 3, nearest, offset, targetPage = nearest))
-                assertEquals(PaneView.HIDDEN, pageView(compass - 3, nearest, offset, targetPage = nearest))
+                assertEquals(PaneView.HIDDEN, pageView(compass + 3, nearest, offset, targetPage = nearest, scrollInProgress = false))
+                assertEquals(PaneView.HIDDEN, pageView(compass - 3, nearest, offset, targetPage = nearest, scrollInProgress = false))
             }
         }
     }
     @Test fun anOffsetThatIsNotANumberLeavesNoPageInView() {
-        assertEquals(PaneView.PASSING, pageView(compass, compass, Float.NaN, targetPage = compass))
-        assertEquals(PaneView.HIDDEN, pageView(waypoints, compass, Float.NaN, targetPage = compass))
-        assertEquals(PaneView.HIDDEN, pageView(settings, compass, Float.NaN, targetPage = compass))
+        assertEquals(PaneView.PASSING, pageView(compass, compass, Float.NaN, targetPage = compass, scrollInProgress = false))
+        assertEquals(PaneView.HIDDEN, pageView(waypoints, compass, Float.NaN, targetPage = compass, scrollInProgress = false))
+        assertEquals(PaneView.HIDDEN, pageView(settings, compass, Float.NaN, targetPage = compass, scrollInProgress = false))
     }
     @Test fun exactlyOnePageIsInViewAtRestAndAtMostOneAnywhere() {
         val pages = start - 6..start + 6
         for (nearest in start - 3..start + 3) {
-            assertEquals(listOf(nearest), pages.filter { pageView(it, nearest, 0f, targetPage = nearest) == PaneView.IN_VIEW })
+            assertEquals(listOf(nearest), pages.filter { pageView(it, nearest, 0f, targetPage = nearest, scrollInProgress = false) == PaneView.IN_VIEW })
             for (offset in listOf(-0.5f, -0.2f, -0.01f, 0.004f, 0.02f, 0.5f)) {
-                assertTrue(pages.count { pageView(it, nearest, offset, targetPage = nearest) == PaneView.IN_VIEW } <= 1)
-                val onScreen = pages.filter { pageView(it, nearest, offset, targetPage = nearest) != PaneView.HIDDEN }
+                assertTrue(pages.count { pageView(it, nearest, offset, targetPage = nearest, scrollInProgress = false) == PaneView.IN_VIEW } <= 1)
+                val onScreen = pages.filter { pageView(it, nearest, offset, targetPage = nearest, scrollInProgress = false) != PaneView.HIDDEN }
                 assertTrue(onScreen.size in 1..2)
                 // The pages on screen are next to each other, so they are never two pages of one pane.
                 assertEquals(onScreen.size, onScreen.map { paneOf(it) }.distinct().size)
