@@ -193,7 +193,7 @@ fun CompassScreen(vm: CompassViewModel, onOpenList: () -> Unit, onLog: () -> Uni
                 )
                 else -> {
                     HeadingNumber({ headingText }, style(0.30f, FontWeight.Light), Modifier.slot(0f, 2 * READOUT_RADIUS))
-                    if (lowAccuracy) Text("Calibrate", color = NorthRed, style = bodyStyle, maxLines = 1, modifier = Modifier.slot(PROMPT_Y, 0.6f))
+                    if (lowAccuracy) Text("Calibrate", color = Dim, style = bodyStyle, maxLines = 1, modifier = Modifier.slot(PROMPT_Y, 0.6f))
                 }
             }
         }

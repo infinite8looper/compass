@@ -83,7 +83,7 @@ fun HoldFlatHint(labelStyle: TextStyle, labelOffset: Dp, modifier: Modifier = Mo
     Box(modifier, contentAlignment = Alignment.Center) {
         Spacer(Modifier.matchParentSize().drawBehind { drawWatch(loop.floatValue * LOOP_MS) })
         Text(
-            "Hold flat", color = NorthRed, style = labelStyle, maxLines = 1, softWrap = false,
+            "Hold flat", color = Dim, style = labelStyle, maxLines = 1, softWrap = false,
             modifier = Modifier.wrapContentSize(unbounded = true).offset(y = labelOffset),
         )
     }
