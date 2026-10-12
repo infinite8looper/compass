@@ -94,6 +94,8 @@ The compass screen also shows a small prompt that leads here when the reported a
 
 - North: true or magnetic.
 - Units: metric or imperial, defaulting from the watch's locale.
+- Tick feedback (default on): a faint vibration as the heading crosses the dial's minor tick marks.
+- Show coordinates (default off): shows the current GPS position on the compass screen. Turning it on asks for location access with the system dialog if it has not been granted; if the wearer denies it, the switch stays off and a line under it says "Needs location access". If access is already granted it turns on without asking, and turning it off never asks for anything.
 - Calibrate.
 - About: version and the MIT license.
 
@@ -155,7 +157,7 @@ If the permission is denied, the compass still works, and pressing the side butt
 | `LocationSource` | One-shot fresh fix; periodic updates while navigating | Play services location |
 | `Navigation` | Pure functions: bearing, distance, declination correction, angle smoothing, distance formatting, hue assignment | Nothing from Android except the declination lookup, which sits behind one function |
 | `WaypointStore` | Create, read, update, delete waypoints | Room |
-| `SettingsStore` | North reference, units, focused target, last known position | DataStore |
+| `SettingsStore` | North reference, units, tick feedback, show coordinates, focused target, last known position | DataStore |
 | `CompassViewModel` | Combines the above into one screen state | The units above |
 | One file per screen | Drawing and gestures | Compose for Wear OS |
 

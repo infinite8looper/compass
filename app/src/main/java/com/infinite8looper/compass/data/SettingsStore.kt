@@ -20,6 +20,7 @@ import java.util.Locale
 data class Settings(
     val north: NorthRef, val units: Units, val focusedId: Long?,
     val lastPosition: GeoPoint?, val lastAltitudeM: Float?,
+    val tickFeedback: Boolean = true, val showCoordinates: Boolean = false,
 )
 
 fun defaultUnits(locale: Locale): Units =
@@ -44,11 +45,15 @@ class SettingsStore(
             focusedId = p[FOCUSED],
             lastPosition = if (lat != null && lon != null) GeoPoint(lat, lon) else null,
             lastAltitudeM = p[ALT],
+            tickFeedback = p[TICK_FEEDBACK] ?: true,
+            showCoordinates = p[SHOW_COORDINATES] ?: false,
         )
     }
 
     suspend fun setNorth(n: NorthRef) { store.edit { it[MAGNETIC] = n == NorthRef.MAGNETIC } }
     suspend fun setUnits(u: Units) { store.edit { it[IMPERIAL] = u == Units.IMPERIAL } }
+    suspend fun setTickFeedback(on: Boolean) { store.edit { it[TICK_FEEDBACK] = on } }
+    suspend fun setShowCoordinates(on: Boolean) { store.edit { it[SHOW_COORDINATES] = on } }
     suspend fun setFocused(id: Long?) { store.edit { if (id == null) it.remove(FOCUSED) else it[FOCUSED] = id } }
     suspend fun setLastPosition(p: GeoPoint, altitudeM: Float) {
         store.edit { it[LAT] = p.lat; it[LON] = p.lon; it[ALT] = altitudeM }
@@ -62,6 +67,8 @@ class SettingsStore(
     companion object {
         private val MAGNETIC = booleanPreferencesKey("magnetic_north")
         private val IMPERIAL = booleanPreferencesKey("imperial")
+        private val TICK_FEEDBACK = booleanPreferencesKey("tick_feedback")
+        private val SHOW_COORDINATES = booleanPreferencesKey("show_coordinates")
         private val FOCUSED = longPreferencesKey("focused_id")
         private val LAT = doublePreferencesKey("last_lat")
         private val LON = doublePreferencesKey("last_lon")

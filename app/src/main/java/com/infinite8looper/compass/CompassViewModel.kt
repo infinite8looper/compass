@@ -25,6 +25,8 @@ data class NavUi(
     val distances: Map<Long, Double> = emptyMap(),
     /** False only for [EMPTY], the state before the stores have answered. */
     val loaded: Boolean = true,
+    val tickFeedback: Boolean = true,
+    val showCoordinates: Boolean = false,
 ) {
     companion object {
         val EMPTY = NavUi(emptyList(), null, Units.METRIC, NorthRef.TRUE, null, null, emptyList(), emptyMap(), loaded = false)
@@ -73,7 +75,8 @@ class CompassViewModel(app: Application) : AndroidViewModel(app) {
         val targets = buildTargets(ws.map { it.toInfo() }, s.focusedId, f?.point, declination, s.north)
         // Only a live fix gives distances; the saved last position is not presented as where the wearer is now.
         val distances = f?.let { live -> ws.associate { it.id to distanceMeters(live.point, GeoPoint(it.lat, it.lon)) } }.orEmpty()
-        NavUi(targets, targets.firstOrNull { it.focused }, s.units, s.north, declination, f?.elapsedMs, ws, distances)
+        NavUi(targets, targets.firstOrNull { it.focused }, s.units, s.north, declination, f?.elapsedMs, ws, distances,
+            tickFeedback = s.tickFeedback, showCoordinates = s.showCoordinates)
     }
         .catch { Log.w(TAG, "screen state stopped updating", it) }
         .stateIn(viewModelScope, sharing, NavUi.EMPTY)
@@ -116,6 +119,8 @@ class CompassViewModel(app: Application) : AndroidViewModel(app) {
     fun delete(id: Long) = launchQuietly("delete") { dao.delete(id) }
     fun setNorth(n: NorthRef) = launchQuietly("set north") { settingsStore.setNorth(n) }
     fun setUnits(u: Units) = launchQuietly("set units") { settingsStore.setUnits(u) }
+    fun setTickFeedback(on: Boolean) = launchQuietly("set tick feedback") { settingsStore.setTickFeedback(on) }
+    fun setShowCoordinates(on: Boolean) = launchQuietly("set show coordinates") { settingsStore.setShowCoordinates(on) }
 
     /** Runs a write whose failure must not take the app down. Cancellation still propagates. */
     private suspend fun quietly(what: String, block: suspend () -> Unit) {
