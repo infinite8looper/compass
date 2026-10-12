@@ -1,5 +1,8 @@
 #!/bin/zsh
-# Boots a Wear OS emulator (default Wear_OS_Large_Round) and waits for it, up to 5 minutes.
+# Usage: scripts/emulator.sh [avd-name]
+# Boots a Wear OS emulator and waits for it, up to 5 minutes. Does nothing but wait if one is already attached.
+# AVDs: Wear_OS_Large_Round (API 35, the default), Wear_OS_Small_Round (API 35), Wear_OS_API34, Wear_OS_API33.
+# The other scripts assume one attached device: stop a running emulator with `adb emu kill` before booting another.
 ADB=~/Library/Android/sdk/platform-tools/adb
 EMU=~/Library/Android/sdk/emulator/emulator
 AVD=${1:-Wear_OS_Large_Round}

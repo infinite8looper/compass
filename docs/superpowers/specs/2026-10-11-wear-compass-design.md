@@ -31,6 +31,22 @@ Success means:
 | Storage | Room for waypoints, DataStore for settings; the system backs both up when the wearer has backup turned on |
 | Package | `com.infinite8looper.compass`, min SDK 33, target SDK 35 |
 
+### Supported versions
+
+Min SDK 33, target SDK 35. The whole test suite (26 unit tests, 51 instrumented tests) was run on 2026-10-11 on three Wear OS emulators, all arm64 with a large round 454 px screen; none of it has been run on a physical watch.
+
+| API level | System image | AVD | Result |
+|-|-|-|-|
+| 33 (Android 13, Wear OS 4) | `system-images;android-33;android-wear;arm64-v8a` | `Wear_OS_API33` | All pass, none skipped |
+| 34 (Android 14, Wear OS 5) | `system-images;android-34;android-wear;arm64-v8a` | `Wear_OS_API34` | All pass, none skipped |
+| 35 (Android 15, Wear OS 5.1) | `system-images;android-35-ext15;android-wear;arm64-v8a` | `Wear_OS_Large_Round` | All pass, none skipped |
+
+What was found to differ by level:
+
+- Nothing in the app's own behavior. The database settings that keep deleted waypoints out of backups (`PRAGMA secure_delete = ON` through `execPerConnectionSQL`, a truncated rollback journal) take effect on all three levels, and the compass, logging, list, rename, delete, settings and calibration screens were checked by hand on API 33 and 34 and look the same as on API 35.
+- Emulator tooling only: `adb shell input rotaryencoder` does not exist on the API 33 image, so the crown is turned there by writing to the rotary input device as root (`adb root`, then `sendevent` with `EV_REL`/`REL_WHEEL` on the device named `virtio_input_rotary`).
+- The API 33 image twice put the watch into ambient mode within a second of the app being started through `adb` after more than a minute without any input (the system log says "Going to sleep due to timeout"); a key press woke it and the app carried on. This was not seen on the API 34 or 35 images.
+
 ## Out of scope
 
 Phone companion app, cloud sync or accounts of the app's own, maps, track recording, tiles, complications, ambient mode, and any network access by the app itself. (The system's backup of the app's data, described under Behavior, is done by the system.)
