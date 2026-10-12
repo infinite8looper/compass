@@ -1,6 +1,7 @@
 package com.infinite8looper.compass.data
 
 import android.content.Context
+import androidx.datastore.core.DataMigration
 import androidx.datastore.core.DataStore
 import java.io.IOException
 import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
@@ -36,12 +37,6 @@ class SettingsStore(
     scope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob()),
 ) {
     private val app: Context = context.applicationContext
-    private val store: DataStore<Preferences> = PreferenceDataStoreFactory.create(
-        // A damaged file is reset to defaults except the backup switch, which is the one setting that fails closed.
-        corruptionHandler = ReplaceFileCorruptionHandler { mutablePreferencesOf(BACKUP_ENABLED to false) },
-        scope = scope,
-    ) { app.preferencesDataStoreFile(fileName) }
-
     /**
      * The last known position lives in its own file, which the backup rules do not include: where the wearer last
      * was is not part of what is backed up. The file is named after the settings file.
@@ -50,6 +45,13 @@ class SettingsStore(
         corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
         scope = scope,
     ) { app.preferencesDataStoreFile("$fileName-position") }
+
+    private val store: DataStore<Preferences> = PreferenceDataStoreFactory.create(
+        // A damaged file is reset to defaults except the backup switch, which is the one setting that fails closed.
+        corruptionHandler = ReplaceFileCorruptionHandler { mutablePreferencesOf(BACKUP_ENABLED to false) },
+        scope = scope,
+        migrations = listOf(legacyPositionMigration()),
+    ) { app.preferencesDataStoreFile(fileName) }
 
     private val positionData: Flow<Preferences> = positionStore.data.catch { if (it is IOException) emit(emptyPreferences()) else throw it }
 
@@ -68,6 +70,28 @@ class SettingsStore(
             showCoordinates = p[SHOW_COORDINATES] ?: false,
             backupEnabled = p[BACKUP_ENABLED] ?: true,
         )
+    }
+
+    /**
+     * Older installs kept the last position in the settings file, which is backed up. On first use this moves it to
+     * the position file (unless that already has one) and removes the three keys. It touches nothing else, so a
+     * stored backup switch keeps its value, and it does nothing once the keys are gone. DataStore runs it before the
+     * first read or write, so the backup agent's read of the switch cleans the file before any backup can copy it.
+     */
+    private fun legacyPositionMigration() = object : DataMigration<Preferences> {
+        override suspend fun shouldMigrate(currentData: Preferences) =
+            LAT in currentData || LON in currentData || ALT in currentData
+        override suspend fun migrate(currentData: Preferences): Preferences {
+            val lat = currentData[LAT]; val lon = currentData[LON]; val alt = currentData[ALT]
+            positionStore.edit {
+                if (LAT !in it && LON !in it && lat != null && lon != null) {
+                    it[LAT] = lat; it[LON] = lon
+                    if (alt != null) it[ALT] = alt
+                }
+            }
+            return currentData.toMutablePreferences().apply { remove(LAT); remove(LON); remove(ALT) }
+        }
+        override suspend fun cleanUp() = Unit
     }
 
     suspend fun setNorth(n: NorthRef) { store.edit { it[MAGNETIC] = n == NorthRef.MAGNETIC } }

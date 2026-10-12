@@ -21,9 +21,10 @@ class SettingsBackupAgent : BackupAgent() {
 
     override fun onFullBackup(data: FullBackupDataOutput) {
         if (!backupEnabled()) return
-        // Write the database's log into its main file, so the copied file is complete on its own.
+        // Write the database's log into its main file and empty the log, so the copied file is complete on its own
+        // and no old log frames (rows the wearer has since deleted) are left to be copied.
         try {
-            WaypointDatabase.get(applicationContext).openHelper.writableDatabase.query("PRAGMA wal_checkpoint(FULL)").use { it.moveToFirst() }
+            WaypointDatabase.get(applicationContext).openHelper.writableDatabase.query("PRAGMA wal_checkpoint(TRUNCATE)").use { it.moveToFirst() }
         } catch (e: Exception) {
             Log.w(TAG, "could not checkpoint the waypoint database before backup", e)
         }

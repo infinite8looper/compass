@@ -1,10 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Only the waypoint database and the settings file are backed up or transferred; everything else is left out
-  because an <include> turns off the default of including all app data. The -shm file is not listed: it is only
-  an index of the write-ahead log and SQLite rebuilds it. The backup agent writes the log into the database
-  file just before a backup, so waypoints.db is complete by itself; the -wal file is listed in case a write lands
-  between that step and the copy.
+  because an <include> turns off the default of including all app data. The write-ahead log (-wal) is not listed, but on the
+  emulator the system copied it next to the database anyway; the backup agent writes the log into waypoints.db
+  and empties it just before a backup, so the copy is an empty file and the main file is complete by itself.
 
   Cloud backup happens only when the device can encrypt the backup end to end (a screen lock is set).
   Device-to-device transfer does not depend on that.
@@ -12,12 +11,10 @@
 <data-extraction-rules>
     <cloud-backup disableIfNoEncryptionCapabilities="true">
         <include domain="database" path="waypoints.db" />
-        <include domain="database" path="waypoints.db-wal" />
         <include domain="file" path="datastore/settings.preferences_pb" />
     </cloud-backup>
     <device-transfer>
         <include domain="database" path="waypoints.db" />
-        <include domain="database" path="waypoints.db-wal" />
         <include domain="file" path="datastore/settings.preferences_pb" />
     </device-transfer>
 </data-extraction-rules>

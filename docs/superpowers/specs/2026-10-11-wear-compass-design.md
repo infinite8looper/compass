@@ -143,6 +143,8 @@ The saved waypoints (the `waypoints.db` database) and the settings (the DataStor
 - Device-to-device transfer goes through the same agent code as cloud backup, by design; it could not be exercised on the emulator.
 - What turning the switch off does to data already backed up was observed only on the emulator's local backup transport: a backup pass made with the switch off was rejected, and afterward a restore brought back nothing. Google's backup service was not tested, so what it does with an earlier backup in that case is not known.
 - Changing the switch tells the system the app's data has changed; with the switch back on, the data is included from the next backup pass.
+- A waypoint the wearer has deleted is not included in later backups: before each backup the app writes the database's log into the database file and empties it, and the database overwrites deleted rows.
+- After a restore or transfer the watch has no stored last position, so true north waits for the first position fix.
 - A restore brings back the waypoints with their names, positions, colors and target flags, and the settings; the next waypoint logged continues the numbering instead of reusing a number.
 
 ### Navigating

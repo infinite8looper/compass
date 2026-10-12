@@ -1,6 +1,12 @@
 package com.infinite8looper.compass
 
 import android.content.Context
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.doublePreferencesKey
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.preferencesDataStoreFile
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -84,7 +90,7 @@ class SettingsStoreTest {
             assertTrue(v.tickFeedback); assertFalse(v.showCoordinates); assertFalse(v.backupEnabled)
             s.setNorth(NorthRef.MAGNETIC)
             assertEquals(NorthRef.MAGNETIC, s.settings.first().north)
-        } finally { job.cancelAndJoin(); f.delete() }
+        } finally { job.cancelAndJoin(); f.delete(); ctx.preferencesDataStoreFile("$file-position").delete() }
     }
     @Test fun valuesSurviveClosingAndReopeningTheStore() = runBlocking {
         val file = "test-settings-${UUID.randomUUID()}"
@@ -103,7 +109,7 @@ class SettingsStoreTest {
             assertEquals(160f, v.lastAltitudeM!!, 0f)
             assertFalse(v.tickFeedback); assertTrue(v.showCoordinates); assertFalse(v.backupEnabled)
             assertEquals(3, second.nextWaypointNumber())
-        } finally { job1.cancelAndJoin(); job2.cancelAndJoin(); ctx.preferencesDataStoreFile(file).delete() }
+        } finally { job1.cancelAndJoin(); job2.cancelAndJoin(); ctx.preferencesDataStoreFile(file).delete(); ctx.preferencesDataStoreFile("$file-position").delete() }
     }
 
     // What the backup agent asks: true only when the switch is positively on; false or null never allows a backup.
@@ -124,7 +130,7 @@ class SettingsStoreTest {
             assertFalse(s.settings.first().backupEnabled)
             s.setBackupEnabled(true)
             assertEquals(true, s.readBackupEnabled())
-        } finally { job.cancelAndJoin(); f.delete() }
+        } finally { job.cancelAndJoin(); f.delete(); ctx.preferencesDataStoreFile("$file-position").delete() }
     }
     @Test fun agentReadIsNullWhenTheFileCannotBeRead() = runBlocking {
         val file = "test-settings-${UUID.randomUUID()}"
@@ -140,13 +146,57 @@ class SettingsStoreTest {
             assertNull(second.readBackupEnabled())
             // The settings flow does not claim the switch is on either.
             assertFalse(second.settings.first().backupEnabled)
-        } finally { f.setReadable(true, false); job1.cancelAndJoin(); job2.cancelAndJoin(); f.delete() }
+        } finally { f.setReadable(true, false); job1.cancelAndJoin(); job2.cancelAndJoin(); f.delete(); ctx.preferencesDataStoreFile("$file-position").delete() }
     }
     @Test fun lastPositionIsKeptOutOfTheSettingsFileThatIsBackedUp() = withStore { s, file ->
         s.setLastPosition(GeoPoint(43.7022, -72.2896), 160f); s.setNorth(NorthRef.MAGNETIC)
         assertEquals(43.7022, s.settings.first().lastPosition!!.lat, 1e-9)
         val main = ctx.preferencesDataStoreFile(file).readBytes().toString(Charsets.ISO_8859_1)
-        assertTrue(main.contains("magnetic_north")); assertFalse(main.contains("last_lat")); assertFalse(main.contains("last_lon"))
+        assertTrue(main.contains("magnetic_north")); assertFalse(main.contains("last_lat")); assertFalse(main.contains("last_lon")); assertFalse(main.contains("last_alt"))
         assertTrue(ctx.preferencesDataStoreFile("$file-position").readBytes().toString(Charsets.ISO_8859_1).contains("last_lat"))
+        val pos = ctx.preferencesDataStoreFile("$file-position").readBytes().toString(Charsets.ISO_8859_1)
+        assertTrue(pos.contains("last_lon")); assertTrue(pos.contains("last_alt"))
+        assertEquals(160f, s.settings.first().lastAltitudeM!!, 0f)
+    }
+    @Test fun legacyPositionKeysMoveOutOfTheSettingsFileOnce() = runBlocking {
+        val file = "test-settings-${UUID.randomUUID()}"
+        val main = ctx.preferencesDataStoreFile(file); val pos = ctx.preferencesDataStoreFile("$file-position")
+        fun text(f: java.io.File) = f.readBytes().toString(Charsets.ISO_8859_1)
+        val legacyJob = SupervisorJob(); val job1 = SupervisorJob(); val job2 = SupervisorJob()
+        try {
+            // An old install: the position sits in the settings file next to the other settings.
+            val legacy = PreferenceDataStoreFactory.create(scope = CoroutineScope(Dispatchers.IO + legacyJob)) { main }
+            legacy.edit {
+                it[doublePreferencesKey("last_lat")] = 43.7022; it[doublePreferencesKey("last_lon")] = -72.2896
+                it[floatPreferencesKey("last_alt")] = 160f
+                it[booleanPreferencesKey("magnetic_north")] = true; it[booleanPreferencesKey("imperial")] = true
+                it[booleanPreferencesKey("backup_enabled")] = false; it[longPreferencesKey("focused_id")] = 9L
+            }
+            legacyJob.cancelAndJoin()
+            // Positive control: the legacy names really are in the file before the store opens it.
+            assertTrue(text(main).contains("last_lat") && text(main).contains("last_lon") && text(main).contains("last_alt"))
+
+            val first = SettingsStore(ctx, file, CoroutineScope(Dispatchers.IO + job1))
+            val v = first.settings.first()
+            assertEquals(43.7022, v.lastPosition!!.lat, 1e-9); assertEquals(-72.2896, v.lastPosition.lon, 1e-9)
+            assertEquals(160f, v.lastAltitudeM!!, 0f)
+            assertEquals(NorthRef.MAGNETIC, v.north); assertEquals(Units.IMPERIAL, v.units)
+            assertEquals(9L, v.focusedId); assertFalse(v.backupEnabled)
+            assertEquals(false, first.readBackupEnabled())
+            job1.cancelAndJoin()
+            val afterFirst = main.readBytes()
+            for (k in listOf("last_lat", "last_lon", "last_alt")) assertFalse("$k left in the settings file", text(main).contains(k))
+            for (k in listOf("magnetic_north", "imperial", "backup_enabled", "focused_id")) assertTrue("$k lost", text(main).contains(k))
+            val posAfterFirst = pos.readBytes()
+
+            // Opening it again changes nothing.
+            val second = SettingsStore(ctx, file, CoroutineScope(Dispatchers.IO + job2))
+            val w = second.settings.first()
+            assertEquals(v, w)
+            job2.cancelAndJoin()
+            assertArrayEquals(afterFirst, main.readBytes()); assertArrayEquals(posAfterFirst, pos.readBytes())
+        } finally {
+            legacyJob.cancelAndJoin(); job1.cancelAndJoin(); job2.cancelAndJoin(); main.delete(); pos.delete()
+        }
     }
 }
