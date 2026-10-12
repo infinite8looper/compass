@@ -664,4 +664,53 @@ class NavigationTest {
         assertTrue(TICK_QUIET_AFTER_HEARTBEAT_NANOS < TICK_QUIET_AFTER_LOCK_NANOS)
         assertTrue(TICK_QUIET_AFTER_LOCK_NANOS < BLIND_HEARTBEAT_NANOS / 2)
     }
+
+    // Arrival, with its two distances.
+
+    @Test fun arrivalBeginsUnderTenMetersAndEndsOnlyBeyondTwelve() {
+        assertEquals(1.2, ARRIVAL_LEAVE_FACTOR, 0.0)
+        // Not arrived: only under 10 m counts.
+        assertTrue(nextArrived(false, 9.99, Units.METRIC))
+        assertFalse(nextArrived(false, 10.0, Units.METRIC))
+        assertFalse(nextArrived(false, 11.0, Units.METRIC))
+        // Arrived: it holds up to and including 12 m.
+        assertTrue(nextArrived(true, 10.0, Units.METRIC))
+        assertTrue(nextArrived(true, 11.9, Units.METRIC))
+        assertTrue(nextArrived(true, 12.0, Units.METRIC))
+        assertFalse(nextArrived(true, 12.01, Units.METRIC))
+        // The first step into arrival is the readout's own rule.
+        for (m in listOf(0.0, 9.0, 9.2, 9.99, 10.0, 12.0, 50.0)) for (u in Units.entries) {
+            assertEquals("$m m, $u", hasArrived(m, u), nextArrived(false, m, u))
+        }
+    }
+
+    @Test fun arrivalInFeetBeginsUnderThirtyAndEndsBeyondThirtySix() {
+        // 30 ft is 9.144 m and 36 ft is 10.973 m.
+        assertTrue(nextArrived(false, 9.1, Units.IMPERIAL))
+        assertFalse(nextArrived(false, 9.2, Units.IMPERIAL))
+        assertTrue(nextArrived(true, 9.2, Units.IMPERIAL))
+        assertTrue(nextArrived(true, 10.97, Units.IMPERIAL))
+        assertFalse(nextArrived(true, 10.98, Units.IMPERIAL))
+    }
+
+    @Test fun aPositionThatWaversAtTheLineDoesNotFlickerArrival() {
+        var arrived = false
+        val seen = listOf(10.6, 10.1, 9.9, 10.2, 9.8, 10.4, 11.9, 9.7, 12.1, 11.0, 10.1, 9.9).map { m ->
+            arrived = nextArrived(arrived, m, Units.METRIC); arrived
+        }
+        assertEquals(listOf(false, false, true, true, true, true, true, true, false, false, false, true), seen)
+    }
+
+    @Test fun aDistanceThatIsNotANumberIsNotAnArrival() {
+        for (was in listOf(true, false)) for (u in Units.entries) assertFalse(nextArrived(was, Double.NaN, u))
+    }
+
+    @Test fun trailCompleteIsAStatusShownAsLongAsASavedOne() {
+        assertEquals("Trail complete" to null, statusText(LogStatus.TrailComplete, Units.METRIC))
+        assertEquals("Trail complete" to null, statusText(LogStatus.TrailComplete, Units.IMPERIAL))
+        assertEquals(LOG_SAVED_SHOW_MS, logStatusShowMs(LogStatus.TrailComplete))
+        assertFalse(statusDetailContinues(LogStatus.TrailComplete))
+        // A dropped crumb reads as a saved waypoint does.
+        assertEquals("Saved Crumb 3" to "±5 m", statusText(LogStatus.Saved(crumbName(3), 5f, 100_000), Units.METRIC))
+    }
 }

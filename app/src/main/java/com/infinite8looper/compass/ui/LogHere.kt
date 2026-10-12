@@ -54,7 +54,7 @@ internal val LOCATION_PERMISSIONS = arrayOf(Manifest.permission.ACCESS_FINE_LOCA
 internal fun logStatusColor(status: LogStatus): Color = when (status) {
     is LogStatus.Saved -> ConfirmColor
     is LogStatus.Failed -> ErrorColor
-    LogStatus.Idle, is LogStatus.Saving -> Ink
+    LogStatus.Idle, is LogStatus.Saving, LogStatus.TrailComplete -> Ink
 }
 
 /**

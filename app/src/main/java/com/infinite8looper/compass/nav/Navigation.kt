@@ -83,9 +83,31 @@ fun formatDistance(meters: Double, units: Units): String = when (units) {
     }
 }
 
+/** The arrival distance: 10 m, or 30 ft with feet and miles. */
+const val ARRIVAL_METERS = 10.0
+const val ARRIVAL_FEET = 30.0
+
 fun hasArrived(meters: Double, units: Units): Boolean = when (units) {
-    Units.METRIC -> meters < 10.0
-    Units.IMPERIAL -> meters * FEET_PER_METER < 30.0
+    Units.METRIC -> meters < ARRIVAL_METERS
+    Units.IMPERIAL -> meters * FEET_PER_METER < ARRIVAL_FEET
+}
+
+/** Arrival ends this many times the arrival distance away: beyond 12 m, or 36 ft. */
+const val ARRIVAL_LEAVE_FACTOR = 1.2
+
+/**
+ * Whether the wearer counts as arrived at a point that is [meters] away, having counted as arrived ([current]) or
+ * not before: arrival begins under the arrival distance ([hasArrived]: 10 m, or 30 ft) and ends only beyond
+ * [ARRIVAL_LEAVE_FACTOR] times that distance, so a position that wavers at the line does not switch it back and
+ * forth. A distance that is not a number is not an arrival.
+ */
+fun nextArrived(current: Boolean, meters: Double, units: Units): Boolean = when {
+    meters.isNaN() -> false
+    current -> when (units) {
+        Units.METRIC -> meters <= ARRIVAL_METERS * ARRIVAL_LEAVE_FACTOR
+        Units.IMPERIAL -> meters * FEET_PER_METER <= ARRIVAL_FEET * ARRIVAL_LEAVE_FACTOR
+    }
+    else -> hasArrived(meters, units)
 }
 
 /** Golden-angle steps around the hue wheel: neighbors are far apart and no hue repeats. */
@@ -330,6 +352,8 @@ sealed interface LogStatus {
     /** [fixElapsedMs] is when the saved fix was taken, on the clock that counts from boot. */
     data class Saved(val name: String, val accuracyM: Float, val fixElapsedMs: Long) : LogStatus
     data class Failed(val reason: LogFailure) : LogStatus
+    /** The last crumb of a trail has been reached. It is shown the way a result of logging is, in its place. */
+    data object TrailComplete : LogStatus
 }
 
 /**
@@ -342,6 +366,7 @@ val NEEDS_PRECISE_LOCATION: Pair<String, String> = "Needs access to" to "precise
 /** The two lines the compass shows for [status]: the status, and a smaller line under it where there is one. */
 fun statusText(status: LogStatus, units: Units): Pair<String, String?> = when (status) {
     LogStatus.Idle -> "" to null
+    LogStatus.TrailComplete -> "Trail complete" to null
     is LogStatus.Saving -> "Saving…" to status.accuracyM?.let { accuracyText(it, units) }
     is LogStatus.Saved -> "Saved ${status.name}" to accuracyText(status.accuracyM, units)
     is LogStatus.Failed -> when (status.reason) {
@@ -357,7 +382,7 @@ private fun accuracyText(accuracyM: Float, units: Units): String = "±" + format
 
 /** How long [status] is shown before the compass goes back to [LogStatus.Idle], or null if it does not end by itself. */
 fun logStatusShowMs(status: LogStatus): Long? = when (status) {
-    is LogStatus.Saved -> LOG_SAVED_SHOW_MS
+    is LogStatus.Saved, LogStatus.TrailComplete -> LOG_SAVED_SHOW_MS
     is LogStatus.Failed -> LOG_FAILED_SHOW_MS
     LogStatus.Idle, is LogStatus.Saving -> null
 }

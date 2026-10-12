@@ -83,4 +83,34 @@ class TargetsTest {
         assertEquals("Trail head", cleanName("Trail \n  head", "Old"))
         assertEquals(40, cleanName("x".repeat(200), "Old").length)
     }
+
+    @Test fun aTargetThatHadArrivedStaysSoUntilTheLeavingDistance() {
+        val targets = listOf(north(1, 9.0), north(2, 11.0), north(3, 12.5))
+        // None had arrived: only the one under 10 m has.
+        val fresh = buildTargets(targets, 1, here, null, NorthRef.TRUE, Units.METRIC)
+        assertEquals(listOf(true, false, false), fresh.map { it.arrived })
+        // All three had: the one at 11 m still has, and the one beyond 12 m has left.
+        val held = buildTargets(targets, 1, here, null, NorthRef.TRUE, Units.METRIC, previouslyArrived = setOf(1, 2, 3))
+        assertEquals(listOf(true, true, false), held.map { it.arrived })
+        // A target that has arrived has no dial angle, so no line, no arrow and no facing, and keeps its distance.
+        assertEquals(listOf(true, true, false), held.map { it.dialAngleDeg == null })
+        assertEquals(11.0, held[1].distanceM!!, 0.01)
+        assertEquals(0f, held[2].dialAngleDeg!!, 0.01f)
+    }
+    @Test fun withNoPositionNothingHasArrivedWhateverHadBefore() {
+        val t = buildTargets(listOf(north(1, 0.0)), 1, null, null, NorthRef.TRUE, Units.METRIC, previouslyArrived = setOf(1))
+        assertFalse(t.single().arrived)
+        assertNull(t.single().distanceM)
+    }
+    @Test fun aWaypointTargetIsNotACrumb() {
+        assertTrue(buildTargets(all, 1, here, null, NorthRef.TRUE).none { it.isCrumb })
+    }
+    @Test fun whileTheFocusIsSuspendedNoTargetIsFocusedAndAllStayTargets() {
+        val t = buildTargets(all, focusedId = 1, position = here, declination = null, north = NorthRef.TRUE, focusSuspended = true)
+        assertEquals(listOf(3L, 1L), t.map { it.id })
+        assertEquals(listOf(false, false), t.map { it.focused })
+        assertEquals(listOf(90f, 180f), t.map { it.dialAngleDeg })
+        // Not suspended, the stored focus is where it was.
+        assertEquals(listOf(false, true), buildTargets(all, 1, here, null, NorthRef.TRUE).map { it.focused })
+    }
 }
