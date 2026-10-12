@@ -22,7 +22,7 @@ Success means:
 |-|-|
 | Test device | Pixel Watch (generation not yet stated), plus the two round Wear OS emulators already installed |
 | Waypoint interaction | Any number of waypoints can be targets at once, all shown on the dial. Cycle the focused target in place on the compass screen; a separate list page for editing |
-| Colors | Generated hues at constant saturation and brightness, so there is no limit on the number of waypoints |
+| Colors | As first built: generated hues at constant saturation and brightness, so there is no limit on the number of waypoints. Since 2026-10-12: colors from a ring that fades between the app's three themed colors (see "Colors") |
 | North reference | User setting, true or magnetic, defaulting to true |
 | Power | Screen stays awake and GPS updates run only while at least one waypoint is a target |
 | Heading source | System fused rotation-vector sensor with light smoothing |
@@ -114,7 +114,7 @@ With no waypoints saved, the list shows the first item, a line saying there are 
 
 - Name: opens the system text input (voice or keyboard).
 - Set target: toggles whether this waypoint is a target.
-- Color: a hue ring turned with the crown or by touch. Only the hue changes; saturation and brightness are fixed.
+- Color: a ring of colors turned with the crown or by touch. As first built it was a hue ring on which only the hue changed; since 2026-10-12 it is the ring described under "Colors".
 - Delete: after confirmation. If the deleted waypoint had the focus, the focus moves to the next target.
 
 A waypoint's saved position cannot be changed; to correct one, delete it and log a new one.
@@ -166,10 +166,11 @@ A newly logged waypoint becomes a target, so its marker appears on the dial at o
 
 ### Colors
 
-Every waypoint color has the same saturation and brightness, chosen to read well on black; only the hue differs.
-The hue for each new waypoint steps round the color wheel by the golden angle (about 137.5 degrees) from the previous one.
-This keeps consecutive waypoints far apart in hue, never repeats exactly, and has no upper limit on the number of waypoints.
-The wearer can change any waypoint's hue on the edit screen.
+As first built, every waypoint color had the same saturation and brightness and only the hue differed.
+Since 2026-10-12 (the owner's decision, recorded in the v2 redesign document) a waypoint's color is the color at its place on a ring that fades from the accent color to the north color, on to the error color and back to the accent. Those three follow the watch's color scheme where it has one, and are otherwise blue, red and red.
+A waypoint stores its place on the ring as a number from 0 to 360, the same number that used to be its hue.
+The number for each new waypoint steps round the ring by the golden angle (about 137.5 degrees) from the previous one, as before. It never repeats exactly and has no upper limit on the number of waypoints. Consecutive waypoints are far apart on the ring; how different their colors are depends on the three colors, and with blue, red and red a third of the ring is one red.
+The wearer can change any waypoint's place on the ring on the edit screen.
 
 If the permission is denied, the compass still works, and pressing the side button explains that waypoints need location access.
 

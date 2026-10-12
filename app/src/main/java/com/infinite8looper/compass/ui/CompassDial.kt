@@ -57,6 +57,8 @@ private const val ARROW_HALF_WIDTH = 0.052f
  * them. The pointer does not move.
  *
  * [facing] is read only where the focused target's layer is drawn, so a change of it redraws that one layer, once.
+ * The targets' colors are read where their two layers are drawn too: they are made from the colors that follow the
+ * watch ([waypointColor], [softTint]), and a change of those redraws the two layers, once, and recomposes nothing.
  *
  * [focused] is what the wearer walks to: the focused waypoint, or, while a breadcrumb trail is retraced, the crumb
  * walked to, which is drawn the same way in the breadcrumb color. [crumbTicks] are the dial angles of the trail's
@@ -144,9 +146,11 @@ fun CompassDial(
                 val r = size.minDimension / 2f
                 val c = Offset(size.width / 2f, size.height / 2f)
                 val arrow = pointerTriangle(c, r)
-                val color = if (focused.isCrumb) CrumbColor else waypointColor(focused.hue)
                 val angle = focused.dialAngleDeg ?: 0f
                 onDrawBehind {
+                    // Read here, where the layer is drawn: a waypoint's color follows the watch's colors, and a
+                    // change of those draws this layer again, once.
+                    val color = if (focused.isCrumb) CrumbColor else waypointColor(focused.hue)
                     val heavy = facing()
                     val width = r * if (heavy) FACING_WIDTH else MARKER_WIDTH
                     val extra = if (heavy) r * FACING_EXTRA_LENGTH else 0f

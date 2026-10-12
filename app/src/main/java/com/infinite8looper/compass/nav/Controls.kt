@@ -146,8 +146,9 @@ fun wheelTapPicks(touch: WheelTouch, heldMs: Long, longPressMs: Long): Boolean =
     touch == WheelTouch.UNDECIDED && heldMs in 0 until longPressMs
 
 /**
- * The hue under a finger that is [dx] to the right of and [dy] below the center of a screen of radius
- * [screenRadius]: 0 at 12 o'clock, growing clockwise, below 360. Null within [WHEEL_DEAD_CENTER] of the center.
+ * The place on the color wheel under a finger that is [dx] to the right of and [dy] below the center of a screen of
+ * radius [screenRadius], in degrees: 0 at 12 o'clock, growing clockwise, below 360. It is the value stored as a
+ * waypoint's color. Null within [WHEEL_DEAD_CENTER] of the center.
  */
 fun wheelHue(dx: Float, dy: Float, screenRadius: Float): Float? {
     if (dx.isNaN() || dy.isNaN() || !(screenRadius > 0f)) return null

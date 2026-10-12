@@ -110,7 +110,10 @@ fun nextArrived(current: Boolean, meters: Double, units: Units): Boolean = when 
     else -> hasArrived(meters, units)
 }
 
-/** Golden-angle steps around the hue wheel: neighbors are far apart and no hue repeats. */
+/**
+ * The value stored for the color of waypoint number [index] (the first is 0): golden-angle steps round the 360
+ * degrees of the ring the colors come from ([ringColor]), so neighbors are far apart on it and no value repeats.
+ */
 fun hueForIndex(index: Int): Float = normalizeDeg(index * 137.508f)
 
 fun shouldHoldFlat(pitchDeg: Float): Boolean = pitchDeg > 70f

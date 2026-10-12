@@ -21,6 +21,7 @@ data class Waypoint(
     val lon: Double,
     val accuracyM: Float,
     val createdAt: Long,
+    /** The waypoint's place, from 0 to 360, on the ring its color comes from. The name is from when that ring was the hue wheel. */
     val hue: Float,
     val isTarget: Boolean,
 ) {

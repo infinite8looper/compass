@@ -50,8 +50,10 @@ import androidx.wear.compose.material3.dynamicColorScheme
 import com.infinite8looper.compass.nav.Pane
 import com.infinite8looper.compass.nav.ScrollArc
 import com.infinite8looper.compass.nav.WatchScheme
+import com.infinite8looper.compass.nav.ringColor
 import com.infinite8looper.compass.nav.roleColors
 import com.infinite8looper.compass.nav.rowInset
+import com.infinite8looper.compass.nav.softTintOf
 
 // The colors the screens share, each named for what it is used for. A screen takes a color from here by its
 // role, so a role's color is changed in this one place.
@@ -68,6 +70,7 @@ internal val Faint = Color(0xFF6E6E6E)
 // the checks in nav/WatchColors.kt. On any other watch they are the app's own blue and red. They are held as
 // state, so a place that reads one while composing is composed again when it changes, and a place that reads one
 // while drawing is drawn again: nothing has to be told. Setting them to what they already are changes nothing.
+// The waypoints' colors are made from these three ([waypointColor]) and follow them the same way.
 private val roles = mutableStateOf(roleColors(null))
 
 /** The heading pointer, and anything that is on or can be acted on. */
@@ -98,22 +101,35 @@ fun followWatchColors(context: Context) {
 /** A confirmation that something was done, such as a waypoint saved: a soft green. */
 val ConfirmColor = Color(0xFF7FD99A)
 
-/** A waypoint's own color: its line and arrow on the dial, and its mark wherever it is listed. */
-fun waypointColor(hue: Float): Color = Color.hsv(hue, 0.65f, 1f)
+/**
+ * A waypoint's own color: its line and arrow on the dial, and its mark wherever it is listed. It is the color at the
+ * waypoint's place on a ring that fades from the accent to north, on to the error color and back to the accent
+ * ([ringColor]); [position] is the waypoint's stored value, from 0 to 360, the accent being at 0.
+ *
+ * The three colors are the ones that follow the watch, read as they are at this moment, so a waypoint's color
+ * follows the watch too: read while drawing, it is drawn again when one of them changes, and read while composing,
+ * composed again. Nothing is allocated.
+ */
+fun waypointColor(position: Float): Color = opaque(ringAt(position))
+
+private fun ringAt(position: Float): Int = roles.value.let { ringColor(position / 360f, it.accent, it.north, it.error) }
 
 /**
  * The breadcrumb trail: its ticks on the dial, the crumb that is walked to, and its marks wherever it is listed. One
- * muted blue-gray for every crumb, which no waypoint has (a waypoint's color is far more saturated) and which does
- * not follow the watch's color scheme.
+ * muted blue-gray for every crumb. It does not follow the watch's color scheme and is not on the ring the waypoints'
+ * colors come from; with a pale scheme a waypoint's color can come near it.
  */
 val CrumbColor = Color(0xFF8FA6BF)
 
-/** The pale, partly transparent version of a waypoint's color that its line has while another target is focused. */
-fun softTint(hue: Float): Color = Color.hsv(hue, SOFT_TINT_SATURATION, SOFT_TINT_VALUE, SOFT_TINT_ALPHA)
+/**
+ * The pale, partly transparent version of a waypoint's color that its line has while another target is focused. It
+ * is made from [waypointColor] for the same [position], so the two always have one hue: the same color with less
+ * saturation ([softTintOf]), drawn at 0.6 of full strength.
+ */
+fun softTint(position: Float): Color = Color(SOFT_TINT_ALPHA or softTintOf(ringAt(position)))
 
-private const val SOFT_TINT_SATURATION = 0.40f
-private const val SOFT_TINT_VALUE = 1f
-private const val SOFT_TINT_ALPHA = 0.6f
+/** 0.6 of full strength (153 of 255), as the top eight bits of a color. */
+private const val SOFT_TINT_ALPHA = 0x99 shl 24
 
 // The parts the screens share, drawn in fractions of the screen's radius.
 
