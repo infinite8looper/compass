@@ -199,6 +199,14 @@ fun isFieldNormal(microTesla: Float): Boolean = microTesla in 25f..65f
 fun accuracyLabel(accuracy: Int?): String = when (accuracy) {
     3 -> "High"; 2 -> "Medium"; 1 -> "Low"; 0 -> "Unreliable"; else -> "Unknown"
 }
+/**
+ * How many quarters of the calibration screen's frame the magnetometer's reported accuracy fills: none for
+ * unreliable, one for low, three for medium and all four for high. An accuracy that is not known, or is not one of
+ * the four the sensor defines, fills none.
+ */
+fun accuracyQuarters(accuracy: Int?): Int = when (accuracy) {
+    3 -> 4; 2 -> 3; 1 -> 1; else -> 0
+}
 fun isStale(nowMs: Long, fixMs: Long?): Boolean = fixMs != null && nowMs - fixMs > STALE_AFTER_MS
 
 /** How long the result of logging a waypoint stays on the compass before the distance comes back. */

@@ -262,6 +262,11 @@ fun TickToggle(on: Boolean, modifier: Modifier = Modifier, color: () -> Color = 
  * anything. [content] has the width that is free at about half the radius above or below the middle; nearer the
  * top and bottom its end can run under the tick.
  *
+ * With [fitContent], [content] has all the width up to the tick instead, which is what a row in the middle of the
+ * screen has free, and whatever the ends coming in leave no room for fades out at its right end, while drawing: a
+ * row away from the middle shows the start of a long line, and all of it once it is scrolled to the middle. For
+ * rows whose text is fixed and long.
+ *
  * With [centered], [content] sits in the middle of the row instead and nothing moves: for a header, or a row that
  * is one word.
  */
@@ -269,6 +274,7 @@ fun TickToggle(on: Boolean, modifier: Modifier = Modifier, color: () -> Color = 
 fun InstrumentRow(
     modifier: Modifier = Modifier,
     centered: Boolean = false,
+    fitContent: Boolean = false,
     trailing: (@Composable () -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
@@ -287,7 +293,22 @@ fun InstrumentRow(
         if (centered) Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { content() }
         else {
             Box(
-                Modifier.weight(1f).graphicsLayer { translationX = inset.floatValue }.padding(end = radius * ROW_TEXT_ROOM),
+                Modifier.weight(1f).then(
+                    if (fitContent) Modifier.graphicsLayer { translationX = inset.floatValue; compositingStrategy = CompositingStrategy.Offscreen }
+                        .drawWithContent {
+                            drawContent()
+                            // Both ends have come in by the inset, so the tick now starts that much twice over
+                            // before the end of this box. The text is gone where the tick starts and whole a
+                            // gap before that, which in the middle of the screen is where the text ends anyway.
+                            val tick = size.width - 2f * inset.floatValue
+                            if (tick < size.width) drawRect(
+                                Brush.horizontalGradient(listOf(Color.Black, Color.Transparent), tick - ROW_FIT_GAP.toPx(), tick),
+                                blendMode = BlendMode.DstIn,
+                            )
+                        }
+                        .padding(end = ROW_FIT_GAP)
+                    else Modifier.graphicsLayer { translationX = inset.floatValue }.padding(end = radius * ROW_TEXT_ROOM)
+                ),
                 contentAlignment = Alignment.CenterStart,
             ) { content() }
             if (trailing != null) Box(Modifier.graphicsLayer { translationX = -inset.floatValue }) { trailing() }
@@ -297,6 +318,9 @@ fun InstrumentRow(
 
 /** What the two ends of a row at half the radius from the middle have come in by, together: kept free of text. */
 private const val ROW_TEXT_ROOM = 0.35f
+
+/** With `fitContent`: the room kept between the text and the tick, which is also the width a line that is cut short fades out over. */
+private val ROW_FIT_GAP = 8.dp
 
 /** Half the shorter side of the app's window, which on a watch is the radius of the screen. */
 @Composable

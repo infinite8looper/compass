@@ -95,6 +95,25 @@ class CompassViewModelTest {
         assertEquals(second.id, settings.settings.first().focusedId)
     }
 
+    @Test fun blindNavigationAndTheBreadcrumbTrailReachTheScreenStateAndFollowTheirSetters() = runBlocking {
+        val vm = viewModel()
+        try {
+            settings.setBlindNavigation(true); settings.setBreadcrumbTrail(false)
+            var nav = withTimeout(10_000) { vm.nav.first { it.loaded && it.blindNavigation && !it.breadcrumbTrail } }
+            assertTrue(nav.blindNavigation); assertFalse(nav.breadcrumbTrail)
+            vm.setBlindNavigation(false).join(); vm.setBreadcrumbTrail(true).join()
+            nav = withTimeout(10_000) { vm.nav.first { !it.blindNavigation && it.breadcrumbTrail } }
+            assertFalse(nav.blindNavigation); assertTrue(nav.breadcrumbTrail)
+            // Stored, not only shown.
+            assertFalse(settings.settings.first().blindNavigation); assertTrue(settings.settings.first().breadcrumbTrail)
+            vm.setBlindNavigation(true).join(); vm.setBreadcrumbTrail(false).join()
+            nav = withTimeout(10_000) { vm.nav.first { it.blindNavigation && !it.breadcrumbTrail } }
+            assertTrue(nav.blindNavigation); assertFalse(nav.breadcrumbTrail)
+        } finally {
+            settings.setBlindNavigation(true); settings.setBreadcrumbTrail(false)
+        }
+    }
+
     @Test fun navIsNotLoadedUntilTheStoresHaveAnswered() = runBlocking {
         assertFalse(NavUi.EMPTY.loaded)
         val vm = viewModel()

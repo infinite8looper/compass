@@ -34,6 +34,8 @@ data class NavUi(
     val tickFeedback: Boolean = true,
     val showCoordinates: Boolean = false,
     val backupEnabled: Boolean = true,
+    val blindNavigation: Boolean = true,
+    val breadcrumbTrail: Boolean = false,
 ) {
     companion object {
         val EMPTY = NavUi(emptyList(), null, Units.METRIC, NorthRef.TRUE, null, null, emptyList(), emptyMap(), loaded = false)
@@ -85,7 +87,8 @@ class CompassViewModel(app: Application, val locationSource: LocationSource) : A
         // Only a live fix gives distances; the saved last position is not presented as where the wearer is now.
         val distances = f?.let { live -> ws.associate { it.id to distanceMeters(live.point, GeoPoint(it.lat, it.lon)) } }.orEmpty()
         NavUi(targets, targets.firstOrNull { it.focused }, s.units, s.north, declination, f?.elapsedMs, ws, distances,
-            tickFeedback = s.tickFeedback, showCoordinates = s.showCoordinates, backupEnabled = s.backupEnabled)
+            tickFeedback = s.tickFeedback, showCoordinates = s.showCoordinates, backupEnabled = s.backupEnabled,
+            blindNavigation = s.blindNavigation, breadcrumbTrail = s.breadcrumbTrail)
     }
         .catch { Log.w(TAG, "screen state stopped updating", it) }
         .stateIn(viewModelScope, sharing, NavUi.EMPTY)
@@ -253,6 +256,10 @@ class CompassViewModel(app: Application, val locationSource: LocationSource) : A
     fun setUnits(u: Units) = launchQuietly("set units") { settingsStore.setUnits(u) }
     fun setTickFeedback(on: Boolean) = launchQuietly("set tick feedback") { settingsStore.setTickFeedback(on) }
     fun setShowCoordinates(on: Boolean) = launchQuietly("set show coordinates") { settingsStore.setShowCoordinates(on) }
+    /** Stores the switch. Nothing acts on it yet: the pulses on facing a target are not built. */
+    fun setBlindNavigation(on: Boolean) = launchQuietly("set blind navigation") { settingsStore.setBlindNavigation(on) }
+    /** Stores the switch. Nothing acts on it yet: the trail is not built. */
+    fun setBreadcrumbTrail(on: Boolean) = launchQuietly("set breadcrumb trail") { settingsStore.setBreadcrumbTrail(on) }
 
     fun setBackupEnabled(on: Boolean) = launchQuietly("set backup") {
         settingsStore.setBackupEnabled(on)

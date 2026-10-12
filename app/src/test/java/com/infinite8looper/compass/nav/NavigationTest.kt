@@ -100,6 +100,15 @@ class NavigationTest {
         assertEquals("Unknown", accuracyLabel(null))
         assertTrue(isStale(30_000, 5_000)); assertFalse(isStale(30_000, 15_000)); assertFalse(isStale(30_000, null))
     }
+    @Test fun accuracyFillsTheCalibrationFrameByQuarters() {
+        // Unreliable and unknown fill nothing, low one quarter, medium three, high all four.
+        assertEquals(0, accuracyQuarters(null)); assertEquals(0, accuracyQuarters(0))
+        assertEquals(1, accuracyQuarters(1)); assertEquals(3, accuracyQuarters(2)); assertEquals(4, accuracyQuarters(3))
+    }
+    @Test fun anAccuracyTheSensorDoesNotDefineFillsNothing() {
+        // -1 is the system's "no contact"; nothing above 3 is defined.
+        assertEquals(0, accuracyQuarters(-1)); assertEquals(0, accuracyQuarters(4)); assertEquals(0, accuracyQuarters(Int.MAX_VALUE))
+    }
     private fun fix(acc: Float) = Fix(GeoPoint(1.0, 2.0), acc, 0f, 0L)
 
     @Test fun acquireReturnsFirstGoodFix() = runTest {

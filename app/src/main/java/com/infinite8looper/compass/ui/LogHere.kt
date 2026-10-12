@@ -47,7 +47,8 @@ internal fun rememberLogHere(vm: CompassViewModel): () -> Unit {
     }
 }
 
-private val LOCATION_PERMISSIONS = arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+/** Precise and approximate location, which are asked for together wherever the app asks. */
+internal val LOCATION_PERMISSIONS = arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
 
 /** The color of the logging status's words wherever they are shown. */
 internal fun logStatusColor(status: LogStatus): Color = when (status) {

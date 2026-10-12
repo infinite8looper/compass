@@ -42,6 +42,8 @@ class SettingsStoreTest {
         assertEquals(NorthRef.TRUE, v.north); assertEquals(defaultUnits(Locale.getDefault()), v.units)
         assertNull(v.focusedId); assertNull(v.lastPosition); assertNull(v.lastAltitudeM)
         assertTrue(v.tickFeedback); assertFalse(v.showCoordinates); assertTrue(v.backupEnabled)
+        // Blind navigation is on until it is turned off; the breadcrumb trail is off until it is turned on.
+        assertTrue(v.blindNavigation); assertFalse(v.breadcrumbTrail)
     }
     @Test fun valuesRoundTrip() = withStore { s, _ ->
         s.setNorth(NorthRef.MAGNETIC); s.setUnits(Units.IMPERIAL); s.setFocused(7)
@@ -58,6 +60,50 @@ class SettingsStoreTest {
         s.setTickFeedback(true); s.setShowCoordinates(false)
         v = s.settings.first()
         assertTrue(v.tickFeedback); assertFalse(v.showCoordinates)
+    }
+    @Test fun blindNavigationAndBreadcrumbTrailRoundTripBothWays() = withStore { s, _ ->
+        s.setBlindNavigation(false); s.setBreadcrumbTrail(true)
+        var v = s.settings.first()
+        assertFalse(v.blindNavigation); assertTrue(v.breadcrumbTrail)
+        s.setBlindNavigation(true); s.setBreadcrumbTrail(false)
+        v = s.settings.first()
+        assertTrue(v.blindNavigation); assertFalse(v.breadcrumbTrail)
+    }
+    @Test fun theTwoNewSettingsChangeNoOtherSetting() = withStore { s, _ ->
+        s.setBackupEnabled(false); s.setTickFeedback(false); s.setShowCoordinates(true)
+        s.setBlindNavigation(false); s.setBreadcrumbTrail(true)
+        val v = s.settings.first()
+        assertFalse(v.backupEnabled); assertFalse(v.tickFeedback); assertTrue(v.showCoordinates)
+        assertEquals(false, s.readBackupEnabled())
+    }
+    @Test fun theTwoNewSettingsAreKeptInTheSettingsFileAndNotThePositionFile() = withStore { s, file ->
+        s.setBlindNavigation(false); s.setBreadcrumbTrail(true); s.setLastPosition(GeoPoint(43.7022, -72.2896), 160f)
+        assertFalse(s.settings.first().blindNavigation)
+        val main = ctx.preferencesDataStoreFile(file).readBytes().toString(Charsets.ISO_8859_1)
+        val pos = ctx.preferencesDataStoreFile("$file-position").readBytes().toString(Charsets.ISO_8859_1)
+        assertTrue(main.contains("blind_navigation")); assertTrue(main.contains("breadcrumb_trail"))
+        assertFalse(pos.contains("blind_navigation")); assertFalse(pos.contains("breadcrumb_trail"))
+    }
+    @Test fun aSettingsFileFromBeforeTheTwoNewSettingsReadsThemAsTheirDefaults() = runBlocking {
+        val file = "test-settings-${UUID.randomUUID()}"
+        val main = ctx.preferencesDataStoreFile(file)
+        val oldJob = SupervisorJob(); val job = SupervisorJob()
+        try {
+            // An install from before this build: a settings file with the keys it had then and neither new one.
+            val old = PreferenceDataStoreFactory.create(scope = CoroutineScope(Dispatchers.IO + oldJob)) { main }
+            old.edit {
+                it[booleanPreferencesKey("magnetic_north")] = true; it[booleanPreferencesKey("tick_feedback")] = false
+                it[booleanPreferencesKey("backup_enabled")] = false
+            }
+            oldJob.cancelAndJoin()
+            val text = main.readBytes().toString(Charsets.ISO_8859_1)
+            assertTrue(text.contains("tick_feedback")); assertFalse(text.contains("blind_navigation")); assertFalse(text.contains("breadcrumb_trail"))
+
+            val v = SettingsStore(ctx, file, CoroutineScope(Dispatchers.IO + job)).settings.first()
+            assertTrue(v.blindNavigation); assertFalse(v.breadcrumbTrail)
+            // What it did hold is as it was.
+            assertEquals(NorthRef.MAGNETIC, v.north); assertFalse(v.tickFeedback); assertFalse(v.backupEnabled)
+        } finally { oldJob.cancelAndJoin(); job.cancelAndJoin(); main.delete(); ctx.preferencesDataStoreFile("$file-position").delete() }
     }
     @Test fun backupEnabledRoundTripsBothWays() = withStore { s, _ ->
         s.setBackupEnabled(false)
@@ -88,6 +134,8 @@ class SettingsStoreTest {
             assertNull(v.focusedId); assertNull(v.lastPosition); assertNull(v.lastAltitudeM)
             // A damaged file leaves the privacy switch OFF, not at its fresh-install default of on.
             assertTrue(v.tickFeedback); assertFalse(v.showCoordinates); assertFalse(v.backupEnabled)
+            // The two newer settings come back as their defaults: blind navigation on, the trail off.
+            assertTrue(v.blindNavigation); assertFalse(v.breadcrumbTrail)
             s.setNorth(NorthRef.MAGNETIC)
             assertEquals(NorthRef.MAGNETIC, s.settings.first().north)
         } finally { job.cancelAndJoin(); f.delete(); ctx.preferencesDataStoreFile("$file-position").delete() }
@@ -100,6 +148,7 @@ class SettingsStoreTest {
             first.setNorth(NorthRef.MAGNETIC); first.setUnits(Units.IMPERIAL); first.setFocused(42)
             first.setLastPosition(GeoPoint(43.7022, -72.2896), 160f)
             first.setTickFeedback(false); first.setShowCoordinates(true); first.setBackupEnabled(false)
+            first.setBlindNavigation(false); first.setBreadcrumbTrail(true)
             assertEquals(listOf(1, 2), listOf(first.nextWaypointNumber(), first.nextWaypointNumber()))
             job1.cancelAndJoin()
             val second = SettingsStore(ctx, file, CoroutineScope(Dispatchers.IO + job2))
@@ -108,6 +157,7 @@ class SettingsStoreTest {
             assertEquals(43.7022, v.lastPosition!!.lat, 1e-9); assertEquals(-72.2896, v.lastPosition.lon, 1e-9)
             assertEquals(160f, v.lastAltitudeM!!, 0f)
             assertFalse(v.tickFeedback); assertTrue(v.showCoordinates); assertFalse(v.backupEnabled)
+            assertFalse(v.blindNavigation); assertTrue(v.breadcrumbTrail)
             assertEquals(3, second.nextWaypointNumber())
         } finally { job1.cancelAndJoin(); job2.cancelAndJoin(); ctx.preferencesDataStoreFile(file).delete(); ctx.preferencesDataStoreFile("$file-position").delete() }
     }
@@ -146,6 +196,8 @@ class SettingsStoreTest {
             assertNull(second.readBackupEnabled())
             // The settings flow does not claim the switch is on either.
             assertFalse(second.settings.first().backupEnabled)
+            // The two newer settings read as their defaults while the file cannot be read.
+            assertTrue(second.settings.first().blindNavigation); assertFalse(second.settings.first().breadcrumbTrail)
         } finally { f.setReadable(true, false); job1.cancelAndJoin(); job2.cancelAndJoin(); f.delete(); ctx.preferencesDataStoreFile("$file-position").delete() }
     }
     @Test fun lastPositionIsKeptOutOfTheSettingsFileThatIsBackedUp() = withStore { s, file ->

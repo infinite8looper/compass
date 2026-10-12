@@ -2,12 +2,17 @@ package com.infinite8looper.compass.ui
 
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -16,14 +21,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.wear.compose.material3.Text
 import com.infinite8looper.compass.CompassViewModel
 import com.infinite8looper.compass.nav.accuracyLabel
+import com.infinite8looper.compass.nav.accuracyQuarters
 import com.infinite8looper.compass.nav.isFieldNormal
 import com.infinite8looper.compass.sensors.HeadingReading
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -40,40 +51,78 @@ private fun HeadingReading?.toView() = CalibrationView(
     this?.accuracy, this?.fieldMicroTesla?.roundToInt(), this?.fieldMicroTesla?.let { !isFieldNormal(it) } ?: false,
 )
 
+/**
+ * Calibration, opened from the settings or from the compass's prompt, in fractions of the screen's radius from the
+ * top: what to do, the figure 8 to follow, the accuracy the magnetometer reports as the large word, and the field
+ * strength small under it. The frame fills in the confirming green by quarters as the accuracy improves
+ * ([accuracyQuarters]). A field outside what the earth's can be is reported under the rest, in the error color.
+ *
+ * Everything stands where it is whatever is shown: the warning has its own place and comes and goes there.
+ * A right swipe and Back leave, which is the navigation host's doing. The crown and a side button do nothing here.
+ */
 @Composable
 fun CalibrationScreen(vm: CompassViewModel) {
     // Collect only the displayed values, so the screen recomposes when one of them changes, not on every reading.
     val shown by remember(vm) { vm.heading.map { it.toView() }.distinctUntilChanged() }
         .collectAsStateWithLifecycle(CalibrationView(null, null, false))
-    val phase by rememberInfiniteTransition(label = "figure8")
+    // The two that move are read only where they are drawn.
+    val phase = rememberInfiniteTransition(label = "figure8")
         .animateFloat(0f, (2 * PI).toFloat(), infiniteRepeatable(tween(2600, easing = LinearEasing)), label = "t")
-    val accuracy = shown.accuracy
-    val field = shown.fieldMicroTesla
-    Column(
-        Modifier.fillMaxSize().background(Color.Black).padding(horizontal = 22.dp),
-        verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text("Move your wrist in a figure 8", color = Color.White, fontSize = 11.sp, textAlign = TextAlign.Center)
-        Canvas(Modifier.fillMaxWidth(0.7f).height(46.dp)) {
+    val filled = animateFloatAsState(accuracyQuarters(shown.accuracy) / 4f, tween(FILL_MS), label = "accuracy")
+
+    BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
+        val r = minOf(maxWidth, maxHeight) / 2
+        val density = LocalDensity.current
+        val smallStyle = remember(r, density) { density.instrumentText(r * 0.09f, align = TextAlign.Center) }
+        val wordStyle = remember(r, density) { density.instrumentText(r * 0.24f, FontWeight.Light, TextAlign.Center) }
+        val warningStyle = remember(r, density) { density.instrumentText(r * 0.085f, align = TextAlign.Center) }
+
+        FrameRing(fill = { filled.value }, fillColor = ConfirmColor, fillInner = FILL_INNER)
+
+        Text(
+            "Move your wrist in a figure 8", color = Dim, style = smallStyle, maxLines = 2,
+            modifier = Modifier.offset(y = r * GUIDE_TEXT_Y).width(r * 1.2f),
+        )
+        Canvas(Modifier.offset(y = r * GUIDE_Y).width(r * 0.84f).height(r * 0.26f)) {
             // A lemniscate traced as x = sin t, y = sin t cos t.
             fun at(t: Float) = Offset(center.x + size.width * 0.45f * sin(t), center.y + size.height * 0.85f * sin(t) * cos(t))
             val path = Path().apply {
                 moveTo(at(0f).x, at(0f).y)
                 for (i in 1..64) { val p = at(i * (2 * PI).toFloat() / 64); lineTo(p.x, p.y) }
+                close()
             }
-            drawPath(path, Color(0xFF6E6E6E), style = Stroke(2.dp.toPx()))
-            drawCircle(AccentColor, 5.dp.toPx(), at(phase))
+            drawPath(path, Faint, style = Stroke(size.height * 0.07f, cap = StrokeCap.Round))
+            drawCircle(Ink, size.height * 0.16f, at(phase.value))
         }
         Text(
-            "Accuracy: ${accuracyLabel(accuracy)}",
-            color = if (accuracy != null && accuracy >= 2) Color(0xFF7BE07B) else ErrorColor, fontSize = 13.sp,
+            accuracyLabel(shown.accuracy), color = Ink, style = wordStyle, maxLines = 1,
+            modifier = Modifier.offset(y = r * WORD_Y).semantics {
+                contentDescription = "Accuracy: ${accuracyLabel(shown.accuracy)}"
+                liveRegion = LiveRegionMode.Polite
+            },
         )
-        if (field != null) {
-            Text("Field: $field µT", color = Color(0xFF9E9E9E), fontSize = 10.sp)
-            if (shown.interference) {
-                Text("Magnetic interference nearby. Move away from chargers, magnets and steel.",
-                    color = ErrorColor, fontSize = 10.sp, textAlign = TextAlign.Center)
-            }
+        shown.fieldMicroTesla?.let { field ->
+            Text("Field: $field µT", color = Dim, style = smallStyle, maxLines = 1, modifier = Modifier.offset(y = r * FIELD_Y))
+        }
+        if (shown.interference) {
+            Text(
+                "Magnetic interference nearby. Move away from chargers, magnets and steel.",
+                color = ErrorColor, style = warningStyle, maxLines = 3,
+                modifier = Modifier.offset(y = r * WARNING_Y).width(r * WARNING_WIDTH).semantics { liveRegion = LiveRegionMode.Polite },
+            )
         }
     }
 }
+
+// Where things stand, in radii below the center (negative: above it), each by its middle.
+private const val GUIDE_TEXT_Y = -0.54f
+private const val GUIDE_Y = -0.30f
+private const val WORD_Y = 0.01f
+private const val FIELD_Y = 0.22f
+private const val WARNING_Y = 0.49f
+private const val WARNING_WIDTH = 1.3f
+
+/** The accuracy's fill reaches in from the frame's outer edge to this fraction of the radius. */
+private const val FILL_INNER = 0.92f
+/** How long the fill takes to move to a new level. */
+private const val FILL_MS = 400

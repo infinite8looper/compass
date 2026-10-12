@@ -28,6 +28,7 @@ data class Settings(
     val lastPosition: GeoPoint?, val lastAltitudeM: Float?,
     val tickFeedback: Boolean = true, val showCoordinates: Boolean = false,
     val backupEnabled: Boolean = true,
+    val blindNavigation: Boolean = true, val breadcrumbTrail: Boolean = false,
 )
 
 fun defaultUnits(locale: Locale): Units =
@@ -84,6 +85,10 @@ class SettingsStore(
             tickFeedback = p[TICK_FEEDBACK] ?: true,
             showCoordinates = p[SHOW_COORDINATES] ?: false,
             backupEnabled = p[BACKUP_ENABLED] ?: true,
+            // Blind navigation is on wherever nothing is stored for it: on a fresh install, on an install that was
+            // upgraded from a build without it, and in a file that was reset or cannot be read.
+            blindNavigation = p[BLIND_NAVIGATION] ?: true,
+            breadcrumbTrail = p[BREADCRUMB_TRAIL] ?: false,
         )
     }
 
@@ -113,6 +118,8 @@ class SettingsStore(
     suspend fun setUnits(u: Units) { store.edit { it[IMPERIAL] = u == Units.IMPERIAL } }
     suspend fun setTickFeedback(on: Boolean) { store.edit { it[TICK_FEEDBACK] = on } }
     suspend fun setShowCoordinates(on: Boolean) { store.edit { it[SHOW_COORDINATES] = on } }
+    suspend fun setBlindNavigation(on: Boolean) { store.edit { it[BLIND_NAVIGATION] = on } }
+    suspend fun setBreadcrumbTrail(on: Boolean) { store.edit { it[BREADCRUMB_TRAIL] = on } }
     /**
      * What the backup agent asks, and the only answer that allows a backup is `true`. Unlike [settings] this does
      * not hide a failed read: it returns null when the file cannot be read. A fresh install with no file yet reads
@@ -142,6 +149,8 @@ class SettingsStore(
         private val TICK_FEEDBACK = booleanPreferencesKey("tick_feedback")
         private val SHOW_COORDINATES = booleanPreferencesKey("show_coordinates")
         private val BACKUP_ENABLED = booleanPreferencesKey("backup_enabled")
+        private val BLIND_NAVIGATION = booleanPreferencesKey("blind_navigation")
+        private val BREADCRUMB_TRAIL = booleanPreferencesKey("breadcrumb_trail")
         private val FOCUSED = longPreferencesKey("focused_id")
         private val LAT = doublePreferencesKey("last_lat")
         private val LON = doublePreferencesKey("last_lon")

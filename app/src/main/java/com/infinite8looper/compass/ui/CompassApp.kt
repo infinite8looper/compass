@@ -1,7 +1,6 @@
 package com.infinite8looper.compass.ui
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -123,15 +122,12 @@ private fun Panes(vm: CompassViewModel, panes: PagerState, onLogHere: () -> Unit
             val state = derivedStateOf { pageView(page, panes.currentPage, panes.currentPageOffsetFraction, panes.targetPage, panes.isScrollInProgress) }
             return@remember { state.value }
         }
-        when (val pane = paneOf(page)) {
-            Pane.SETTINGS -> Box {
-                SettingsScreen(vm, onCalibrate = onCalibrate)
-                PanePosition(pane.ordinal)
-            }
+        when (paneOf(page)) {
+            // The frames of the settings and waypoints screens hold their pane ticks.
+            Pane.SETTINGS -> SettingsScreen(vm, paneView = view, onCalibrate = onCalibrate)
             Pane.COMPASS -> CompassScreen(
                 vm, paneView = view, onOpenList = { show(Pane.WAYPOINTS) }, onLogHere = onLogHere, onCalibrate = onCalibrate,
             )
-            // The frame of the waypoints screen holds its pane ticks.
             Pane.WAYPOINTS -> WaypointsScreen(vm, paneView = view, onEdit = onEdit, onLogHere = onLogHere)
         }
     }
