@@ -201,11 +201,13 @@ fun CompassScreen(
 
     // The ticks that say which of the three screens this is show only around a swipe: from the moment the compass
     // starts to move until a little after it has come to rest. At rest the screen is the compass and nothing else.
+    // Only the row moving brings them: a compass that was hidden under a screen opened from a row and is shown
+    // again has not moved, and gets none.
     val paneTicks = remember { Animatable(0f) }
     LaunchedEffect(paneView) {
         // The compass opens at rest, so the first value changes nothing.
-        snapshotFlow { paneView() == PaneView.IN_VIEW }.collectLatest { atRest ->
-            if (!atRest) paneTicks.snapTo(1f)
+        snapshotFlow { paneView() == PaneView.PASSING }.collectLatest { moving ->
+            if (moving) paneTicks.snapTo(1f)
             else if (paneTicks.value > 0f) { delay(PANE_TICKS_LINGER_MS); paneTicks.animateTo(0f, tween(PANE_TICKS_FADE_MS)) }
         }
     }

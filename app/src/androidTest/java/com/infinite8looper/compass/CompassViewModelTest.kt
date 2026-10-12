@@ -467,27 +467,34 @@ class CompassViewModelTest {
         assertEquals(accuracy, vm.lastAccuracy.value)
     }
 
-    @Test fun aRestartedSensorsReadingsKeepTheLastAccuracyAndField() = runBlocking {
+    /**
+     * The first reading that arrives after the sensor is stopped and started again has an accuracy and a field
+     * strength. The view model's flow first gives the reading from before the stop again, so that one is set aside
+     * and the test waits for the next, which a new sensor event has made.
+     *
+     * What this shows on an emulator: a restart loses neither value. It does not show that the view model's
+     * carry-over is what keeps them: on the API 35 emulator this test passed with the carry-over switched off as
+     * well, because there the first new reading already came with both values. The gap the carry-over closes
+     * (headings that arrive before the magnetometer's first event) is tested as a rule in NavigationTest
+     * (carriedOver) and would make this test fail on a device that has it.
+     */
+    @Test fun theFirstNewReadingAfterARestartHasAnAccuracyAndAFieldStrength() = runBlocking {
         val vm = viewModel()
         withContext(Dispatchers.Main) { vm.setHeadingWanted(true) }
         withTimeout(15_000) { vm.heading.first { it?.accuracy != null && it.fieldMicroTesla != null } }
         withContext(Dispatchers.Main) { vm.setHeadingWanted(false) }
         delay(3_500)
         assertFalse(headingSensorRegistered())
+        val beforeTheStop = vm.heading.value
+        assertNotNull(beforeTheStop)
 
-        // Every reading from the restart on: the first headings come before the magnetometer's first event, and
-        // without the carry-over they would have neither value.
-        val seen = CopyOnWriteArrayList<com.infinite8looper.compass.sensors.HeadingReading?>()
-        val collecting = launch { vm.heading.collect { seen += it } }
         withContext(Dispatchers.Main) { vm.setHeadingWanted(true) }
-        delay(2_000)
-        collecting.cancel()
+        // A reading that is not the one from before the stop: the flow holds one value and gives a new one only
+        // when it differs, so this is a reading the restarted sensor produced.
+        val fresh = withTimeout(20_000) { vm.heading.first { it != null && it != beforeTheStop } }!!
         assertTrue(headingSensorRegistered())
-        assertTrue(seen.isNotEmpty())
-        for (reading in seen) {
-            assertNotNull("a reading without an accuracy among ${seen.size}", reading?.accuracy)
-            assertNotNull("a reading without a field strength among ${seen.size}", reading?.fieldMicroTesla)
-        }
+        assertNotNull("the first new reading has no accuracy", fresh.accuracy)
+        assertNotNull("the first new reading has no field strength", fresh.fieldMicroTesla)
         withContext(Dispatchers.Main) { vm.setHeadingWanted(false) }
     }
 }

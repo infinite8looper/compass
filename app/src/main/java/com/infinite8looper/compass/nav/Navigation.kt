@@ -258,6 +258,13 @@ sealed interface LogStatus {
     data class Failed(val reason: LogFailure) : LogStatus
 }
 
+/**
+ * What the app says where it cannot go on without the precise location permission: one sentence, "Needs access to
+ * precise location", broken where it is put on two lines. The logging status and the settings row both take it
+ * from here.
+ */
+val NEEDS_PRECISE_LOCATION: Pair<String, String> = "Needs access to" to "precise location"
+
 /** The two lines the compass shows for [status]: the status, and a smaller line under it where there is one. */
 fun statusText(status: LogStatus, units: Units): Pair<String, String?> = when (status) {
     LogStatus.Idle -> "" to null
@@ -267,7 +274,7 @@ fun statusText(status: LogStatus, units: Units): Pair<String, String?> = when (s
         LogFailure.NO_FIX -> "No GPS fix" to "Try again outdoors"
         LogFailure.LOCATION_OFF -> "Location is off" to null
         // One message, too long for a line of the status: the second line carries it on ([statusDetailContinues]).
-        LogFailure.NO_PERMISSION -> "Needs access to" to "precise location"
+        LogFailure.NO_PERMISSION -> NEEDS_PRECISE_LOCATION
         LogFailure.SAVE_FAILED -> "Couldn't save" to null
     }
 }

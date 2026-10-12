@@ -162,6 +162,11 @@ class NavigationTest {
         assertTrue(isInterference(0f)); assertTrue(isInterference(400f))
         assertFalse(isInterference(Float.NaN))
     }
+    @Test fun theWordsForMissingPreciseLocationAreInOnePlaceAndTheStatusUsesThem() {
+        assertEquals("Needs access to" to "precise location", NEEDS_PRECISE_LOCATION)
+        assertEquals(NEEDS_PRECISE_LOCATION, statusText(LogStatus.Failed(LogFailure.NO_PERMISSION), Units.METRIC))
+        assertEquals(NEEDS_PRECISE_LOCATION, statusText(LogStatus.Failed(LogFailure.NO_PERMISSION), Units.IMPERIAL))
+    }
     @Test fun theSecondLineCarriesOnTheFirstOnlyForTheMessageThatIsBrokenInTwo() {
         // The owner's words, whole, on two lines.
         val (first, second) = statusText(LogStatus.Failed(LogFailure.NO_PERMISSION), Units.METRIC)

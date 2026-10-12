@@ -67,8 +67,10 @@ fun CompassApp() {
     val compassInView = remember(panes) {
         derivedStateOf {
             val page = panes.currentPage
-            route?.destination?.route == PANES_ROUTE && paneOf(page) == Pane.COMPASS &&
-                pageView(page, page, panes.currentPageOffsetFraction, panes.targetPage, panes.isScrollInProgress) == PaneView.IN_VIEW
+            paneOf(page) == Pane.COMPASS && pageViewUnder(
+                topScreen(route?.destination?.route),
+                pageView(page, page, panes.currentPageOffsetFraction, panes.targetPage, panes.isScrollInProgress),
+            ) == PaneView.IN_VIEW
         }
     }
     KeepAwake(vm, compassInView = { compassInView.value })

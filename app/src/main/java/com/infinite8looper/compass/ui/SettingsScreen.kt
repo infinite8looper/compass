@@ -35,6 +35,7 @@ import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
 import androidx.wear.compose.material3.Text
 import com.infinite8looper.compass.BuildConfig
 import com.infinite8looper.compass.CompassViewModel
+import com.infinite8looper.compass.nav.NEEDS_PRECISE_LOCATION
 import com.infinite8looper.compass.nav.NorthRef
 import com.infinite8looper.compass.nav.Pane
 import com.infinite8looper.compass.nav.PaneView
@@ -127,10 +128,14 @@ fun SettingsScreen(vm: CompassViewModel, paneView: () -> PaneView, onCalibrate: 
                     }
                 }
                 item(key = "coordinates") {
-                    // After a denial the row says so, in the color of a failure, where it otherwise says what it shows.
+                    // After a denial the row says so, in the color of a failure, where it otherwise says what it shows:
+                    // the same two lines as the logging status, since the sentence does not fit one line of a row
+                    // that is above or below the middle of the screen.
                     SwitchRow(
-                        "Show coordinates", if (needsAccess) "Needs access to precise location" else "GPS position on the compass",
+                        "Show coordinates",
+                        if (needsAccess) NEEDS_PRECISE_LOCATION.let { (first, second) -> "$first\n$second" } else "GPS position on the compass",
                         nav.showCoordinates, ready, styles, detailColor = if (needsAccess) ErrorColor else Dim,
+                        detailLines = if (needsAccess) 2 else 1,
                     ) { on ->
                         inView {
                             needsAccess = false
@@ -183,7 +188,7 @@ private class SettingsStyles(
 @Composable
 private fun SwitchRow(
     label: String, detail: String, on: Boolean, enabled: Boolean, styles: SettingsStyles,
-    detailColor: Color = Dim, onChange: (Boolean) -> Unit,
+    detailColor: Color = Dim, detailLines: Int = 1, onChange: (Boolean) -> Unit,
 ) {
     InstrumentRow(
         Modifier.toggleable(on, enabled = enabled, role = Role.Switch, onValueChange = onChange),
@@ -194,7 +199,7 @@ private fun SwitchRow(
                 label, color = if (on) Ink else Dim, style = if (on) styles.labelOn else styles.label,
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
-            Text(detail, color = detailColor, style = styles.detail, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(detail, color = detailColor, style = styles.detail, maxLines = detailLines, overflow = TextOverflow.Ellipsis)
         }
     }
 }
