@@ -224,10 +224,11 @@ fun CompassScreen(
             .onPreviewKeyEvent { e ->
                 sideButton.onKey(e.nativeKeyEvent, onPress = { if (paneView() == PaneView.IN_VIEW) onLogHere() })
             }
-            // A plain focus target, not `focusable()`: that one also asks, on taking the focus, to be brought into
-            // view, and the pager answers by scrolling to this page. The pager gives a page the focus half way
-            // through a slide, so that scroll stopped every slide the app itself made onto the compass (Back from
-            // waypoints, a second Back on through it) at the half-way point.
+            // A plain focus target, not `focusable()`. Observed on the API 35 emulator: with `focusable()` here,
+            // every slide the app itself made onto the compass (Back from waypoints, a second Back on through it)
+            // was cancelled just as the compass took the focus, which the pager gives a page half way through a
+            // slide (6 of 6); with `focusTarget()` and nothing else changed, none was (0 of 9). `focusable()`
+            // asks to be brought into view when it takes the focus, which is the likely cause.
             .requestFocusOnHierarchyActive().focusTarget()
             // Three gestures start on the dial, and a touch becomes at most one of them. A sideways swipe is the
             // pager's, around this screen. The two below are the compass's own: a vertical swipe moves the focus
