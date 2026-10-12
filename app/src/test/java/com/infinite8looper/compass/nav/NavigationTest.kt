@@ -598,6 +598,47 @@ class NavigationTest {
         assertEquals(Pulse.LOCK, pulseBetween(onA, same, targetChanged = true))
     }
 
+    @Test fun pulsesAreSilentWhileThePositionIsOldAndAFreshFixWhileFacingIsALock() {
+        fun step(state: BlindPulses, atMs: Long, stale: Boolean, facing: Boolean = true) =
+            nextBlindPulses(state, facing, enabled = true, inView = true, nowNanos = atMs * 1_000_000L, positionStale = stale)
+        // Facing a bearing worked out from an old position: nothing, for as long as it stays old.
+        var state = BlindPulses.Silent
+        val pulses = mutableListOf<Pulse>()
+        var t = 10_000L
+        fun run(ms: Long, stale: Boolean, facing: Boolean = true) {
+            repeat((ms / 16).toInt()) {
+                t += 16
+                val next = step(state, t, stale, facing)
+                pulseBetween(state, next)?.let { pulses += it }
+                state = next
+            }
+        }
+        run(5_000, stale = true)
+        assertEquals(emptyList<Pulse>(), pulses)
+        assertEquals(BlindPulses.Silent, state)
+        // A fresh fix arrives while still facing: that is becoming facing. One lock, then the heartbeats.
+        run(3_500, stale = false)
+        assertEquals(listOf(Pulse.LOCK, Pulse.HEARTBEAT, Pulse.HEARTBEAT, Pulse.HEARTBEAT), pulses)
+        // The position grows old while facing: the heartbeats stop.
+        pulses.clear()
+        run(30_000, stale = true)
+        assertEquals(emptyList<Pulse>(), pulses)
+        // Fresh again after that long: one lock, and nothing made up for the time in between.
+        t += 16; var next = step(state, t, stale = false)
+        assertEquals(Pulse.LOCK, pulseBetween(state, next)); state = next
+        t += 16; next = step(state, t, stale = false)
+        assertNull(pulseBetween(state, next)); state = next
+        run(960, stale = false)
+        assertEquals(emptyList<Pulse>(), pulses)
+        run(32, stale = false)
+        assertEquals(listOf(Pulse.HEARTBEAT), pulses)
+        // Old and not facing, then fresh and still not facing: nothing.
+        pulses.clear()
+        run(2_000, stale = true, facing = false)
+        run(2_000, stale = false, facing = false)
+        assertEquals(emptyList<Pulse>(), pulses)
+    }
+
     @Test fun aTickOnAPulsesFrameOrRightAfterItIsDropped() {
         // No pulse yet: ticks are free.
         assertTrue(tickClearOfPulse(1_000L, null, 0L))

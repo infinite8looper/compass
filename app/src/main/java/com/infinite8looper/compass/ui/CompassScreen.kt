@@ -162,8 +162,12 @@ fun CompassScreen(
                     val inView = paneView() == PaneView.IN_VIEW && lifecycle.currentState == Lifecycle.State.RESUMED
 
                     // Blind navigation: the strong pulse on turning onto the focused target, the soft one each
-                    // second while still facing it.
-                    val nextBlind = nextBlindPulses(blind, facing, n.blindNavigation, inView, now, targetChanged)
+                    // second while still facing it. Not from an old position: the mark on the distance that says
+                    // so is for the eye, and the same condition keeps the pulses silent.
+                    val nextBlind = nextBlindPulses(
+                        blind, facing, n.blindNavigation, inView, now, targetChanged,
+                        positionStale = isStale(SystemClock.elapsedRealtime(), n.fixElapsedMs),
+                    )
                     val pulse = pulseBetween(blind, nextBlind, targetChanged)
                     blind = nextBlind
                     if (pulse != null) {

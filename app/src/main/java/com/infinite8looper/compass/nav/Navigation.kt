@@ -149,12 +149,16 @@ value class BlindPulses internal constructor(val lastNanos: Long) {
 
 /**
  * The pulses after a frame at [nowNanos]. They run while the wearer is [facing] the focused target (the one
- * facing state there is, [nextFacing]), the setting is on ([enabled]) and the compass is the screen in view
- * ([inView]); when any of the three is not so they are [BlindPulses.Silent]. [pulseBetween] says what the step
- * from the state before to the state returned gives the wearer.
+ * facing state there is, [nextFacing]), the setting is on ([enabled]), the compass is the screen in view
+ * ([inView]) and the position the target's bearing is worked out from is not old ([positionStale], which is
+ * [isStale], the condition that marks the distance on screen as old); when any of the four is not so they are
+ * [BlindPulses.Silent]. A wearer who is not looking cannot see that mark, and the heavy line, which is drawn
+ * from [facing] alone, stays. [pulseBetween] says what the step from the state before to the state returned
+ * gives the wearer.
  *
- * Going from silent to pulsing is the lock, whichever of the three came true: turning onto the target, the
- * compass coming back into view while the wearer still faces it, or the setting being switched on. The pulse
+ * Going from silent to pulsing is the lock, whichever of the four came true: turning onto the target, the
+ * compass coming back into view while the wearer still faces it, the setting being switched on, or a new
+ * position arriving in place of an old one. The pulse
  * after any silence is therefore the strong one, and a soft one only ever follows a pulse that was felt.
  * The focus moving to another target that is faced too ([targetChanged]) starts the pulses again with a lock for
  * that target.
@@ -165,8 +169,9 @@ value class BlindPulses internal constructor(val lastNanos: Long) {
  */
 fun nextBlindPulses(
     current: BlindPulses, facing: Boolean, enabled: Boolean, inView: Boolean, nowNanos: Long, targetChanged: Boolean = false,
+    positionStale: Boolean = false,
 ): BlindPulses {
-    if (!facing || !enabled || !inView) return BlindPulses.Silent
+    if (!facing || !enabled || !inView || positionStale) return BlindPulses.Silent
     if (!current.pulsing || targetChanged) return BlindPulses(nowNanos)
     val beats = (nowNanos - current.lastNanos) / BLIND_HEARTBEAT_NANOS
     return if (beats >= 1) BlindPulses(current.lastNanos + beats * BLIND_HEARTBEAT_NANOS) else current
