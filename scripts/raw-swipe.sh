@@ -12,9 +12,13 @@
 # next by the clock, so when the app is slow over one sample the rest are never sent and the swipe ends early (see
 # swipe.sh). Events written to the touch device do not wait for the app, as a finger does not, and a gesture that
 # is not a straight line can be given.
-# Writing to the device needs adbd running as root, so this works on emulator images that allow `adb root`. The
-# script switches adbd to root for the gesture and back afterwards, and waits at most 30 s for each switch; it
-# leaves adbd unrooted even if it found it rooted. It refuses to run on anything but an emulator.
+# Writing to the device needs adbd running as root. On an emulator image that allows `adb root` the script switches
+# adbd to root for the gesture and back afterwards, and waits at most 30 s for each switch; it leaves adbd unrooted
+# even if it found it rooted. On an image that does not allow it (the signed Wear OS 7.0 image, which says
+# ro.debuggable=0) the same events go through the emulator's console instead (`event send`, on the port in the
+# device's serial number, with the token in ~/.emulator_console_auth_token): they arrive on the same touch device,
+# a sample about every 16 ms, and wait for the app no more than a finger does. It refuses to run on anything but
+# an emulator.
 # However it ends (finished, a wrong argument, Ctrl-C, a kill), it lifts the finger if it had put one down, removes
 # its files from the device and from this machine, and unroots adbd, once, and exits with the status it had.
 # A sample count must be a whole number from 1 to 500, and every other number finite.
@@ -36,6 +40,7 @@ dir=$(mktemp -d) || exit 1
 dev=""          # the touch device, once found
 down=0          # 1 while a finger this script put down has not been lifted
 rooted=0        # 1 once this script has asked adbd to be root, or found it so
+console=0       # 1 when the events go through the emulator's console, on an image without root
 gesture=""      # the process that plays the gesture, while it runs
 cleaned=0
 # Waits up to 30 s for adbd to come back as the given user id (0 is root, 2000 is shell).
@@ -55,6 +60,7 @@ cleanup() {
   rm -rf "$dir"
   # A gesture that is still being played is stopped: without its connection the loop on the device ends.
   [ -n "$gesture" ] && kill $gesture 2>/dev/null
+  if [ $console = 1 ] && [ $down = 1 ]; then $ADB emu event send EV_ABS:ABS_MT_TRACKING_ID:-1 EV_SYN:0:0 > /dev/null 2>&1; fi
   if [ $rooted = 1 ]; then
     # An interrupted switch to root may still be restarting adbd: give it its time before asking anything of it.
     adbd_as 0 || adbd_as 2000
@@ -115,7 +121,41 @@ with open(f"{out}/d", "wb") as f:
 for i, (x, y) in enumerate(pts[1:], 1):
     with open(f"{out}/m{i:03d}", "wb") as f: f.write(ev(EV_ABS, X, sx(x)) + ev(EV_ABS, Y, sy(y)) + report)
 with open(f"{out}/u", "wb") as f: f.write(ev(EV_ABS, TRACKING_ID, -1) + ev(EV_KEY, BTN_TOUCH, 0) + report)
+# The same gesture as lines for the emulator's console, one line a sample.
+with open(f"{out}/console", "w") as f:
+    f.write(f"event send EV_ABS:ABS_MT_SLOT:0 EV_ABS:ABS_MT_TRACKING_ID:77 EV_ABS:ABS_MT_POSITION_X:{sx(pts[0][0])} "
+            f"EV_ABS:ABS_MT_POSITION_Y:{sy(pts[0][1])} EV_ABS:ABS_MT_TOUCH_MAJOR:200 EV_ABS:ABS_MT_PRESSURE:600 EV_SYN:0:0\n")
+    for x, y in pts[1:]: f.write(f"event send EV_ABS:ABS_MT_POSITION_X:{sx(x)} EV_ABS:ABS_MT_POSITION_Y:{sy(y)} EV_SYN:0:0\n")
+    f.write("event send EV_ABS:ABS_MT_TRACKING_ID:-1 EV_SYN:0:0\n")
 PY
+if [ "$($ADB shell getprop ro.debuggable 2>/dev/null | tr -d '\r')" != "1" ]; then
+  # No root on this image: the console takes the events. Each is answered by the emulator, not by the app.
+  console=1
+  down=1
+  python3 - "${serial#emulator-}" "$dir/console" <<'PY' &
+import os, socket, sys, time
+lines = open(sys.argv[2]).read().splitlines()
+with socket.create_connection(("127.0.0.1", int(sys.argv[1])), timeout=10) as s:
+    f = s.makefile("rw", newline="\n")
+    def answer():
+        while True:
+            line = f.readline()
+            if not line: sys.exit("the emulator's console closed the connection")
+            if line.startswith("KO"): sys.exit(f"the emulator's console refused: {line.strip()}")
+            if line.startswith("OK"): return
+    answer()
+    f.write("auth " + open(os.path.expanduser("~/.emulator_console_auth_token")).read().strip() + "\n"); f.flush(); answer()
+    for line in lines:
+        began = time.monotonic()
+        f.write(line + "\n"); f.flush(); answer()
+        time.sleep(max(0.0, 0.016 - (time.monotonic() - began)))
+PY
+  gesture=$!
+  wait $gesture || exit 1
+  gesture=""
+  down=0
+  exit 0
+fi
 rooted=1
 if [ "$($ADB shell id -u 2>/dev/null | tr -d '\r')" != "0" ]; then
   $ADB root > /dev/null 2>&1

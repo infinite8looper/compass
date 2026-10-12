@@ -10,6 +10,7 @@
 #          thirtieth is at 77, the bearing of the seventh.
 #   none   no waypoints at all.
 # The rows go into the app's own database file with the app stopped, and the location permission is granted.
+# Where the image has no sqlite3 of its own, this machine's sqlite3 changes a copy of the file, which is put back.
 # It refuses to run on anything but an emulator.
 # Rows are named Waypoint 1, 2, ... in the order given and the last one is the newest, so it has the focus unless
 # the focus stored in the app's settings names another row that exists. The settings are not touched, so the
@@ -55,7 +56,24 @@ if [[ "$serial" != emulator-* ]] || [[ "$qemu" != *1* ]]; then
 fi
 $ADB shell am force-stop $PKG
 sleep 1
-count=$($ADB shell "run-as $PKG sqlite3 databases/waypoints.db \"$sql SELECT count(*) FROM waypoints;\"" | tr -d '\r')
+if $ADB shell "command -v sqlite3" 2>/dev/null | grep -q sqlite3; then
+  count=$($ADB shell "run-as $PKG sqlite3 databases/waypoints.db \"$sql SELECT count(*) FROM waypoints;\"" | tr -d '\r')
+else
+  # An image without sqlite3 (the signed Wear OS 6 and 7 images): the database file, with its write-ahead log if
+  # it has one, is copied to this machine, changed here, and copied back whole.
+  work=$(mktemp -d) || exit 1
+  trap 'rm -rf "$work"; $ADB shell rm -f /data/local/tmp/seed-waypoints.db' EXIT
+  for f in waypoints.db waypoints.db-wal waypoints.db-shm; do
+    if [ -n "$($ADB shell "run-as $PKG ls databases/$f" 2>/dev/null)" ]; then
+      $ADB exec-out run-as $PKG cat databases/$f > "$work/$f"
+    fi
+  done
+  if [ -s "$work/waypoints.db" ]; then
+    count=$(sqlite3 "$work/waypoints.db" "PRAGMA wal_checkpoint(TRUNCATE); $sql PRAGMA journal_mode=DELETE; SELECT count(*) FROM waypoints;" 2>&1 | tail -1)
+    $ADB push "$work/waypoints.db" /data/local/tmp/seed-waypoints.db > /dev/null 2>&1 &&
+      $ADB shell "run-as $PKG sh -c 'cp /data/local/tmp/seed-waypoints.db databases/waypoints.db && rm -f databases/waypoints.db-wal databases/waypoints.db-shm'" || count="could not copy the database back"
+  fi
+fi
 if [[ "$count" != <-> ]]; then
   echo "could not write the waypoints (has the app been started once, so its database exists?): $count" >&2
   exit 1
