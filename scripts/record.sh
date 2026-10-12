@@ -22,6 +22,7 @@ while [ $(date +%s) -lt $(( started + secs )) ] || $ADB shell pgrep screenrecord
   sleep 1
 done
 sleep 1
-$ADB pull /sdcard/compass-record.mp4 "$out" > /dev/null || { echo "could not pull the recording" >&2; exit 1; }
+# adb reports the transfer on its error output: it is shown only when the pull fails.
+pulled=$($ADB pull /sdcard/compass-record.mp4 "$out" 2>&1) || { echo "could not pull the recording: $pulled" >&2; exit 1; }
 $ADB shell rm /sdcard/compass-record.mp4
 echo "wrote $out ($(( $(stat -f %z "$out") / 1024 )) KB)"
