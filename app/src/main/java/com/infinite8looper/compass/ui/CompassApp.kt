@@ -110,7 +110,7 @@ fun CompassApp() {
         SwipeDismissableNavHost(navController = nav, startDestination = PANES_ROUTE) {
             composable(PANES_ROUTE) {
                 Panes(
-                    vm, panes, top = { topScreen(route?.destination?.route) }, onLogHere = logHere, onEdit = { nav.navigate("edit/$it") { launchSingleTop = true } },
+                    vm, panes, top = { topScreen(route?.destination?.route) }, log = logHere, onEdit = { nav.navigate("edit/$it") { launchSingleTop = true } },
                     onCalibrate = { nav.navigate(CALIBRATE_ROUTE) { launchSingleTop = true } },
                 )
             }
@@ -138,7 +138,7 @@ fun CompassApp() {
  */
 @Composable
 private fun Panes(
-    vm: CompassViewModel, panes: PagerState, top: () -> TopScreen, onLogHere: () -> Unit, onEdit: (Long) -> Unit, onCalibrate: () -> Unit,
+    vm: CompassViewModel, panes: PagerState, top: () -> TopScreen, log: LogActions, onEdit: (Long) -> Unit, onCalibrate: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     // A move the app makes itself goes to the nearest page that shows the screen, and slides there.
@@ -184,9 +184,9 @@ private fun Panes(
             // The frames of the settings and waypoints screens hold their pane ticks.
             Pane.SETTINGS -> SettingsScreen(vm, paneView = view, onCalibrate = onCalibrate)
             Pane.COMPASS -> CompassScreen(
-                vm, paneView = view, onOpenList = { show(Pane.WAYPOINTS) }, onLogHere = onLogHere, onCalibrate = onCalibrate,
+                vm, paneView = view, onOpenList = { show(Pane.WAYPOINTS) }, onSidePress = log.sidePress, onCalibrate = onCalibrate,
             )
-            Pane.WAYPOINTS -> WaypointsScreen(vm, paneView = view, onEdit = onEdit, onLogHere = onLogHere)
+            Pane.WAYPOINTS -> WaypointsScreen(vm, paneView = view, onEdit = onEdit, onLogHere = log.logHere, onSidePress = log.sidePress)
         }
     }
 }

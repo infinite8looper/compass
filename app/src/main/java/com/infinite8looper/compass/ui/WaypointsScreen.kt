@@ -24,6 +24,8 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -51,6 +53,10 @@ import com.infinite8looper.compass.CompassViewModel
 import com.infinite8looper.compass.nav.LogStatus
 import com.infinite8looper.compass.nav.Pane
 import com.infinite8looper.compass.nav.PaneView
+import com.infinite8looper.compass.nav.PressKind
+import com.infinite8looper.compass.nav.TrailMode
+import com.infinite8looper.compass.nav.trailRowAction
+import com.infinite8looper.compass.nav.trailRowDetail
 import com.infinite8looper.compass.nav.ScrollArc
 import com.infinite8looper.compass.nav.formatDistance
 import com.infinite8looper.compass.nav.headerTapSetsAll
@@ -76,10 +82,17 @@ import kotlinx.coroutines.delay
  * the list and apart from it: the same words, in the same colors, as on the compass, wherever the list is scrolled
  * to. So whenever this screen is in view the status can be read, which is what its time is counted by.
  *
- * [onEdit] is what a long press on a waypoint's row does, and [onLogHere] what `Log here` does.
+ * While the breadcrumb trail setting is on, or crumbs are stored, a row for the trail stands under `Log here`: it
+ * says what the trail is doing and how long it is, a tap on it does what a double press of the side button does,
+ * and a long press clears the trail. A watch that passes no double press to the app has the whole trail there.
+ *
+ * [onEdit] is what a long press on a waypoint's row does, [onLogHere] what `Log here` does, and [onSidePress] what
+ * a single press of a side button does.
  */
 @Composable
-fun WaypointsScreen(vm: CompassViewModel, paneView: () -> PaneView, onEdit: (Long) -> Unit, onLogHere: () -> Unit) {
+fun WaypointsScreen(
+    vm: CompassViewModel, paneView: () -> PaneView, onEdit: (Long) -> Unit, onLogHere: () -> Unit, onSidePress: () -> Unit,
+) {
     val nav by vm.nav.collectAsStateWithLifecycle()
     val listState = rememberScalingLazyListState()
     val onScreen by remember(paneView) { derivedStateOf { paneView() != PaneView.HIDDEN } }
@@ -105,11 +118,19 @@ fun WaypointsScreen(vm: CompassViewModel, paneView: () -> PaneView, onEdit: (Lon
     val targets = nav.waypoints.count { it.isTarget }
     val setsAll = headerTapSetsAll(targets, total)
 
-    val sideButton = remember { SideButton() }
+    val pressScope = rememberCoroutineScope()
+    val sideButton = remember(pressScope) { SideButton(pressScope) }
+    val navState = rememberUpdatedState(nav)
+    val sidePress by rememberUpdatedState(onSidePress)
     Box(
         Modifier.fillMaxSize().background(Color.Black)
             // The list inside has the focus while this screen does, so a side button's press passes here first.
-            .onPreviewKeyEvent { e -> sideButton.onKey(e.nativeKeyEvent, onPress = { inView(onLogHere) }) }
+            // A press does here what it does on the compass.
+            .onPreviewKeyEvent { e ->
+                sideButton.onKey(
+                    e.nativeKeyEvent, inView = { paneView() == PaneView.IN_VIEW }, doubleEnabled = { navState.value.breadcrumbTrail },
+                ) { kind -> if (kind == PressKind.DOUBLE) vm.trailDoublePress() else sidePress() }
+            }
     ) {
       // The list and what is pinned over it are cut off at one circle inside the frame.
       val statusShowing = status != LogStatus.Idle
@@ -151,6 +172,29 @@ fun WaypointsScreen(vm: CompassViewModel, paneView: () -> PaneView, onEdit: (Lon
             item(key = "log") {
                 InstrumentRow(Modifier.clickable(role = Role.Button) { inView(onLogHere) }, centered = true) {
                     Text("Log here", color = AccentColor, style = actionStyle, maxLines = 1)
+                }
+            }
+            val trail = nav.trail
+            if (nav.breadcrumbTrail || trail.count > 0) item(key = "trail") {
+                val active = trail.mode != TrailMode.OFF
+                InstrumentRow(
+                    Modifier.combinedClickable(
+                        role = Role.Button,
+                        // With the setting off a tap does nothing, as a double press does nothing; the crumbs
+                        // that are left can still be cleared.
+                        onClickLabel = if (nav.breadcrumbTrail) trailRowAction(trail.mode, trail.count) else null,
+                        onLongClickLabel = "Clear trail",
+                        onLongClick = { inView { vm.clearTrail() } },
+                    ) { inView { vm.trailDoublePress() } },
+                    trailing = { TickToggle(active, color = { CrumbColor }) },
+                ) {
+                    Column {
+                        Text("Trail", color = if (active) Ink else Dim, style = if (active) nameOnStyle else nameStyle, maxLines = 1)
+                        Text(
+                            trailRowDetail(trail.mode, trail.count), color = Dim, style = distanceStyle, maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
             items(nav.waypoints, key = { it.id }) { w ->

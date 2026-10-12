@@ -54,7 +54,7 @@ android {
     }
     // The migration test reads the exported schemas as assets.
     sourceSets {
-        getByName("androidTest").assets.srcDir("$projectDir/schemas")
+        getByName("androidTest").assets.directories.add("$projectDir/schemas")
     }
 }
 
@@ -84,9 +84,9 @@ dependencies {
     constraints {
         // The navigation library brings kotlinx.serialization 1.7.3 into the app, and an instrumented test runs
         // on the app's own copies of the libraries they share. Room's migration test support (room-testing 2.8.5)
-        // is built against 1.8.1 and fails on 1.7.3 with an AbstractMethodError, so the app takes 1.8.1.
-        implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.8.1")
-        implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
+        // is built against 1.8.1 and fails on 1.7.3 with an AbstractMethodError, so the app takes the current one.
+        implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.11.0")
+        implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
     }
 
     testImplementation("junit:junit:4.13.2")

@@ -101,6 +101,13 @@ val ConfirmColor = Color(0xFF7FD99A)
 /** A waypoint's own color: its line and arrow on the dial, and its mark wherever it is listed. */
 fun waypointColor(hue: Float): Color = Color.hsv(hue, 0.65f, 1f)
 
+/**
+ * The breadcrumb trail: its ticks on the dial, the crumb that is walked to, and its marks wherever it is listed. One
+ * muted blue-gray for every crumb, which no waypoint has (a waypoint's color is far more saturated) and which does
+ * not follow the watch's color scheme.
+ */
+val CrumbColor = Color(0xFF8FA6BF)
+
 /** The pale, partly transparent version of a waypoint's color that its line has while another target is focused. */
 fun softTint(hue: Float): Color = Color.hsv(hue, SOFT_TINT_SATURATION, SOFT_TINT_VALUE, SOFT_TINT_ALPHA)
 

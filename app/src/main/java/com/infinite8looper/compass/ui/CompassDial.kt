@@ -41,6 +41,10 @@ private const val MARKER_CASING = 0.012f
 // While the wearer faces the focused target its line is twice as heavy and a little longer.
 private const val FACING_WIDTH = 2f * MARKER_WIDTH
 private const val FACING_EXTRA_LENGTH = 0.012f
+// A crumb's tick: short, between the letters and the ring.
+private const val CRUMB_TICK_OUTER = 0.70f
+private const val CRUMB_TICK_INNER = 0.655f
+private const val CRUMB_TICK_WIDTH = 0.016f
 // The heading pointer's triangle. The focused target's arrow is the same triangle, turned to the target's bearing.
 private const val ARROW_TIP = 0.71f
 private const val ARROW_BASE = 0.625f
@@ -54,7 +58,13 @@ private const val ARROW_HALF_WIDTH = 0.052f
  *
  * [facing] is read only where the focused target's layer is drawn, so a change of it redraws that one layer, once.
  *
- * Order, from the bottom: face, other targets, the pointer's line, the focused target, the pointer's triangle.
+ * [focused] is what the wearer walks to: the focused waypoint, or, while a breadcrumb trail is retraced, the crumb
+ * walked to, which is drawn the same way in the breadcrumb color. [crumbTicks] are the dial angles of the trail's
+ * other crumbs, each a short tick inside the ring, on a layer of their own that is drawn when the list changes
+ * (with a position fix) and turned like the others. The list holds at most one tick per degree, however long the
+ * trail.
+ *
+ * Order, from the bottom: face, crumb ticks, other targets, the pointer's line, the focused target, the pointer's triangle.
  * The focused target is above every other target's line, so nothing at the same bearing hides it. When the wearer
  * faces it, its arrow lies exactly under the pointer's triangle and its heavy line covers the pointer's line:
  * the triangle keeps the pointer's color and the line above it has the target's.
@@ -62,10 +72,11 @@ private const val ARROW_HALF_WIDTH = 0.052f
 @Composable
 fun CompassDial(
     headingProvider: () -> Float, targets: List<TargetUi>, modifier: Modifier = Modifier, facing: () -> Boolean = { false },
+    focused: TargetUi? = targets.firstOrNull { it.focused }, crumbTicks: List<Float> = emptyList(),
 ) {
     val measurer = rememberTextMeasurer()
     val others = remember(targets) { targets.filter { it.dialAngleDeg != null && !it.focused } }
-    val focused = remember(targets) { targets.firstOrNull { it.dialAngleDeg != null && it.focused } }
+    @Suppress("NAME_SHADOWING") val focused = focused?.takeIf { it.dialAngleDeg != null }
     val turn: () -> Float = { headingProvider().let { if (it.isNaN()) 0f else -it } }
 
     Box(modifier.fillMaxSize()) {
@@ -91,6 +102,20 @@ fun CompassDial(
                 for ((angle, layout) in cardinals) rotate(angle.toFloat(), c) { centeredText(layout, c.x, c.y - r * LETTER_RADIUS) }
             }
         })
+
+        if (crumbTicks.isNotEmpty()) {
+            Spacer(Modifier.fillMaxSize().graphicsLayer { rotationZ = turn() }.drawBehind {
+                val r = size.minDimension / 2f
+                for (i in crumbTicks.indices) {
+                    rotate(crumbTicks[i], center) {
+                        drawLine(
+                            CrumbColor, Offset(center.x, center.y - r * CRUMB_TICK_OUTER), Offset(center.x, center.y - r * CRUMB_TICK_INNER),
+                            r * CRUMB_TICK_WIDTH, StrokeCap.Round,
+                        )
+                    }
+                }
+            })
+        }
 
         if (others.isNotEmpty()) {
             Spacer(Modifier.fillMaxSize().graphicsLayer { rotationZ = turn() }.drawWithCache {
@@ -119,7 +144,7 @@ fun CompassDial(
                 val r = size.minDimension / 2f
                 val c = Offset(size.width / 2f, size.height / 2f)
                 val arrow = pointerTriangle(c, r)
-                val color = waypointColor(focused.hue)
+                val color = if (focused.isCrumb) CrumbColor else waypointColor(focused.hue)
                 val angle = focused.dialAngleDeg ?: 0f
                 onDrawBehind {
                     val heavy = facing()

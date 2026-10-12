@@ -63,11 +63,12 @@ import kotlin.math.roundToInt
  * The pager may build this screen twice, once where the wearer sees it and once further along its row, so nothing
  * here may count on being the only one: what there is one of (the screen's keep-awake switch) is not set here.
  *
- * [onOpenList] is what a long press does.
+ * [onOpenList] is what a long press does, and [onSidePress] what a single press of a side button does. A double
+ * press, which there is only with the breadcrumb trail setting on, switches the trail.
  */
 @Composable
 fun CompassScreen(
-    vm: CompassViewModel, paneView: () -> PaneView, onOpenList: () -> Unit, onLogHere: () -> Unit, onCalibrate: () -> Unit,
+    vm: CompassViewModel, paneView: () -> PaneView, onOpenList: () -> Unit, onSidePress: () -> Unit, onCalibrate: () -> Unit,
 ) {
     val view = LocalView.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -220,7 +221,9 @@ fun CompassScreen(
     }
 
     var crown by remember { mutableFloatStateOf(0f) }
-    val sideButton = remember { SideButton() }
+    val pressScope = rememberCoroutineScope()
+    val sideButton = remember(pressScope) { SideButton(pressScope) }
+    val sidePress by rememberUpdatedState(onSidePress)
     val openList by rememberUpdatedState(onOpenList)
 
     // The ticks that say which of the three screens this is show only around a swipe: from the moment the compass
@@ -248,9 +251,12 @@ fun CompassScreen(
                 } else crown = 0f
                 true
             }
-            // One press of a side button logs the position. What a press means is decided on this line.
+            // One press of a side button saves the position; with the breadcrumb trail setting on, two close
+            // together switch the trail. What a press means is decided here.
             .onPreviewKeyEvent { e ->
-                sideButton.onKey(e.nativeKeyEvent, onPress = { if (paneView() == PaneView.IN_VIEW) onLogHere() })
+                sideButton.onKey(
+                    e.nativeKeyEvent, inView = { paneView() == PaneView.IN_VIEW }, doubleEnabled = { navState.value.breadcrumbTrail },
+                ) { kind -> if (kind == PressKind.DOUBLE) vm.trailDoublePress() else sidePress() }
             }
             // A plain focus target, not `focusable()`. Observed on the API 35 emulator: with `focusable()` here,
             // every slide the app itself made onto the compass (Back from waypoints, a second Back on through it)
@@ -306,6 +312,7 @@ fun CompassScreen(
         CompassDial(
             headingProvider = { shown.floatValue }, targets = nav.targets,
             modifier = Modifier.graphicsLayer { alpha = dialAlpha.value }, facing = { facingState.value },
+            focused = nav.focused, crumbTicks = nav.trail.tickAngles,
         )
 
         // What the slots just above and below the heading hold: a target's name and distance, the words
@@ -334,7 +341,16 @@ fun CompassScreen(
         if (!vm.supported) {
             Text("This watch has no compass sensor", color = Ink, style = bodyStyle, modifier = Modifier.slot(0f, 0.8f))
         } else {
-            if (showingMagnetic) Text("MAG", color = Dim, style = style(0.079f), maxLines = 1, modifier = Modifier.slot(-0.31f, 0.6f))
+            // The top slot: `MAG`, and while a trail is being laid `Trail` with the number of crumbs, side by side
+            // when there are both.
+            val laying = nav.trail.mode == TrailMode.LAYING
+            if (showingMagnetic || laying) {
+                Row(Modifier.slot(-0.31f, 0.6f), Arrangement.Center, Alignment.CenterVertically) {
+                    if (showingMagnetic) Text("MAG", color = Dim, style = style(0.079f), maxLines = 1)
+                    if (showingMagnetic && laying) Spacer(Modifier.width(r * 0.06f))
+                    if (laying) Text(trailLabel(nav.trail.count), color = CrumbColor, style = style(0.079f), maxLines = 1, softWrap = false)
+                }
+            }
             // The middle slot holds the heading, or, while the heading cannot be trusted, the hint that says why.
             // The hint's drawing fills the gap between the line above the heading and the line below it, and
             // has more room when both of those slots are empty. Its words sit where the calibrate prompt does.
@@ -355,7 +371,8 @@ fun CompassScreen(
         when {
             focused != null -> {
                 Row(Modifier.slot(-0.195f, 0.78f), Arrangement.Center, Alignment.CenterVertically) {
-                    Box(Modifier.size(r * 0.062f).background(waypointColor(focused.hue), CircleShape))
+                    // The crumb of a trail that is walked to stands here as a focused target does, in the trail's color.
+                    Box(Modifier.size(r * 0.062f).background(if (focused.isCrumb) CrumbColor else waypointColor(focused.hue), CircleShape))
                     Spacer(Modifier.width(r * 0.035f))
                     Text(focused.name, color = Ink, style = bodyStyle, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
@@ -363,7 +380,7 @@ fun CompassScreen(
                 if (status == null) Text(
                     text = when {
                         d == null -> "Locating…"
-                        hasArrived(d, nav.units) -> "Arrived at target"
+                        focused.arrived -> "Arrived at target"
                         stale -> "${formatDistance(d, nav.units)} (old)"
                         else -> formatDistance(d, nav.units)
                     },
