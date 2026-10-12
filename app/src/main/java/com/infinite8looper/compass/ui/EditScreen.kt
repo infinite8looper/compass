@@ -59,7 +59,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.role
@@ -258,10 +260,13 @@ private fun EditWaypoint(vm: CompassViewModel, w: Waypoint, leave: () -> Unit) {
         Box(
             Modifier.offset(y = r * ROW_Y).width(r * 1.1f).height(HitHeight)
                 .onGloballyPositioned { place = it }
+                // For an accessibility service the hold is a long press with a name, and the same thing is offered
+                // as a named action of its own.
                 .semantics(mergeDescendants = true) {
                     role = Role.Button
                     contentDescription = "Hold to delete ${w.name}"
                     onLongClick("Delete") { delete(); true }
+                    customActions = listOf(CustomAccessibilityAction("Delete") { delete(); true })
                 }
                 .pointerInput(id, tolerance) {
                     awaitEachGesture {
