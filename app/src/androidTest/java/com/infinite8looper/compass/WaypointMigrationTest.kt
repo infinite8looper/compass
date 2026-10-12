@@ -3,7 +3,6 @@ package com.infinite8looper.compass
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import androidx.room.Room
-import androidx.room.testing.MigrationTestHelper
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -12,10 +11,10 @@ import com.infinite8looper.compass.data.Waypoint
 import com.infinite8looper.compass.data.WaypointDatabase
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
@@ -33,15 +32,50 @@ class WaypointMigrationTest {
     private val name = "migration-test.db"
     private var db: WaypointDatabase? = null
 
-    @get:Rule val helper = MigrationTestHelper(InstrumentationRegistry.getInstrumentation(), WaypointDatabase::class.java)
+    private val freshName = "migration-test-fresh.db"
 
     @Before fun clean() { removeFiles() }
     @After fun close() { db?.close(); removeFiles() }
 
     private fun removeFiles() {
-        ctx.deleteDatabase(name)
-        File(ctx.noBackupFilesDir, "$name.sanitized").delete()
+        for (n in listOf(name, freshName)) { ctx.deleteDatabase(n); File(ctx.noBackupFilesDir, "$n.sanitized").delete() }
     }
+
+    /** The schema Room exported for [version] (app/schemas, which the build puts in this test's assets). */
+    private fun exportedSchema(version: Int): JSONObject =
+        InstrumentationRegistry.getInstrumentation().context.assets
+            .open("com.infinite8looper.compass.data.WaypointDatabase/$version.json").use { JSONObject(it.readBytes().decodeToString()) }
+            .getJSONObject("database")
+
+    /** The statement that creates each table of an exported schema, by table name, as SQLite keeps it. */
+    private fun createStatements(schema: JSONObject): Map<String, String> {
+        val entities = schema.getJSONArray("entities")
+        return (0 until entities.length()).map { entities.getJSONObject(it) }.associate { e ->
+            e.getString("tableName") to asStored(e.getString("createSql").replace("\${TABLE_NAME}", e.getString("tableName")))
+        }
+    }
+
+    /** SQLite keeps a table's statement without the words that let it be run twice. */
+    private fun asStored(createSql: String) = createSql.replace("CREATE TABLE IF NOT EXISTS ", "CREATE TABLE ")
+
+    /** What a database file's schema is: every table and index with the statement that made it, and each table's columns. */
+    private fun schemaOf(file: File): Pair<Map<String, String>, Map<String, List<String>>> =
+        SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READONLY).use { raw ->
+            val objects = raw.rawQuery(
+                "SELECT type || ' ' || name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' AND name != 'android_metadata'", null,
+            ).use { c -> generateSequence { if (c.moveToNext()) c.getString(0) to (c.getString(1) ?: "") else null }.toMap() }
+            val columns = objects.keys.filter { it.startsWith("table ") }.map { it.removePrefix("table ") }.associateWith { table ->
+                raw.rawQuery("PRAGMA table_info(`$table`)", null).use { c ->
+                    generateSequence { if (c.moveToNext()) (0 until c.columnCount).joinToString("|") { i -> c.getString(i) ?: "null" } else null }.toList()
+                }
+            }
+            objects to columns
+        }
+
+    private fun identityHash(file: File): String =
+        SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READONLY).use { raw ->
+            raw.rawQuery("SELECT identity_hash FROM room_master_table WHERE id = 42", null).use { c -> assertTrue(c.moveToFirst()); c.getString(0) }
+        }
 
     private fun file(): File = ctx.getDatabasePath(name)
 
@@ -103,25 +137,73 @@ class WaypointMigrationTest {
         assertTrue("crumbs" in tables())
     }
 
-    @Test fun theMigratedFileHasExactlyTheSchemaOfVersion2() {
-        // A version 1 database built from the exported schema, with rows put in as version 1 stored them.
-        helper.createDatabase(name, 1).use { v1 ->
-            v1.execSQL("INSERT INTO waypoints(name, lat, lon, accuracyM, createdAt, hue, isTarget) VALUES('Summit', 43.7022, -72.2896, 8.5, 1000, 120.25, 1)")
-            v1.execSQL("INSERT INTO waypoints(name, lat, lon, accuracyM, createdAt, hue, isTarget) VALUES('Car', -33.8568, 151.2153, 4.0, 2000, 300.0, 0)")
+    /**
+     * A version 1 database is built here from the schema Room exported for version 1, with rows as version 1 stored
+     * them, and opened the way the app opens it. Three things are then checked of the migrated file:
+     * - Room accepts it: on opening, Room compares every table of the file (columns, types, which may be empty, the
+     *   primary key, indices) with the entities this build is compiled from, and refuses a file that differs;
+     * - it is the same, statement for statement and column for column, as a database Room makes anew at version 2,
+     *   with no table more or less, and its tables' statements are the ones in the exported version 2 schema;
+     * - it carries version 2's identity, and the rows are as they were.
+     */
+    @Test fun aDatabaseBuiltFromTheExportedVersion1SchemaMigratesToExactlyTheSchemaOfVersion2() = runBlocking {
+        val v1 = exportedSchema(1)
+        assertEquals(1, v1.getInt("version"))
+        file().parentFile!!.mkdirs()
+        SQLiteDatabase.openOrCreateDatabase(file(), null).use { raw ->
+            for (sql in createStatements(v1).values) raw.execSQL(sql)
+            val setup = v1.getJSONArray("setupQueries")
+            for (i in 0 until setup.length()) raw.execSQL(setup.getString(i))
+            raw.execSQL("INSERT INTO waypoints(name, lat, lon, accuracyM, createdAt, hue, isTarget) VALUES('Summit', 43.7022, -72.2896, 8.5, 1000, 120.25, 1)")
+            raw.execSQL("INSERT INTO waypoints(name, lat, lon, accuracyM, createdAt, hue, isTarget) VALUES('Car', -33.8568, 151.2153, 4.0, 2000, 300.0, 0)")
+            raw.version = 1
         }
-        // Room compares every table of the migrated file with the exported version 2 schema and fails on a difference.
-        helper.runMigrationsAndValidate(name, 2, true, WaypointDatabase.MIGRATION_1_2).use { v2 ->
-            v2.query("SELECT name, lat, lon, accuracyM, createdAt, hue, isTarget FROM waypoints ORDER BY id").use { c ->
-                assertTrue(c.moveToNext())
-                assertEquals("Summit", c.getString(0)); assertEquals(43.7022, c.getDouble(1), 0.0); assertEquals(-72.2896, c.getDouble(2), 0.0)
-                assertEquals(8.5f, c.getFloat(3), 0f); assertEquals(1000L, c.getLong(4)); assertEquals(120.25f, c.getFloat(5), 0f); assertEquals(1, c.getInt(6))
-                assertTrue(c.moveToNext())
-                assertEquals("Car", c.getString(0)); assertEquals(-33.8568, c.getDouble(1), 0.0); assertEquals(151.2153, c.getDouble(2), 0.0)
-                assertEquals(4.0f, c.getFloat(3), 0f); assertEquals(2000L, c.getLong(4)); assertEquals(300f, c.getFloat(5), 0f); assertEquals(0, c.getInt(6))
-                assertFalse(c.moveToNext())
-            }
-            v2.query("SELECT count(*) FROM crumbs").use { c -> assertTrue(c.moveToFirst()); assertEquals(0, c.getInt(0)) }
+        // Controls: it is a version 1 file with version 1's identity and no crumbs table.
+        assertEquals(1, readRaw().first)
+        assertEquals(v1.getString("identityHash"), identityHash(file()))
+        assertFalse("crumbs" in tables())
+
+        val d = WaypointDatabase.open(ctx, name).also { db = it }
+        assertEquals(
+            listOf(
+                Waypoint(2, "Car", -33.8568, 151.2153, 4.0f, 2000, 300f, false),
+                Waypoint(1, "Summit", 43.7022, -72.2896, 8.5f, 1000, 120.25f, true),
+            ),
+            d.waypoints().observeAll().first(),
+        )
+        assertEquals(emptyList<Crumb>(), d.crumbs().all())
+        d.close(); db = null
+
+        // A database made anew by this build, to compare with.
+        val fresh = WaypointDatabase.open(ctx, freshName)
+        try { assertTrue(fresh.crumbs().all().isEmpty()) } finally { fresh.close() }
+        val migrated = schemaOf(file())
+        val anew = schemaOf(ctx.getDatabasePath(freshName))
+        assertEquals(setOf("table waypoints", "table crumbs", "table room_master_table"), anew.first.keys)
+        assertEquals(anew.first, migrated.first)
+        assertEquals(anew.second, migrated.second)
+        val v2 = exportedSchema(2)
+        assertEquals(2, v2.getInt("version"))
+        for ((table, sql) in createStatements(v2)) assertEquals(sql, migrated.first["table $table"])
+        assertEquals(setOf("waypoints", "crumbs"), createStatements(v2).keys)
+        assertEquals(v2.getString("identityHash"), identityHash(file()))
+        assertEquals(2, readRaw().first)
+    }
+
+    /** The check above can fail: a file whose crumbs table is not the one this build expects is refused on opening. */
+    @Test fun aMigratedFileWithAWrongCrumbsTableIsRefusedByRoom() = runBlocking {
+        putVersion1FileInPlace()
+        SQLiteDatabase.openDatabase(file().path, null, SQLiteDatabase.OPEN_READWRITE).use { raw ->
+            // As a wrong migration would leave it: the table is there, a column is missing, and the version says 2.
+            raw.execSQL("CREATE TABLE `crumbs` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `lat` REAL NOT NULL, `lon` REAL NOT NULL, `createdAt` INTEGER NOT NULL)")
+            raw.version = 2
         }
+        val d = WaypointDatabase.open(ctx, name).also { db = it }
+        val failure = runCatching { d.waypoints().observeAll().first() }.exceptionOrNull()
+        assertTrue("$failure", failure is IllegalStateException)
+        d.close(); db = null
+        // And it was not emptied.
+        assertEquals(3, readRaw().second.size)
     }
 
     /**
