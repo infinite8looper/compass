@@ -162,8 +162,8 @@ data class TrailFix(val change: TrailChange, val arrivedAt: Long?)
  * sees the crumb change: on any other screen the trail does not advance, whatever else keeps location running.
  */
 fun trailAfterFix(
-    trail: Trail, crumbs: List<CrumbPoint>, arrivedAt: Long?, position: GeoPoint, units: Units, accuracyM: Float = 0f,
-    compassInView: Boolean = true,
+    trail: Trail, crumbs: List<CrumbPoint>, arrivedAt: Long?, position: GeoPoint, units: Units, accuracyM: Float,
+    compassInView: Boolean,
 ): TrailFix {
     val id = walkingTo(trail)
     val crumb = crumbs.firstOrNull { it.id == id }
@@ -297,3 +297,37 @@ fun trailCompleteOver(current: LogStatus): CompleteStep =
 
 /** A status has ended (its result was shown for its time, or its save stored nothing): what is owed is shown now, once. */
 fun statusEnded(owed: Boolean): CompleteStep = CompleteStep(if (owed) LogStatus.TrailComplete else LogStatus.Idle, owed = false)
+
+/**
+ * `Trail complete` belongs to the moment the last crumb is reached. When that moment is gone before it could be
+ * shown, or shown out, it is dropped, so it never appears on a later visit that has nothing to do with it: the
+ * status that is [current] loses it if it is `Trail complete`, and nothing is [CompleteStep.owed] any more. Any
+ * other status stays as it is.
+ */
+fun trailCompleteDropped(current: LogStatus, owed: Boolean): CompleteStep =
+    CompleteStep(if (current == LogStatus.TrailComplete) LogStatus.Idle else current, owed = false)
+
+/** `Trail complete` is kept, to be shown or while it shows, only while the compass is on screen with the app in front. */
+fun trailCompleteKept(compassOnScreen: Boolean, appResumed: Boolean): Boolean = compassOnScreen && appResumed
+
+/** Whether a change of mode is a new trail being started, which also drops a `Trail complete` left from the one before. */
+fun startsNewTrail(before: TrailMode, after: TrailMode): Boolean = before == TrailMode.OFF && after == TrailMode.LAYING
+
+/**
+ * Whether the compass counts as in view for consuming a crumb ([trailAfterFix]): it is the screen at rest in view
+ * and the app is in front (resumed), as for counting a result's time. At Home, or under one of the system's own
+ * screens, nothing is consumed.
+ */
+fun compassInViewForTrail(compassAtRest: Boolean, appResumed: Boolean): Boolean = compassAtRest && appResumed
+
+/**
+ * What is put after the distance to the crumb walked to when the fix is too poor to consume it ([isGoodEnough]):
+ * the fix's reported accuracy, written as the accuracy of a save is (`±66 ft`), so the wearer standing on a crumb
+ * that stays sees why. Null with a fix good enough, with no fix or no accuracy, and with an old fix, which is
+ * marked old instead.
+ */
+fun poorFixNote(accuracyM: Float?, stale: Boolean, units: Units): String? =
+    if (accuracyM == null || accuracyM.isNaN() || stale || isGoodEnough(accuracyM)) null else accuracyText(accuracyM, units)
+
+/** How long to wait before reading the crumbs again after a read that failed, the first failure being attempt 0: 1 s, doubling, 30 s at most. */
+fun crumbsRetryDelayMs(attempt: Long): Long = if (attempt >= 5) 30_000L else 1_000L shl attempt.coerceAtLeast(0).toInt()

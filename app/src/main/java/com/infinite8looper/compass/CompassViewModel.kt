@@ -17,6 +17,7 @@ import com.infinite8looper.compass.sensors.HeadingSource
 import com.infinite8looper.compass.sensors.LocationSource
 import com.infinite8looper.compass.sensors.declinationAt
 import kotlinx.coroutines.CancellationException
+import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -49,6 +50,8 @@ data class NavUi(
     val trail: TrailUi = TrailUi(),
     /** Why no position can come at all, or null when one can: the location permission is not held, or location is switched off. */
     val noPosition: LogFailure? = null,
+    /** The reported accuracy of the live fix, in meters; null while no fix is live. */
+    val fixAccuracyM: Float? = null,
 ) {
     companion object {
         val EMPTY = NavUi(emptyList(), null, Units.METRIC, NorthRef.TRUE, null, null, emptyList(), emptyMap(), loaded = false)
@@ -111,8 +114,15 @@ class CompassViewModel(app: Application, val locationSource: LocationSource) : A
      * the screens) takes them from here, so none of those reads the database. Null until the first read.
      */
     private val crumbsHeld: StateFlow<List<CrumbPoint>?> = crumbDao.observeAll().map<List<Crumb>, List<CrumbPoint>?> { rows -> rows.map { it.toPoint() } }
-        // A table that cannot be read stands as no crumbs, so presses and the crown still work.
-        .catch { Log.w(TAG, "the crumbs could not be read (" + it.javaClass.simpleName + ")"); emit(emptyList()) }
+        // A read that fails is tried again, after 1 s and then less often ([crumbsRetryDelayMs]), for as long as
+        // the app runs. Meanwhile the list stays what it last was (nothing, if no read has worked yet), and
+        // whatever needs the trail says so instead of taking it for empty ([readTrail]).
+        .retryWhen { cause, attempt ->
+            if (cause is CancellationException) return@retryWhen false
+            Log.w(TAG, "the crumbs could not be read (" + cause.javaClass.simpleName + "); trying again")
+            delay(crumbsRetryDelayMs(attempt))
+            true
+        }
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
     private val crumbs: Flow<List<CrumbPoint>> = crumbsHeld.filterNotNull()
     /** What the trail is doing: the stored mode, as the setting and the crumbs let it stand ([effectiveTrailMode]). */
@@ -130,8 +140,9 @@ class CompassViewModel(app: Application, val locationSource: LocationSource) : A
     fun setCompassOnScreen(on: Boolean) { compassOnScreen.value = on }
 
     /**
-     * The screens say here whether the compass is the screen at rest in view. A crumb is consumed only then: on
-     * another screen location may be running for the targets, and the trail does not advance.
+     * The screens say here whether the compass is the screen at rest in view with the app in front
+     * ([compassInViewForTrail]). A crumb is consumed only then: on another screen, or at Home, location may be
+     * running for the targets, and the trail does not advance.
      */
     fun setCompassInView(inView: Boolean) { compassInView.value = inView }
 
@@ -194,7 +205,8 @@ class CompassViewModel(app: Application, val locationSource: LocationSource) : A
         val distances = f?.let { live -> ws.associate { it.id to distanceMeters(live.point, GeoPoint(it.lat, it.lon)) } }.orEmpty()
         NavUi(targets, focused, s.units, s.north, declination, f?.elapsedMs, ws, distances,
             tickFeedback = s.tickFeedback, showCoordinates = s.showCoordinates, backupEnabled = s.backupEnabled,
-            blindNavigation = s.blindNavigation, breadcrumbTrail = s.breadcrumbTrail, trail = trail, noPosition = noPosition)
+            blindNavigation = s.blindNavigation, breadcrumbTrail = s.breadcrumbTrail, trail = trail, noPosition = noPosition,
+            fixAccuracyM = f?.accuracyM)
     }
         .catch { Log.w(TAG, "screen state stopped updating", it) }
         .stateIn(viewModelScope, sharing, NavUi.EMPTY)
@@ -383,10 +395,15 @@ class CompassViewModel(app: Application, val locationSource: LocationSource) : A
     /**
      * The trail as it stands now, with its crumbs' positions and the units arrival is judged in: the mode from the
      * settings and the crumbs from the list held in memory ([crumbsHeld]), so this reads no database.
+     *
+     * Throws if the crumbs have not been read: no read has worked yet and none does within a moment. An unread
+     * trail is not taken for an empty one. What the wearer then gets: a press of the side button ends in
+     * `Couldn't save`; a double press, a tap on the trail's row and the crown change nothing; and the reading goes
+     * on being tried.
      */
     private suspend fun readTrail(): Triple<Trail, List<CrumbPoint>, Units> {
         val s = settingsStore.settings.first()
-        val points = crumbs.first()
+        val points = crumbsHeld.value ?: withTimeoutOrNull(CRUMBS_SEEN_WITHIN_MS) { crumbs.first() } ?: throw IOException("the crumbs have not been read")
         return Triple(Trail(effectiveTrailMode(s.trailMode, s.breadcrumbTrail, points.size), points.map { it.id }), points, s.units)
     }
 
@@ -424,7 +441,23 @@ class CompassViewModel(app: Application, val locationSource: LocationSource) : A
     fun trailDoublePress(): Job = launchEdit("switch the trail") {
         if (!settingsStore.settings.first().breadcrumbTrail) return@launchEdit
         val trail = readTrail().first
-        applyTrail(trail, nextTrail(trail, TrailEvent.DoublePress))
+        val change = nextTrail(trail, TrailEvent.DoublePress)
+        // A `Trail complete` still waiting from the trail before does not follow into a new one.
+        if (startsNewTrail(trail.mode, change.trail.mode)) dropTrailComplete()
+        applyTrail(trail, change)
+    }
+
+    /**
+     * `Trail complete` is given up if it has not been shown out ([trailCompleteDropped]). The screens call this
+     * when the compass is no longer on screen with the app in front ([trailCompleteKept]), so the words never come
+     * up on a later visit.
+     */
+    fun dropTrailComplete() {
+        synchronized(logLock) {
+            val step = trailCompleteDropped(logState.value, completeOwed)
+            completeOwed = step.owed
+            if (step.status != logState.value) logState.value = step.status
+        }
     }
 
     /** Removes every crumb, through the store's own delete, and ends the trail. Waypoints are not touched. */

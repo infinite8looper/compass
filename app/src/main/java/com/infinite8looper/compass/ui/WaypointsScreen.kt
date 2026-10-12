@@ -17,7 +17,12 @@ import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.role
 import com.infinite8looper.compass.nav.HOLD_TO_DELETE_MS
 import com.infinite8looper.compass.nav.holdProgress
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -143,6 +148,9 @@ fun WaypointsScreen(
     // How far a hold on the trail's row has come, from 0 to 1, as on the edit screen's `Hold to delete`. Written
     // every frame of a hold and read only where the frame is drawn.
     val view = LocalView.current
+    // The row is not a `clickable`, which would take a hold that is let go early for a tap, so it shows its own
+    // press the way the other rows show theirs.
+    val trailPress = remember { MutableInteractionSource() }
     val clearHeld = remember { Animatable(0f) }
     var clearing by remember { mutableStateOf(false) }
     var clearStartedMs by remember { mutableLongStateOf(0L) }
@@ -227,6 +235,7 @@ fun WaypointsScreen(
                 val switches = nav.breadcrumbTrail
                 InstrumentRow(
                     Modifier
+                        .indication(trailPress, LocalIndication.current)
                         // For an accessibility service: the tap and the hold as named actions.
                         .semantics(mergeDescendants = true) {
                             role = Role.Button
@@ -238,6 +247,10 @@ fun WaypointsScreen(
                         .pointerInput(vm, paneView, canClear, switches) {
                             awaitEachGesture {
                                 val down = awaitFirstDown()
+                                val press = PressInteraction.Press(down.position)
+                                pressScope.launch { trailPress.emit(press) }
+                                var lifted = false
+                                try {
                                 // Lifted within the long-press time, it is a tap. A touch the list or the row of
                                 // screens takes as a drag is neither a tap nor a hold.
                                 var held = false
@@ -248,15 +261,19 @@ fun WaypointsScreen(
                                     null
                                 }
                                 if (!held) {
+                                    lifted = up != null
                                     if (up != null && switches) { up.consume(); inView { vm.trailDoublePress() } }
                                     return@awaitEachGesture
                                 }
-                                if (!canClear || paneView() != PaneView.IN_VIEW) return@awaitEachGesture
+                                if (!canClear || paneView() != PaneView.IN_VIEW) { lifted = waitForUpOrCancellation() != null; return@awaitEachGesture }
                                 clearStartedMs = down.uptimeMillis + viewConfiguration.longPressTimeoutMillis
                                 clearing = true
                                 // Ends when the finger lifts or the touch becomes a scroll or a swipe; the hold
                                 // itself ends when the ring is empty.
-                                try { waitForUpOrCancellation()?.consume() } finally { clearing = false }
+                                try { lifted = waitForUpOrCancellation()?.also { it.consume() } != null } finally { clearing = false }
+                                } finally {
+                                    pressScope.launch { trailPress.emit(if (lifted) PressInteraction.Release(press) else PressInteraction.Cancel(press)) }
+                                }
                             }
                         },
                     trailing = { TickToggle(active, color = { CrumbColor }) },

@@ -190,20 +190,45 @@ class WaypointMigrationTest {
         assertEquals(2, readRaw().first)
     }
 
-    /** The check above can fail: a file whose crumbs table is not the one this build expects is refused on opening. */
-    @Test fun aMigratedFileWithAWrongCrumbsTableIsRefusedByRoom() = runBlocking {
+    /**
+     * Room's check of the migrated file can fail, and for the reason it gives. The real version 1 file is left at
+     * version 1, with its own identity, and given a crumbs table that lacks a column before the app opens it. The
+     * app's migration runs (its statement creates the table only if there is none, so the wrong one stays), and
+     * Room then compares the tables with what this build expects and refuses the file, naming the table.
+     */
+    @Test fun aWrongCrumbsTableLeftByTheMigrationIsRefusedByRoomForThatTable() = runBlocking {
         putVersion1FileInPlace()
         SQLiteDatabase.openDatabase(file().path, null, SQLiteDatabase.OPEN_READWRITE).use { raw ->
-            // As a wrong migration would leave it: the table is there, a column is missing, and the version says 2.
             raw.execSQL("CREATE TABLE `crumbs` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `lat` REAL NOT NULL, `lon` REAL NOT NULL, `createdAt` INTEGER NOT NULL)")
-            raw.version = 2
         }
+        assertEquals(1, readRaw().first)
+        assertEquals(exportedSchema(1).getString("identityHash"), identityHash(file()))
         val d = WaypointDatabase.open(ctx, name).also { db = it }
         val failure = runCatching { d.waypoints().observeAll().first() }.exceptionOrNull()
         assertTrue("$failure", failure is IllegalStateException)
+        val message = failure!!.message.orEmpty()
+        assertTrue(message, message.contains("Migration didn't properly handle"))
+        assertTrue(message, message.contains("crumbs"))
+        assertTrue(message, message.contains("accuracyM"))
         d.close(); db = null
-        // And it was not emptied.
+        // Refused, and not emptied.
         assertEquals(3, readRaw().second.size)
+    }
+
+    /** The control for the test above: the same path with the right crumbs table already there opens, with every waypoint. */
+    @Test fun aRightCrumbsTableAlreadyThereGoesThroughTheSameMigrationCleanly() = runBlocking {
+        putVersion1FileInPlace()
+        val (_, before) = readRaw()
+        SQLiteDatabase.openDatabase(file().path, null, SQLiteDatabase.OPEN_READWRITE).use { raw ->
+            raw.execSQL(createStatements(exportedSchema(2)).getValue("crumbs"))
+        }
+        assertEquals(1, readRaw().first)
+        val d = WaypointDatabase.open(ctx, name).also { db = it }
+        assertEquals(before, d.waypoints().observeAll().first())
+        assertEquals(emptyList<Crumb>(), d.crumbs().all())
+        d.close(); db = null
+        assertEquals(2 to before, readRaw())
+        assertEquals(exportedSchema(2).getString("identityHash"), identityHash(file()))
     }
 
     /**

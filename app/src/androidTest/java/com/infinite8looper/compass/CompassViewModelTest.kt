@@ -871,6 +871,86 @@ class CompassViewModelTest {
         assertNull(withTimeout(10_000) { with.nav.first { it.loaded } }.noPosition)
     }
 
+    /**
+     * The app is on screen but not in front, as under one of the system's own screens: fixes still arrive for the
+     * waypoint that is a target, and the crumb the wearer stands on stays. In front again, it is consumed.
+     */
+    @Test fun aCrumbIsNotConsumedWhileTheAppIsNotInFront() = runBlocking {
+        settings.setBreadcrumbTrail(true)
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            val vm = viewModelOf(scenario)
+            vm.logWaypoint(hanover.copy(point = farNorth))
+            delay(1_500)
+            scenario.moveToState(Lifecycle.State.STARTED)
+            val crumb = crumbDao.insert(crumbAt(hanover.point))
+            settings.setTrailMode(TrailMode.RETRACING)
+            val fixBefore = withTimeout(60_000) { vm.nav.first { it.trail.mode == TrailMode.RETRACING && it.fixElapsedMs != null } }.fixElapsedMs
+            // Fixes go on arriving: a later one than the first is seen.
+            withTimeout(60_000) { vm.nav.first { it.fixElapsedMs != null && it.fixElapsedMs != fixBefore } }
+            delay(8_000)
+            assertEquals(listOf(crumb), crumbDao.all().map { it.id })
+            scenario.moveToState(Lifecycle.State.RESUMED)
+            withTimeout(30_000) { while (crumbDao.all().isNotEmpty()) delay(20) }
+        }
+    }
+
+    /**
+     * `Trail complete` is showing when the wearer leaves the compass. It is gone at once, on no screen, and does not
+     * come back when the compass is in view again.
+     */
+    @Test fun trailCompleteIsDroppedWhenTheCompassIsLeftAndDoesNotComeBack() = runBlocking {
+        settings.setBreadcrumbTrail(true)
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            val vm = viewModelOf(scenario)
+            delay(1_500)
+            val statuses = CopyOnWriteArrayList<LogStatus>()
+            val watching = launch(Dispatchers.Main) { vm.logStatus.collect { statuses += it } }
+            crumbDao.insert(crumbAt(hanover.point))
+            settings.setTrailMode(TrailMode.RETRACING)
+            withTimeout(60_000) { while (LogStatus.TrailComplete !in statuses) delay(5) }
+            val shownAt = SystemClock.elapsedRealtime()
+            androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+            // Gone well before its two seconds are up: it was dropped, not shown out.
+            withTimeout(5_000) { while (vm.logStatus.value != LogStatus.Idle) delay(5) }
+            val goneAfter = SystemClock.elapsedRealtime() - shownAt
+            assertTrue("gone after $goneAfter ms", goneAfter < 1_400)
+            delay(1_500)
+            back(); back()   // waypoints, then the compass again
+            delay(4_000)
+            watching.cancel()
+            assertEquals(listOf(LogStatus.Idle, LogStatus.TrailComplete, LogStatus.Idle), statuses.toList())
+        }
+    }
+
+    /**
+     * `Trail complete` is waiting to be shown (no screen of this view model shows anything) when a new trail is
+     * started: it is dropped. A result of logging that waits is not.
+     */
+    @Test fun aNewTrailDropsATrailCompleteThatWasWaiting() = runBlocking {
+        settings.setBreadcrumbTrail(true)
+        ActivityScenario.launch(MainActivity::class.java).use {
+            // The app is on screen so that fixes come, with settings in view: the activity's own view model has
+            // no compass in view and consumes nothing. The test's view model is told its compass is in view.
+            delay(1_500)
+            back()
+            val vm = viewModel()
+            crumbDao.insert(crumbAt(hanover.point))
+            trailOf(vm) { it.count == 1 }
+            settings.setTrailMode(TrailMode.RETRACING)
+            withContext(Dispatchers.Main) { vm.setCompassOnScreen(true); vm.setCompassInView(true) }
+            // Fixes come to a view model only while its screen state is being watched, as a screen watches it.
+            val watching = launch(Dispatchers.Main) { vm.nav.collect { } }
+            withTimeout(60_000) { while (crumbDao.all().isNotEmpty()) delay(20) }
+            withTimeout(10_000) { vm.logStatus.first { it == LogStatus.TrailComplete } }
+            watching.cancel()
+            delay(3_000)
+            assertEquals(LogStatus.TrailComplete, vm.logStatus.value)
+            withTimeout(10_000) { vm.trailDoublePress().join() }
+            assertEquals(LogStatus.Idle, vm.logStatus.value)
+            assertEquals(TrailMode.LAYING, settings.settings.first().trailMode)
+        }
+    }
+
     @Test fun aTrailBringsPositionFixesOnlyWhileTheCompassIsOnScreen() = runBlocking {
         settings.setBreadcrumbTrail(true)
         ActivityScenario.launch(MainActivity::class.java).use {

@@ -29,7 +29,11 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.LineHeightStyle
@@ -388,16 +392,25 @@ fun CompassScreen(
                     Text(focused.name, color = Ink, style = bodyStyle, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 val d = focused.distanceM
-                if (status == null) Text(
-                    text = when {
+                if (status == null) {
+                    // For the crumb walked to, a fix too poor to consume it has its accuracy after the distance,
+                    // dim: the wearer standing on a crumb that stays sees why.
+                    val note = if (focused.isCrumb && d != null && !focused.arrived) poorFixNote(nav.fixAccuracyM, stale, nav.units) else null
+                    val words = when {
                         d == null -> "Locating…"
                         focused.arrived -> "Arrived at target"
                         stale -> "${formatDistance(d, nav.units)} (old)"
                         else -> formatDistance(d, nav.units)
-                    },
-                    color = if (stale) Dim else Ink, style = bodyStyle, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.slot(0.195f, 0.78f),
-                )
+                    }
+                    Text(
+                        text = if (note == null) AnnotatedString(words) else buildAnnotatedString {
+                            append(words); append(' ')
+                            withStyle(SpanStyle(color = Dim)) { append(note) }
+                        },
+                        color = if (stale) Dim else Ink, style = bodyStyle, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.slot(0.195f, 0.78f),
+                    )
+                }
             }
             // With no waypoints saved, or before the first real state arrives, nothing is shown here: the screen
             // is a plain compass.

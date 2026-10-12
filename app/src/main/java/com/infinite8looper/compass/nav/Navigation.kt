@@ -387,7 +387,7 @@ fun statusText(status: LogStatus, units: Units): Pair<String, String?> = when (s
     }
 }
 
-private fun accuracyText(accuracyM: Float, units: Units): String = "±" + formatDistance(accuracyM.toDouble(), units)
+internal fun accuracyText(accuracyM: Float, units: Units): String = "±" + formatDistance(accuracyM.toDouble(), units)
 
 /** How long [status] is shown before the compass goes back to [LogStatus.Idle], or null if it does not end by itself. */
 fun logStatusShowMs(status: LogStatus): Long? = when (status) {

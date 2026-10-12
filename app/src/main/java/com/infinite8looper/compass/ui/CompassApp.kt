@@ -50,6 +50,8 @@ import com.infinite8looper.compass.nav.pageViewUnder
 import com.infinite8looper.compass.nav.paneOnScreen
 import com.infinite8looper.compass.nav.paneOf
 import com.infinite8looper.compass.nav.topScreen
+import com.infinite8looper.compass.nav.compassInViewForTrail
+import com.infinite8looper.compass.nav.trailCompleteKept
 import com.infinite8looper.compass.nav.trailKeepsAwake
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -75,9 +77,11 @@ fun CompassApp() {
             ) == PaneView.IN_VIEW
         }
     }
+    // Whether the app is on screen, and in front, for the decisions below.
+    val appState by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
     KeepAwake(vm, compassInView = { compassInView.value })
     // A crumb of a trail is consumed only while the compass is the screen in view; the view model is told when.
-    val compassAtRest = compassInView.value
+    val compassAtRest = compassInViewForTrail(compassInView.value, appState == Lifecycle.State.RESUMED)
     DisposableEffect(vm, compassAtRest) {
         vm.setCompassInView(compassAtRest)
         onDispose { vm.setCompassInView(false) }
@@ -90,7 +94,6 @@ fun CompassApp() {
     }
     // The heading sensor runs for the compass and for calibration and for nothing else. What is on screen is
     // gathered here, above every screen, and the decision is [headingWanted].
-    val appState by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
     val wantHeading by remember(panes) {
         derivedStateOf {
             headingWanted(
@@ -117,6 +120,10 @@ fun CompassApp() {
         vm.setCompassOnScreen(compassOnScreen)
         onDispose { vm.setCompassOnScreen(false) }
     }
+    // `Trail complete` is for the wearer who has just reached the last crumb. Once the compass is off the screen,
+    // or the app is no longer in front, it is given up, so it cannot come up on a later visit.
+    val completeKept = trailCompleteKept(compassOnScreen, appState == Lifecycle.State.RESUMED)
+    LaunchedEffect(vm, completeKept) { if (!completeKept) vm.dropTrailComplete() }
     AppScaffold(timeText = {}) {
         // The three screens are the host's first destination, which has nothing behind it to swipe back to, so a
         // right swipe there is only ever the pager's. The screens opened from a row keep the usual swipe back.

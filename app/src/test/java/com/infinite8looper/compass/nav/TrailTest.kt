@@ -251,13 +251,17 @@ class TrailTest {
     private fun north(meters: Double) = GeoPoint(meters / 111_195.0, 0.0)
     private fun crumb(id: Long, metersNorth: Double) = CrumbPoint(id, north(metersNorth))
 
+    /** A fix that may consume a crumb: accurate enough to be saved, with the compass in view. */
+    private fun goodFix(trail: Trail, crumbs: List<CrumbPoint>, arrivedAt: Long?, position: GeoPoint, units: Units) =
+        trailAfterFix(trail, crumbs, arrivedAt, position, units, accuracyM = 5f, compassInView = true)
+
     /** Walks the positions given, in meters north, one fix each, and returns the ids consumed after each fix. */
     private fun walk(crumbs: List<CrumbPoint>, positions: List<Double>, units: Units = Units.METRIC): List<List<Long>> {
         var t = Trail(TrailMode.RETRACING, crumbs.map { it.id })
         var left = crumbs
         var arrivedAt: Long? = null
         return positions.map { p ->
-            val fix = trailAfterFix(t, left, arrivedAt, north(p), units)
+            val fix = goodFix(t, left, arrivedAt, north(p), units)
             arrivedAt = fix.arrivedAt
             t = fix.change.trail
             left = left.filter { it.id in t.crumbIds }
@@ -294,15 +298,15 @@ class TrailTest {
         // so its removal is asked for again, and the crumb behind it is not touched.
         val crumbs = listOf(crumb(2, 0.0), crumb(1, -30.0))
         val t = Trail(TrailMode.RETRACING, listOf(2, 1))
-        val first = trailAfterFix(t, crumbs, null, north(9.8), Units.METRIC)
+        val first = goodFix(t, crumbs, null, north(9.8), Units.METRIC)
         assertEquals(2L, first.arrivedAt)
         assertEquals(2L, first.change.removedId)
-        val again = trailAfterFix(t, crumbs, first.arrivedAt, north(11.0), Units.METRIC)
+        val again = goodFix(t, crumbs, first.arrivedAt, north(11.0), Units.METRIC)
         assertEquals(2L, again.change.removedId)
         // Without having arrived, 11 m is not an arrival.
-        assertNull(trailAfterFix(t, crumbs, null, north(11.0), Units.METRIC).change.removedId)
+        assertNull(goodFix(t, crumbs, null, north(11.0), Units.METRIC).change.removedId)
         // Beyond 12 m it is no longer arrived at.
-        val gone = trailAfterFix(t, crumbs, first.arrivedAt, north(12.5), Units.METRIC)
+        val gone = goodFix(t, crumbs, first.arrivedAt, north(12.5), Units.METRIC)
         assertNull(gone.change.removedId)
         assertNull(gone.arrivedAt)
     }
@@ -310,10 +314,10 @@ class TrailTest {
     @Test fun nothingIsConsumedWhileLayingOrOffOrWithNoCrumbs() {
         val crumbs = listOf(crumb(1, 0.0))
         for (mode in listOf(TrailMode.OFF, TrailMode.LAYING)) {
-            val fix = trailAfterFix(Trail(mode, listOf(1)), crumbs, null, north(0.0), Units.METRIC)
+            val fix = goodFix(Trail(mode, listOf(1)), crumbs, null, north(0.0), Units.METRIC)
             assertEquals(TrailChange(Trail(mode, listOf(1))), fix.change)
         }
-        val empty = trailAfterFix(Trail(TrailMode.RETRACING, emptyList()), emptyList(), null, north(0.0), Units.METRIC)
+        val empty = goodFix(Trail(TrailMode.RETRACING, emptyList()), emptyList(), null, north(0.0), Units.METRIC)
         assertEquals(TrailChange(Trail(TrailMode.RETRACING, emptyList())), empty.change)
     }
 
@@ -458,19 +462,19 @@ class TrailTest {
         // The rule is the one a save uses: 15 m or better.
         assertEquals(15f, GOOD_FIX_METERS, 0f)
         for (accuracy in listOf(15.1f, 30f, 80f, Float.NaN)) {
-            val fix = trailAfterFix(t, crumbs, null, north(3.0), Units.METRIC, accuracyM = accuracy)
+            val fix = trailAfterFix(t, crumbs, null, north(3.0), Units.METRIC, accuracyM = accuracy, compassInView = true)
             assertEquals("$accuracy", TrailChange(t), fix.change)
             assertNull("$accuracy", fix.arrivedAt)
         }
         for (accuracy in listOf(0f, 5f, 15f)) {
-            assertEquals("$accuracy", 2L, trailAfterFix(t, crumbs, null, north(3.0), Units.METRIC, accuracyM = accuracy).change.removedId)
+            assertEquals("$accuracy", 2L, trailAfterFix(t, crumbs, null, north(3.0), Units.METRIC, accuracyM = accuracy, compassInView = true).change.removedId)
         }
         // A poor fix inside the distance, then a good one: the crumb goes with the good one, once.
-        val poor = trailAfterFix(t, crumbs, null, north(3.0), Units.METRIC, accuracyM = 40f)
-        val good = trailAfterFix(poor.change.trail, crumbs, poor.arrivedAt, north(3.0), Units.METRIC, accuracyM = 8f)
+        val poor = trailAfterFix(t, crumbs, null, north(3.0), Units.METRIC, accuracyM = 40f, compassInView = true)
+        val good = trailAfterFix(poor.change.trail, crumbs, poor.arrivedAt, north(3.0), Units.METRIC, accuracyM = 8f, compassInView = true)
         assertEquals(TrailChange(Trail(TrailMode.RETRACING, listOf(1)), removedId = 2), good.change)
         // A crumb that had been arrived at is not kept so by a poor fix.
-        assertNull(trailAfterFix(t, crumbs, 2, north(11.0), Units.METRIC, accuracyM = 40f).arrivedAt)
+        assertNull(trailAfterFix(t, crumbs, 2, north(11.0), Units.METRIC, accuracyM = 40f, compassInView = true).arrivedAt)
     }
 
     @Test fun aCrumbIsConsumedOnlyWhileTheCompassIsInView() {
@@ -541,5 +545,70 @@ class TrailTest {
         step = statusEnded(step.owed); seen += step.status
         step = statusEnded(step.owed); seen += step.status
         assertEquals(listOf(LogStatus.Saving(null), saved, LogStatus.TrailComplete, LogStatus.Idle), seen)
+    }
+
+    // Fix round 2.
+
+    @Test fun aPoorFixsAccuracyIsShownAfterTheCrumbsDistance() {
+        // A fix good enough to consume a crumb adds nothing, up to and including 15 m.
+        for (accuracy in listOf(0f, 5f, 14.9f, 15f)) for (u in Units.entries) assertNull("$accuracy $u", poorFixNote(accuracy, stale = false, units = u))
+        // A poorer one is shown as the accuracy of a save is: the sign and the distance, in the wearer's units.
+        assertEquals("±15 m", poorFixNote(15.1f, stale = false, units = Units.METRIC))
+        assertEquals("±20 m", poorFixNote(20f, stale = false, units = Units.METRIC))
+        assertEquals("±20 m", poorFixNote(20.4f, stale = false, units = Units.METRIC))
+        assertEquals("±66 ft", poorFixNote(20f, stale = false, units = Units.IMPERIAL))
+        assertEquals("±50 ft", poorFixNote(15.1f, stale = false, units = Units.IMPERIAL))
+        // The distance's own rules: whole meters or feet, kilometers and miles with one decimal from 1000 on.
+        assertEquals("±999 m", poorFixNote(999.4f, stale = false, units = Units.METRIC))
+        assertEquals("±1.0 km", poorFixNote(999.6f, stale = false, units = Units.METRIC))
+        assertEquals("±2.5 km", poorFixNote(2_500f, stale = false, units = Units.METRIC))
+        assertEquals("±984 ft", poorFixNote(300f, stale = false, units = Units.IMPERIAL))
+        assertEquals("±0.2 mi", poorFixNote(305f, stale = false, units = Units.IMPERIAL))
+        for (u in Units.entries) assertEquals(statusText(LogStatus.Saving(40f), u).second, poorFixNote(40f, stale = false, units = u))
+        // With no fix, or an accuracy that is not a number, there is nothing to show; an old fix is marked old instead.
+        assertNull(poorFixNote(null, stale = false, units = Units.METRIC))
+        assertNull(poorFixNote(Float.NaN, stale = false, units = Units.METRIC))
+        assertNull(poorFixNote(40f, stale = true, units = Units.METRIC))
+        // The line it stands in, with the distance before it.
+        assertEquals("9 m ±20 m", listOfNotNull(formatDistance(9.0, Units.METRIC), poorFixNote(20f, false, Units.METRIC)).joinToString(" "))
+        assertEquals("30 ft ±66 ft", listOfNotNull(formatDistance(9.0, Units.IMPERIAL), poorFixNote(20f, false, Units.IMPERIAL)).joinToString(" "))
+    }
+
+    @Test fun trailCompleteIsDroppedWhenTheCompassIsLeftOrANewTrailStarts() {
+        val saved = LogStatus.Saved("Waypoint 4", 5f, 1_000)
+        // Showing or waiting to be shown: it goes, and nothing is owed.
+        assertEquals(CompleteStep(LogStatus.Idle, owed = false), trailCompleteDropped(LogStatus.TrailComplete, owed = false))
+        // Owed behind another status: that status stays as it is and nothing is owed any more.
+        for (showing in listOf(LogStatus.Saving(null), saved, LogStatus.Failed(LogFailure.NO_FIX))) {
+            assertEquals(CompleteStep(showing, owed = false), trailCompleteDropped(showing, owed = true))
+            assertEquals(CompleteStep(showing, owed = false), trailCompleteDropped(showing, owed = false))
+        }
+        assertEquals(CompleteStep(LogStatus.Idle, owed = false), trailCompleteDropped(LogStatus.Idle, owed = false))
+        // So after it was dropped, the status that was showing ends in nothing, not in `Trail complete`.
+        val dropped = trailCompleteDropped(saved, owed = true)
+        assertEquals(CompleteStep(LogStatus.Idle, owed = false), statusEnded(dropped.owed))
+        // It is kept only while the compass is on screen with the app in front.
+        assertTrue(trailCompleteKept(compassOnScreen = true, appResumed = true))
+        assertFalse(trailCompleteKept(compassOnScreen = false, appResumed = true))
+        assertFalse(trailCompleteKept(compassOnScreen = true, appResumed = false))
+        // A double press that starts a trail is a new trail; switching one that is under way is not.
+        assertTrue(startsNewTrail(TrailMode.OFF, TrailMode.LAYING))
+        assertFalse(startsNewTrail(TrailMode.LAYING, TrailMode.RETRACING))
+        assertFalse(startsNewTrail(TrailMode.RETRACING, TrailMode.LAYING))
+        assertFalse(startsNewTrail(TrailMode.LAYING, TrailMode.OFF))
+        assertFalse(startsNewTrail(TrailMode.OFF, TrailMode.OFF))
+    }
+
+    @Test fun aCrumbIsConsumedOnlyWithTheCompassInViewAndTheAppInFront() {
+        assertTrue(compassInViewForTrail(compassAtRest = true, appResumed = true))
+        assertFalse(compassInViewForTrail(compassAtRest = true, appResumed = false))
+        assertFalse(compassInViewForTrail(compassAtRest = false, appResumed = true))
+        assertFalse(compassInViewForTrail(compassAtRest = false, appResumed = false))
+    }
+
+    @Test fun aFailedReadOfTheCrumbsIsTriedAgainSoonAndThenLessOften() {
+        assertEquals(listOf(1_000L, 2_000L, 4_000L, 8_000L, 16_000L, 30_000L, 30_000L), (0L..6L).map { crumbsRetryDelayMs(it) })
+        assertEquals(30_000L, crumbsRetryDelayMs(1_000))
+        assertEquals(1_000L, crumbsRetryDelayMs(-1))
     }
 }
