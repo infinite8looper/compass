@@ -12,8 +12,8 @@
 # underneath is being built) the samples it would have sent meanwhile are never sent, and the lift follows a
 # sample that is short of half the screen and reads as a finger at rest. The screen goes back for a swipe that has
 # passed half the width or is faster than about 2000 px a second, and this one is neither. A check that depends on
-# going back should look, and swipe again. On the edit screen a swipe of more than about 0.7 of the width starts
-# on the color wheel, which takes it.
+# going back should look, and swipe again, or use scripts/raw-swipe.sh, which writes the touch to the emulator's
+# touch screen as raw events that do not wait for the app (it needs an image that allows `adb root`).
 ADB=~/Library/Android/sdk/platform-tools/adb
 usage() { echo "usage: scripts/swipe.sh left|right|up|down|diagonal [milliseconds] [fraction] | hold [milliseconds]" >&2; exit 1; }
 [[ "$1" == (left|right|up|down|diagonal|hold) ]] || usage
