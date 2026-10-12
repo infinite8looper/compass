@@ -2,6 +2,8 @@ package com.infinite8looper.compass
 
 import android.app.Application
 import android.app.backup.BackupManager
+import android.location.LocationManager
+import android.os.SystemClock
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -17,6 +19,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -37,12 +40,13 @@ data class NavUi(
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class CompassViewModel(app: Application) : AndroidViewModel(app) {
+class CompassViewModel(app: Application, val locationSource: LocationSource) : AndroidViewModel(app) {
+    constructor(app: Application) : this(app, LocationSource(app))
+
     private val database = WaypointDatabase.get(app)
     private val dao = database.waypoints()
     private val settingsStore = SettingsStore.get(app)
     private val headingSource = HeadingSource(app)
-    val locationSource = LocationSource(app)
     val supported: Boolean = headingSource.isSupported
 
     private val sharing = SharingStarted.WhileSubscribed(2_000)
@@ -124,6 +128,65 @@ class CompassViewModel(app: Application) : AndroidViewModel(app) {
         )
         quietly("save last position") { settingsStore.setLastPosition(fix.point, fix.altitudeM) }
         return w.copy(id = dao.insert(w))
+    }
+
+    private val logState = MutableStateFlow<LogStatus>(LogStatus.Idle)
+    /** Where logging with one press stands. It is kept here, not on a screen, so it outlives the screen it started on. */
+    val logStatus: StateFlow<LogStatus> = logState.asStateFlow()
+    /** The wait that clears a shown result. A new press ends it, so an old result cannot clear a new one. */
+    private var logResultShown: Job? = null
+
+    /**
+     * Saves the position as a new waypoint, from the first fix good enough that is taken after this call.
+     * Does nothing while a save is in progress. Without the location permission it reports that and saves nothing:
+     * asking for the permission is the screen's part, before it calls this.
+     * The save and the time its result is shown belong to the view model, so both go on when the screen that
+     * started them is left, and [logStatus] returns to [LogStatus.Idle] by itself whether or not anything watches it.
+     */
+    fun logHere(): Job {
+        val pressedAt = SystemClock.elapsedRealtime()
+        // On the main thread, where presses are handled one after another, so two of them cannot both start a save.
+        return viewModelScope.launch(Dispatchers.Main.immediate) {
+            if (logState.value is LogStatus.Saving) return@launch
+            logResultShown?.cancel()
+            val result = when {
+                !locationSource.hasPermission() -> LogStatus.Failed(LogFailure.NO_PERMISSION)
+                !isLocationOn() -> LogStatus.Failed(LogFailure.LOCATION_OFF)
+                else -> {
+                    logState.value = LogStatus.Saving(null)
+                    saveFreshFix(pressedAt)
+                }
+            }
+            logState.value = result
+            logResultShown = viewModelScope.launch {
+                delay(logStatusShowMs(result) ?: 0L)
+                logState.compareAndSet(result, LogStatus.Idle)
+            }
+        }
+    }
+
+    private fun isLocationOn(): Boolean =
+        getApplication<Application>().getSystemService(LocationManager::class.java)?.isLocationEnabled == true
+
+    /** Waits for a fix taken since [pressedAt] and stores it. Never throws, except to pass a cancellation on. */
+    private suspend fun saveFreshFix(pressedAt: Long): LogStatus {
+        val fix = try {
+            // The location source already drops fixes older than ten seconds; this also drops any from before the press.
+            acquireFix(locationSource.updates(1_000), notBeforeMs = pressedAt) { logState.value = LogStatus.Saving(it.accuracyM) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "location updates failed while logging (" + e.javaClass.simpleName + ")")
+            null
+        } ?: return LogStatus.Failed(LogFailure.NO_FIX)
+        return try {
+            LogStatus.Saved(logWaypoint(fix).name, fix.accuracyM, fix.elapsedMs)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "could not save the waypoint (" + e.javaClass.simpleName + ")")
+            LogStatus.Failed(LogFailure.SAVE_FAILED)
+        }
     }
 
     fun setTarget(id: Long, on: Boolean) = launchQuietly("set target") { dao.setTarget(id, on) }

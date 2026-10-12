@@ -201,20 +201,68 @@ fun accuracyLabel(accuracy: Int?): String = when (accuracy) {
 }
 fun isStale(nowMs: Long, fixMs: Long?): Boolean = fixMs != null && nowMs - fixMs > STALE_AFTER_MS
 
+/** How long the result of logging a waypoint stays on the compass before the distance comes back. */
+const val LOG_SAVED_SHOW_MS = 2_000L
+const val LOG_FAILED_SHOW_MS = 3_000L
+
+/**
+ * Whether [fix] was taken at or after the press at [pressedAtMs]. Both are on the clock that counts from boot
+ * (`SystemClock.elapsedRealtime`). A fix from before the press says where the wearer was, not where they pressed.
+ */
+fun isFixSincePress(fix: Fix, pressedAtMs: Long): Boolean = fix.elapsedMs >= pressedAtMs
+
 /**
  * Collects [fixes] until one is at least [goodEnoughM] accurate, or [timeoutMs] passes.
  * On timeout, or if the flow ends, returns the most accurate fix seen, or null if none arrived.
+ * A fix taken before [notBeforeMs] is passed over as if it had not arrived: it is neither returned nor reported
+ * to [onProgress].
  */
 suspend fun acquireFix(
-    fixes: Flow<Fix>, goodEnoughM: Float = 15f, timeoutMs: Long = 20_000, onProgress: (Fix) -> Unit = {},
+    fixes: Flow<Fix>, goodEnoughM: Float = 15f, timeoutMs: Long = 20_000, notBeforeMs: Long = Long.MIN_VALUE,
+    onProgress: (Fix) -> Unit = {},
 ): Fix? {
     var best: Fix? = null
     val good = withTimeoutOrNull(timeoutMs) {
         fixes.firstOrNull { f ->
+            if (!isFixSincePress(f, notBeforeMs)) return@firstOrNull false
             if (best == null || f.accuracyM < best!!.accuracyM) best = f
             onProgress(f)
             f.accuracyM <= goodEnoughM
         }
     }
     return good ?: best
+}
+
+enum class LogFailure { NO_FIX, LOCATION_OFF, NO_PERMISSION, SAVE_FAILED }
+
+/** Where logging a waypoint with one press stands. */
+sealed interface LogStatus {
+    data object Idle : LogStatus
+    /** Waiting for a fix that is good enough. [accuracyM] is that of the latest fix since the press, once there is one. */
+    data class Saving(val accuracyM: Float?) : LogStatus
+    /** [fixElapsedMs] is when the saved fix was taken, on the clock that counts from boot. */
+    data class Saved(val name: String, val accuracyM: Float, val fixElapsedMs: Long) : LogStatus
+    data class Failed(val reason: LogFailure) : LogStatus
+}
+
+/** The two lines the compass shows for [status]: the status, and a smaller line under it where there is one. */
+fun statusText(status: LogStatus, units: Units): Pair<String, String?> = when (status) {
+    LogStatus.Idle -> "" to null
+    is LogStatus.Saving -> "Saving…" to status.accuracyM?.let { accuracyText(it, units) }
+    is LogStatus.Saved -> "Saved ${status.name}" to accuracyText(status.accuracyM, units)
+    is LogStatus.Failed -> when (status.reason) {
+        LogFailure.NO_FIX -> "No GPS fix" to "Try again outdoors"
+        LogFailure.LOCATION_OFF -> "Location is off" to null
+        LogFailure.NO_PERMISSION -> "Needs location access" to null
+        LogFailure.SAVE_FAILED -> "Couldn't save" to null
+    }
+}
+
+private fun accuracyText(accuracyM: Float, units: Units): String = "±" + formatDistance(accuracyM.toDouble(), units)
+
+/** How long [status] is shown before the compass goes back to [LogStatus.Idle], or null if it does not end by itself. */
+fun logStatusShowMs(status: LogStatus): Long? = when (status) {
+    is LogStatus.Saved -> LOG_SAVED_SHOW_MS
+    is LogStatus.Failed -> LOG_FAILED_SHOW_MS
+    LogStatus.Idle, is LogStatus.Saving -> null
 }

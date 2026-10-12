@@ -17,6 +17,9 @@ val NorthColor = Color(0xFFFF3B30)
 /** A failure, and deleting. It has the same value as [NorthColor] but is a separate role, so the two are kept as two values. */
 val ErrorColor = Color(0xFFFF3B30)
 
+/** A confirmation that something was done, such as a waypoint saved: a soft green. */
+val ConfirmColor = Color(0xFF7FD99A)
+
 /** A waypoint's own color: its line and arrow on the dial, and its mark wherever it is listed. */
 fun waypointColor(hue: Float): Color = Color.hsv(hue, 0.65f, 1f)
 

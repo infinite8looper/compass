@@ -47,13 +47,14 @@ private val LevelMark = Color(0xFF6E6E6E)
  *
  * [modifier] places and sizes the drawing, which scales with the box's height and is 1.9 times as wide as it is
  * tall. The words are centered [labelOffset] below the middle of the drawing, which may be further down than the
- * drawing's own edge: the compass keeps a line of its own between the two.
+ * drawing's own edge: the compass keeps a line of its own between the two. With [showLabel] false only the
+ * drawing shows, for the moments when the compass needs the words' place for something else.
  *
  * The loop runs only while the screen is started, stands still on the level position when the system has
  * animations switched off, and is read only while drawing, so a new frame recomposes nothing.
  */
 @Composable
-fun HoldFlatHint(labelStyle: TextStyle, labelOffset: Dp, modifier: Modifier = Modifier) {
+fun HoldFlatHint(labelStyle: TextStyle, labelOffset: Dp, modifier: Modifier = Modifier, showLabel: Boolean = true) {
     val motion = rememberCoroutineScope().coroutineContext[MotionDurationScale]
     // The time into the loop, in milliseconds. With animations off it is the still position from the first
     // frame on; otherwise it starts at 0, where the watch has not yet faded in.
@@ -77,7 +78,7 @@ fun HoldFlatHint(labelStyle: TextStyle, labelOffset: Dp, modifier: Modifier = Mo
     }
     Box(modifier, contentAlignment = Alignment.Center) {
         Spacer(Modifier.matchParentSize().drawBehind { drawWatch(loopMs.floatValue) })
-        Text(
+        if (showLabel) Text(
             "Hold flat", color = Dim, style = labelStyle, maxLines = 1, softWrap = false,
             modifier = Modifier.wrapContentSize(unbounded = true).offset(y = labelOffset),
         )

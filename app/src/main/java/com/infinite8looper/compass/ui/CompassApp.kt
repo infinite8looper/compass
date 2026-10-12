@@ -13,14 +13,16 @@ import com.infinite8looper.compass.CompassViewModel
 fun CompassApp() {
     val vm: CompassViewModel = viewModel()
     val nav = rememberSwipeDismissableNavController()
+    val logHere = rememberLogHere(vm)
     AppScaffold(timeText = {}) {
         SwipeDismissableNavHost(navController = nav, startDestination = "compass") {
             composable("compass") {
-                CompassScreen(vm, onOpenList = { nav.navigate("waypoints") }, onLog = { nav.navigate("log") }, onCalibrate = { nav.navigate("calibrate") })
+                CompassScreen(vm, onOpenList = { nav.navigate("waypoints") }, onLogHere = logHere, onCalibrate = { nav.navigate("calibrate") })
             }
-            composable("log") { LogScreen(vm, onDone = { nav.popBackStack() }) }
             composable("waypoints") {
-                WaypointsScreen(vm, onEdit = { nav.navigate("edit/$it") { launchSingleTop = true } }, onSettings = { nav.navigate("settings") }, onLog = { nav.navigate("log") })
+                WaypointsScreen(vm, onEdit = { nav.navigate("edit/$it") { launchSingleTop = true } }, onSettings = { nav.navigate("settings") },
+                    // The save runs in the view model and its status shows on the compass, so the list steps back to it.
+                    onLog = { logHere(); nav.popBackStack("compass", inclusive = false) })
             }
             composable("edit/{id}") { entry ->
                 val id = entry.arguments?.getString("id")?.toLongOrNull()

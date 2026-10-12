@@ -117,6 +117,58 @@ class NavigationTest {
         assertNull(acquireFix(flow { }))
     }
 
+    /** A fix taken at [elapsedMs] on the clock the press is timed on. */
+    private fun fixAt(elapsedMs: Long, acc: Float) = Fix(GeoPoint(1.0, 2.0), acc, 0f, elapsedMs)
+
+    @Test fun aFixCountsOnlyFromThePressOn() {
+        assertFalse(isFixSincePress(fixAt(99_999, 3f), 100_000))
+        assertFalse(isFixSincePress(fixAt(97_000, 3f), 100_000))
+        assertTrue(isFixSincePress(fixAt(100_000, 3f), 100_000))
+        assertTrue(isFixSincePress(fixAt(100_250, 3f), 100_000))
+    }
+    @Test fun acquireNeverReturnsAFixFromBeforeThePress() = runTest {
+        // A good fix from 3 s before the press and one from 1 ms before it are passed over, and are not progress.
+        val seen = mutableListOf<Long>()
+        val got = acquireFix(
+            flow { emit(fixAt(97_000, 3f)); emit(fixAt(99_999, 4f)); delay(1000); emit(fixAt(100_800, 40f)); delay(1000); emit(fixAt(101_800, 12f)) },
+            notBeforeMs = 100_000,
+        ) { seen += it.elapsedMs }
+        assertEquals(101_800L, got!!.elapsedMs)
+        assertEquals(listOf(100_800L, 101_800L), seen)
+    }
+    @Test fun acquireFallsBackOnlyToAFixSinceThePress() = runTest {
+        // After the 20 s the best fix since the press is used, although an earlier one was more accurate.
+        val got = acquireFix(flow { emit(fixAt(99_000, 2f)); delay(5000); emit(fixAt(105_000, 30f)); delay(60_000) }, notBeforeMs = 100_000)
+        assertEquals(105_000L, got!!.elapsedMs)
+        // With nothing but earlier fixes there is no fix at all.
+        assertNull(acquireFix(flow { emit(fixAt(99_000, 2f)); emit(fixAt(99_999, 2f)); delay(60_000) }, notBeforeMs = 100_000))
+        assertNull(acquireFix(flow { emit(fixAt(99_000, 2f)) }, notBeforeMs = 100_000))
+    }
+
+    @Test fun statusTextGivesTheTwoLinesForEveryState() {
+        assertEquals("" to null, statusText(LogStatus.Idle, Units.METRIC))
+        assertEquals("Saving…" to null, statusText(LogStatus.Saving(null), Units.METRIC))
+        assertEquals("Saving…" to "±12 m", statusText(LogStatus.Saving(12.4f), Units.METRIC))
+        assertEquals("Saved Waypoint 5" to "±5 m", statusText(LogStatus.Saved("Waypoint 5", 5f, 100_000), Units.METRIC))
+        assertEquals("No GPS fix" to "Try again outdoors", statusText(LogStatus.Failed(LogFailure.NO_FIX), Units.METRIC))
+        assertEquals("Location is off" to null, statusText(LogStatus.Failed(LogFailure.LOCATION_OFF), Units.METRIC))
+        assertEquals("Needs location access" to null, statusText(LogStatus.Failed(LogFailure.NO_PERMISSION), Units.METRIC))
+        assertEquals("Couldn't save" to null, statusText(LogStatus.Failed(LogFailure.SAVE_FAILED), Units.METRIC))
+    }
+    @Test fun statusTextGivesTheAccuracyInTheChosenUnits() {
+        assertEquals("Saving…" to "±39 ft", statusText(LogStatus.Saving(12f), Units.IMPERIAL))
+        assertEquals("Saved Waypoint 5" to "±16 ft", statusText(LogStatus.Saved("Waypoint 5", 5f, 100_000), Units.IMPERIAL))
+        // The words of a failure do not depend on the units.
+        assertEquals(statusText(LogStatus.Failed(LogFailure.NO_FIX), Units.METRIC), statusText(LogStatus.Failed(LogFailure.NO_FIX), Units.IMPERIAL))
+    }
+    @Test fun aResultIsShownForItsTimeAndAnythingElseForNone() {
+        assertEquals(2_000L, logStatusShowMs(LogStatus.Saved("Waypoint 5", 5f, 100_000)))
+        for (reason in LogFailure.entries) assertEquals(3_000L, logStatusShowMs(LogStatus.Failed(reason)))
+        assertNull(logStatusShowMs(LogStatus.Idle))
+        assertNull(logStatusShowMs(LogStatus.Saving(null)))
+        assertNull(logStatusShowMs(LogStatus.Saving(8f)))
+    }
+
     @Test fun holdFlatEntersAboveSeventy() {
         assertFalse(nextHoldFlat(false, 0f)); assertFalse(nextHoldFlat(false, 59f))
         assertFalse(nextHoldFlat(false, 70f))

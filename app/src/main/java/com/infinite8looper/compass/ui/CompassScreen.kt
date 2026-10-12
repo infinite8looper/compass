@@ -13,6 +13,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -23,6 +25,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.rotary.onRotaryScrollEvent
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -30,6 +35,7 @@ import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -43,7 +49,7 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 @Composable
-fun CompassScreen(vm: CompassViewModel, onOpenList: () -> Unit, onLog: () -> Unit, onCalibrate: () -> Unit) {
+fun CompassScreen(vm: CompassViewModel, onOpenList: () -> Unit, onLogHere: () -> Unit, onCalibrate: () -> Unit) {
     // Held as a State and read only in the frame loop and derived states, so sensor events do not recompose.
     val readingState = vm.heading.collectAsStateWithLifecycle()
     val nav by vm.nav.collectAsStateWithLifecycle()
@@ -129,6 +135,29 @@ fun CompassScreen(vm: CompassViewModel, onOpenList: () -> Unit, onLog: () -> Uni
         }
     }
 
+    // The confirming tap for a save that completes while the compass is the screen in view. A save that completes
+    // on another screen, or a result already showing when the compass comes back, gives none.
+    LaunchedEffect(vm, view, lifecycle) {
+        var previous = vm.logStatus.value
+        vm.logStatus.collect { status ->
+            if (status is LogStatus.Saved && previous is LogStatus.Saving && lifecycle.currentState == Lifecycle.State.RESUMED) {
+                view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+            }
+            previous = status
+        }
+    }
+
+    // What the logging status puts on the screen, or null while there is none. Read through a derived state, so
+    // the screen is composed again only when the words or their color change.
+    val logStatusState = vm.logStatus.collectAsStateWithLifecycle()
+    val logLines by remember {
+        derivedStateOf {
+            val status = logStatusState.value
+            if (status == LogStatus.Idle) null
+            else statusText(status, navState.value.units).let { (text, detail) -> StatusLines(text, detail, statusColor(status)) }
+        }
+    }
+
     val headingText by remember { derivedStateOf { if (shown.floatValue.isNaN()) "--" else "${shown.floatValue.roundToInt() % 360}°" } }
     val lowAccuracy by remember {
         derivedStateOf { readingState.value?.accuracy?.let { it <= SensorManager.SENSOR_STATUS_ACCURACY_LOW } ?: false }
@@ -145,7 +174,7 @@ fun CompassScreen(vm: CompassViewModel, onOpenList: () -> Unit, onLog: () -> Uni
     }
 
     var crown by remember { mutableFloatStateOf(0f) }
-    var armedStem by remember { mutableIntStateOf(KeyEvent.KEYCODE_UNKNOWN) }
+    val sideButton = remember { SideButton() }
 
     BoxWithConstraints(
         Modifier.fillMaxSize().background(Color.Black)
@@ -154,21 +183,8 @@ fun CompassScreen(vm: CompassViewModel, onOpenList: () -> Unit, onLog: () -> Uni
                 if (abs(crown) > 80f) { vm.moveFocus(if (crown > 0) 1 else -1); crown = 0f }
                 true
             }
-            // A short press of a side button logs a waypoint, once, when the button is released. The crown's own
-            // press (KEYCODE_STEM_PRIMARY) belongs to the system and is not touched.
-            .onPreviewKeyEvent { e ->
-                val key = e.nativeKeyEvent
-                if (key.keyCode !in SIDE_BUTTONS) return@onPreviewKeyEvent false
-                when (key.action) {
-                    KeyEvent.ACTION_DOWN -> armedStem = if (key.repeatCount == 0) key.keyCode else KeyEvent.KEYCODE_UNKNOWN
-                    KeyEvent.ACTION_UP -> {
-                        val pressed = armedStem == key.keyCode && !key.isCanceled
-                        armedStem = KeyEvent.KEYCODE_UNKNOWN
-                        if (pressed) onLog()
-                    }
-                }
-                true
-            }
+            // One press of a side button logs the position. What a press means is decided on this line.
+            .onPreviewKeyEvent { e -> sideButton.onKey(e.nativeKeyEvent, onPress = onLogHere) }
             .requestFocusOnHierarchyActive().focusable()
             .pointerInput(Unit) {
                 var total = 0f
@@ -218,10 +234,15 @@ fun CompassScreen(vm: CompassViewModel, onOpenList: () -> Unit, onLog: () -> Uni
         }
 
         // What the slots just above and below the heading hold: a target's name and distance, the words
-        // "No target", or nothing. A slot added next to the heading belongs in [linesAroundHeading] too.
+        // "No target", or nothing. While a waypoint is being logged the slot below holds the status instead, with
+        // or without targets. A slot added next to the heading belongs in [linesAroundHeading] too.
         val focused = nav.focused
         val noTarget = focused == null && nav.loaded && nav.waypoints.isNotEmpty()
-        val linesAroundHeading = focused != null || noTarget
+        val status = logLines
+        val linesAroundHeading = focused != null || noTarget || status != null
+        // The status's second line sits where the prompts' words do, and has that place for as long as it shows.
+        // The hold-flat drawing goes on looping above it.
+        val promptWords = status?.detail == null
 
         if (!vm.supported) {
             Text("This watch has no compass sensor", color = Ink, style = bodyStyle, modifier = Modifier.slot(0f, 0.8f))
@@ -234,11 +255,11 @@ fun CompassScreen(vm: CompassViewModel, onOpenList: () -> Unit, onLog: () -> Uni
             when {
                 holdFlat -> HoldFlatHint(
                     labelStyle = bodyStyle, labelOffset = r * PROMPT_Y,
-                    modifier = Modifier.slot(0f, hintHeight * 1.9f).height(r * hintHeight),
+                    modifier = Modifier.slot(0f, hintHeight * 1.9f).height(r * hintHeight), showLabel = promptWords,
                 )
                 else -> {
                     HeadingNumber({ headingText }, style(0.30f, FontWeight.Light), Modifier.slot(0f, 2 * READOUT_RADIUS))
-                    if (lowAccuracy) Text("Calibrate", color = Dim, style = bodyStyle, maxLines = 1, modifier = Modifier.slot(PROMPT_Y, 0.6f))
+                    if (lowAccuracy && promptWords) Text("Calibrate", color = Dim, style = bodyStyle, maxLines = 1, modifier = Modifier.slot(PROMPT_Y, 0.6f))
                 }
             }
         }
@@ -251,7 +272,7 @@ fun CompassScreen(vm: CompassViewModel, onOpenList: () -> Unit, onLog: () -> Uni
                     Text(focused.name, color = Ink, style = bodyStyle, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 val d = focused.distanceM
-                Text(
+                if (status == null) Text(
                     text = when {
                         d == null -> "Locating…"
                         hasArrived(d, nav.units) -> "Arrived at target"
@@ -264,9 +285,60 @@ fun CompassScreen(vm: CompassViewModel, onOpenList: () -> Unit, onLog: () -> Uni
             }
             // With no waypoints saved, or before the first real state arrives, nothing is shown here: the screen
             // is a plain compass, and a tap on the middle still opens the waypoints list.
-            noTarget ->
+            noTarget && status == null ->
                 Text("No target", color = Dim, style = bodyStyle, maxLines = 1, modifier = Modifier.slot(0.195f, 0.78f))
         }
+
+        if (status != null) {
+            StatusLine(status.text, status.color, bodyStyle, Modifier.slot(0.195f, 0.78f))
+            status.detail?.let { StatusLine(it, Dim, style(0.079f), Modifier.slot(STATUS_DETAIL_Y, 0.62f)) }
+        }
+    }
+}
+
+/** The logging status as the compass shows it: a line in the distance slot and, for some, a smaller one under it. */
+private data class StatusLines(val text: String, val detail: String?, val color: Color)
+
+private fun statusColor(status: LogStatus): Color = when (status) {
+    is LogStatus.Saved -> ConfirmColor
+    is LogStatus.Failed -> ErrorColor
+    LogStatus.Idle, is LogStatus.Saving -> Ink
+}
+
+/**
+ * One line of the logging status. It starts at the size of [style] and, when the words are wider than the slot,
+ * steps down to three quarters of it before it cuts them short: the longest of the fixed messages and a waypoint
+ * number of several digits do not fit the slot at full size, and the width a font gives them differs by watch.
+ */
+@Composable
+private fun StatusLine(text: String, color: Color, style: TextStyle, modifier: Modifier) {
+    BasicText(
+        text, modifier.semantics { liveRegion = LiveRegionMode.Polite }, style, maxLines = 1, softWrap = false,
+        overflow = TextOverflow.Ellipsis, color = { color },
+        autoSize = TextAutoSize.StepBased(minFontSize = style.fontSize * 0.75f, maxFontSize = style.fontSize, stepSize = 0.25.sp),
+    )
+}
+
+/**
+ * The one place where a side button reaches the compass. It follows a button from down to up and calls `onPress`
+ * once for a short press, when the button is released. The repeats of a held button and a canceled press call
+ * nothing. The crown's own press (KEYCODE_STEM_PRIMARY) belongs to the system and is not touched.
+ */
+private class SideButton {
+    private var armed = KeyEvent.KEYCODE_UNKNOWN
+
+    /** Takes a key event and says whether it was a side button's, which no one else should then handle. */
+    fun onKey(key: KeyEvent, onPress: () -> Unit): Boolean {
+        if (key.keyCode !in SIDE_BUTTONS) return false
+        when (key.action) {
+            KeyEvent.ACTION_DOWN -> armed = if (key.repeatCount == 0) key.keyCode else KeyEvent.KEYCODE_UNKNOWN
+            KeyEvent.ACTION_UP -> {
+                val pressed = armed == key.keyCode && !key.isCanceled
+                armed = KeyEvent.KEYCODE_UNKNOWN
+                if (pressed) onPress()
+            }
+        }
+        return true
     }
 }
 
@@ -275,6 +347,9 @@ private const val NO_TARGET = 0L
 
 /** Where the calibrate prompt and the words of the hold-flat hint sit, in dial radii below the center. */
 private const val PROMPT_Y = 0.31f
+
+/** Where the second line of the logging status sits: under the distance slot, where the prompts' words are. */
+private const val STATUS_DETAIL_Y = 0.30f
 
 /** How much of the dial's brightness is left while the hold-flat hint shows. */
 private const val DIAL_DIMMED = 0.4f

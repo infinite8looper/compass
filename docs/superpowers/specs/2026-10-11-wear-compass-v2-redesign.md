@@ -85,7 +85,14 @@ One instrument, one set of parts.
 - While it works, the distance slot shows a short status: `Saving…`, with the current accuracy once a fix is arriving; then `Saved Waypoint N` with the accuracy on the line under it, for about two seconds, with a light confirming tap; or a failure in red for about three seconds: `No GPS fix`, `Location is off`, `Needs location access`, or `Couldn't save`.
 - The first press on a fresh install shows the system's location permission dialog; if granted, the save continues without a second press.
 - The rules for which fix is saved are unchanged (15 m or better at once; the best fresh fix after 20 seconds), with one tightening: a fix taken before the press is never saved.
-- A second press while a save is in progress does nothing.
+- A second press while a save is in progress does nothing. A press while a result is still showing starts a new save.
+- `Saved Waypoint N` is in a soft green, the confirmation color. The accuracy under `Saving…` and `Saved Waypoint N` is small and dim, in the chosen units. `No GPS fix` has `Try again outdoors` under it in the same small dim text; the other failures are one line.
+- A status line that does not fit its slot at full size is drawn smaller, down to three quarters, before it is cut short.
+- With no targets the status appears alone under the heading and the compass is clean again when it clears.
+- While the status has a second line, that line takes the place of the words `Hold flat` or `Calibrate`. The hold-flat drawing keeps looping, and the words return when the status clears.
+- The save and the time its result is shown continue when the wearer moves to another screen; coming back to the compass within that time shows the result.
+- The confirming tap is given only if the compass is in view when the save completes.
+- Until the waypoints screen is redesigned, its `Log waypoint` row starts the same save and returns to the compass.
 - The separate logging screen is removed.
 
 ### Getting around
