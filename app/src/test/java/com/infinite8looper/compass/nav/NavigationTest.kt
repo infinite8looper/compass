@@ -441,4 +441,186 @@ class NavigationTest {
         // The same target keeps the leaving limit.
         assertTrue(nextFacing(true, 0f, 2.5f, targetChanged = false))
     }
+
+    /**
+     * Steps the blind navigation pulses the way the compass screen's frame loop does: decide facing, then the
+     * pulses, then whether a tick crossing on the same frame may tap.
+     */
+    private class BlindFrames(var facing: Boolean = false) {
+        var nowNanos = 5_000_000_000L
+        var state = BlindPulses.Silent
+        val pulses = mutableListOf<Pulse>()
+        var lastPulse: Pulse? = null
+        var lastPulseNanos = 0L
+        var ticks = 0
+
+        fun frame(facing: Boolean = this.facing, enabled: Boolean = true, inView: Boolean = true, dtMs: Long = 16, tickCrossing: Boolean = false): Pulse? {
+            nowNanos += dtMs * 1_000_000L
+            this.facing = facing
+            val next = nextBlindPulses(state, facing, enabled, inView, nowNanos)
+            val pulse = pulseBetween(state, next)
+            state = next
+            if (pulse != null) { pulses += pulse; lastPulse = pulse; lastPulseNanos = nowNanos }
+            if (tickCrossing && tickClearOfPulse(nowNanos, lastPulse, lastPulseNanos)) ticks++
+            return pulse
+        }
+        /** Frames 16 ms apart for [ms]; the pulses they gave. */
+        fun hold(ms: Long, facing: Boolean = this.facing, enabled: Boolean = true, inView: Boolean = true): List<Pulse> {
+            val before = pulses.size
+            repeat((ms / 16).toInt()) { frame(facing, enabled, inView) }
+            return pulses.subList(before, pulses.size).toList()
+        }
+    }
+
+    @Test fun turningOntoTheTargetGivesOneLockThenAHeartbeatEachSecondAndALockAgainAfterTurningAway() {
+        val f = BlindFrames()
+        assertEquals(emptyList<Pulse>(), f.hold(2_000, facing = false))
+        // Turn onto the target: the lock comes on that frame, and only on that frame.
+        assertEquals(Pulse.LOCK, f.frame(facing = true))
+        assertNull(f.frame())
+        // Held for 3.5 s from the lock: a heartbeat at 1, 2 and 3 seconds.
+        assertEquals(listOf(Pulse.HEARTBEAT, Pulse.HEARTBEAT, Pulse.HEARTBEAT), f.hold(3_500 - 16))
+        // Turned away: nothing, however long.
+        assertEquals(emptyList<Pulse>(), f.hold(5_000, facing = false))
+        // Back onto it: a lock again, then the heartbeats count from that lock.
+        assertEquals(Pulse.LOCK, f.frame(facing = true))
+        assertEquals(emptyList<Pulse>(), f.hold(976))
+        assertEquals(listOf(Pulse.HEARTBEAT), f.hold(32))
+        assertEquals(listOf(Pulse.LOCK, Pulse.HEARTBEAT, Pulse.HEARTBEAT, Pulse.HEARTBEAT, Pulse.LOCK, Pulse.HEARTBEAT), f.pulses)
+    }
+
+    @Test fun heartbeatsAreOneSecondApartAndKeepTheirBeatBetweenFrames() {
+        // Frames 16 ms apart do not divide a second: the beat stays on the lock's seconds and does not drift later.
+        val f = BlindFrames()
+        f.frame(facing = true)
+        val lockAt = f.nowNanos
+        val beats = mutableListOf<Long>()
+        repeat(60_000 / 16) { if (f.frame() == Pulse.HEARTBEAT) beats += f.nowNanos - lockAt }
+        assertEquals(60, beats.size)
+        beats.forEachIndexed { i, at ->
+            val due = (i + 1) * BLIND_HEARTBEAT_NANOS
+            assertTrue("heartbeat ${i + 1} at $at", at >= due && at < due + 16_000_000L)
+        }
+    }
+
+    @Test fun jitterAtTheFacingLimitGivesNoRepeatedLocks() {
+        // The heading wavers at the entering limit of a target at 90, comes on, wavers at the leaving limit.
+        val headings = listOf(80f, 87.9f, 88.1f, 87.95f, 88.2f, 87.9f, 88.05f, 90f, 92.9f, 92.4f, 92.95f, 87.1f, 92.99f, 90f)
+        val f = BlindFrames()
+        var facing = false
+        for (h in headings) { facing = nextFacing(facing, h, 90f); f.frame(facing) }
+        assertEquals(listOf(Pulse.LOCK), f.pulses)
+        // Beyond the leaving limit and back: that is facing lost, and a lock again.
+        for (h in listOf(93.1f, 92.5f, 91.9f)) { facing = nextFacing(facing, h, 90f); f.frame(facing) }
+        assertEquals(listOf(Pulse.LOCK, Pulse.LOCK), f.pulses)
+    }
+
+    @Test fun aLongGapBetweenFramesGivesOneHeartbeatAndNoBurst() {
+        val f = BlindFrames()
+        assertEquals(Pulse.LOCK, f.frame(facing = true))
+        // 30.4 s without a frame, still facing: one heartbeat on the frame that ends the gap, none owed after it.
+        assertEquals(Pulse.HEARTBEAT, f.frame(dtMs = 30_400))
+        assertNull(f.frame())
+        assertNull(f.frame())
+        // The beat is still the lock's: the next one is at 31 s from it.
+        assertEquals(emptyList<Pulse>(), f.hold(560))
+        assertEquals(listOf(Pulse.HEARTBEAT), f.hold(48))
+        // A gap in which facing was lost gives nothing, and no lock until facing again.
+        assertNull(f.frame(facing = false, dtMs = 600_000))
+        assertNull(f.frame(facing = false))
+        assertEquals(Pulse.LOCK, f.frame(facing = true, dtMs = 600_000))
+        assertEquals(listOf(Pulse.LOCK, Pulse.HEARTBEAT, Pulse.HEARTBEAT, Pulse.LOCK), f.pulses)
+    }
+
+    @Test fun aClockThatStepsBackGivesNoPulse() {
+        var state = nextBlindPulses(BlindPulses.Silent, facing = true, enabled = true, inView = true, nowNanos = 10_000_000_000L)
+        val earlier = nextBlindPulses(state, facing = true, enabled = true, inView = true, nowNanos = 3_000_000_000L)
+        assertNull(pulseBetween(state, earlier))
+        state = earlier
+        assertEquals(
+            Pulse.HEARTBEAT,
+            pulseBetween(state, nextBlindPulses(state, facing = true, enabled = true, inView = true, nowNanos = 11_000_000_000L)),
+        )
+    }
+
+    @Test fun pulsesAreSilentWithTheSettingOff() {
+        val f = BlindFrames()
+        assertEquals(emptyList<Pulse>(), f.hold(4_000, facing = true, enabled = false))
+        assertEquals(BlindPulses.Silent, f.state)
+        // Switched on while facing: the wearer is told so with a lock, and the heartbeats follow it.
+        assertEquals(listOf(Pulse.LOCK, Pulse.HEARTBEAT), f.hold(1_100, facing = true))
+        // Switched off: silent at once.
+        assertEquals(emptyList<Pulse>(), f.hold(4_000, facing = true, enabled = false))
+    }
+
+    @Test fun pulsesAreSilentWhileTheCompassIsNotInViewAndComingBackWhileFacingIsALock() {
+        val f = BlindFrames()
+        assertEquals(emptyList<Pulse>(), f.hold(4_000, facing = true, inView = false))
+        assertEquals(Pulse.LOCK, f.frame(facing = true))
+        assertEquals(listOf(Pulse.HEARTBEAT), f.hold(1_100))
+        // The compass leaves the view (a swipe starts, a screen opens over it, the app is left) while still facing.
+        assertEquals(emptyList<Pulse>(), f.hold(300, inView = false))
+        // Back in view and still facing: a fresh lock, not a heartbeat picked up where it stopped.
+        assertEquals(Pulse.LOCK, f.frame())
+        // Away for a long time with no frame at all in between: the same, and one pulse only.
+        f.frame(inView = false)
+        assertEquals(Pulse.LOCK, f.frame(dtMs = 45_000))
+        assertNull(f.frame())
+        assertEquals(listOf(Pulse.LOCK, Pulse.HEARTBEAT, Pulse.LOCK, Pulse.LOCK), f.pulses)
+    }
+
+    @Test fun noPulseWithoutFacingWhateverElseHolds() {
+        for (enabled in listOf(false, true)) for (inView in listOf(false, true)) {
+            val f = BlindFrames()
+            assertEquals(emptyList<Pulse>(), f.hold(3_000, facing = false, enabled = enabled, inView = inView))
+            assertEquals(BlindPulses.Silent, f.state)
+        }
+        assertNull(pulseBetween(BlindPulses.Silent, BlindPulses.Silent))
+    }
+
+    @Test fun theFocusMovingStraightToAnotherFacedTargetIsALockForThatTarget() {
+        // Two targets close together, the wearer facing both: stepping the focus from one to the other.
+        val t = 10_000_000_000L
+        val onA = nextBlindPulses(BlindPulses.Silent, facing = true, enabled = true, inView = true, nowNanos = t)
+        val onB = nextBlindPulses(onA, facing = true, enabled = true, inView = true, nowNanos = t + 300_000_000L, targetChanged = true)
+        assertEquals(Pulse.LOCK, pulseBetween(onA, onB, targetChanged = true))
+        // The heartbeats then count from that lock, not from the first target's.
+        val soon = nextBlindPulses(onB, facing = true, enabled = true, inView = true, nowNanos = t + 1_000_000_000L)
+        assertNull(pulseBetween(onB, soon))
+        val later = nextBlindPulses(soon, facing = true, enabled = true, inView = true, nowNanos = t + 1_300_000_000L)
+        assertEquals(Pulse.HEARTBEAT, pulseBetween(soon, later))
+        // The focus moving to a target that is not faced is silence, and so is one moving while nothing pulses.
+        val off = nextBlindPulses(onA, facing = false, enabled = true, inView = true, nowNanos = t + 300_000_000L, targetChanged = true)
+        assertNull(pulseBetween(onA, off, targetChanged = true))
+        assertEquals(BlindPulses.Silent, off)
+        // A lock on the very frame the last pulse was due is still a lock.
+        val same = nextBlindPulses(onA, facing = true, enabled = true, inView = true, nowNanos = t, targetChanged = true)
+        assertEquals(Pulse.LOCK, pulseBetween(onA, same, targetChanged = true))
+    }
+
+    @Test fun aTickOnAPulsesFrameOrRightAfterItIsDropped() {
+        // No pulse yet: ticks are free.
+        assertTrue(tickClearOfPulse(1_000L, null, 0L))
+        val f = BlindFrames()
+        f.frame(facing = false, tickCrossing = true)
+        assertEquals(1, f.ticks)
+        // The lock's own frame, and every frame until the lock has had its time: no tick.
+        assertEquals(Pulse.LOCK, f.frame(facing = true, tickCrossing = true))
+        assertEquals(1, f.ticks)
+        val lockAt = f.nowNanos
+        while (f.nowNanos + 16_000_000L - lockAt < TICK_QUIET_AFTER_LOCK_NANOS) f.frame(tickCrossing = true)
+        assertEquals(1, f.ticks)
+        f.frame(tickCrossing = true)
+        assertEquals(2, f.ticks)
+        // The heartbeat's frame and the shorter time after it.
+        while (f.frame() != Pulse.HEARTBEAT) Unit
+        val beatAt = f.nowNanos
+        assertFalse(tickClearOfPulse(beatAt, Pulse.HEARTBEAT, beatAt))
+        assertFalse(tickClearOfPulse(beatAt + TICK_QUIET_AFTER_HEARTBEAT_NANOS - 1, Pulse.HEARTBEAT, beatAt))
+        assertTrue(tickClearOfPulse(beatAt + TICK_QUIET_AFTER_HEARTBEAT_NANOS, Pulse.HEARTBEAT, beatAt))
+        assertFalse(tickClearOfPulse(beatAt + TICK_QUIET_AFTER_HEARTBEAT_NANOS, Pulse.LOCK, beatAt))
+        // Neither quiet time reaches the next heartbeat, so ticks work alongside the pulses.
+        assertTrue(TICK_QUIET_AFTER_HEARTBEAT_NANOS < TICK_QUIET_AFTER_LOCK_NANOS)
+        assertTrue(TICK_QUIET_AFTER_LOCK_NANOS < BLIND_HEARTBEAT_NANOS / 2)
+    }
 }

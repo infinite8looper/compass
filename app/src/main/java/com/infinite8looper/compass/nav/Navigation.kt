@@ -125,6 +125,75 @@ fun nextFacing(
     return if (current && !targetChanged) off <= FACING_LEAVE_DEG else off <= FACING_ENTER_DEG
 }
 
+/** Blind navigation: the time from the pulse on turning onto the target to the first soft pulse, and between soft pulses. */
+const val BLIND_HEARTBEAT_NANOS = 1_000_000_000L
+/**
+ * How long the tick taps stay quiet after a pulse. The system stops a vibration that is playing when the same app
+ * asks for another, so a tap that followed a pulse at once would cut the pulse short.
+ */
+const val TICK_QUIET_AFTER_LOCK_NANOS = 400_000_000L
+const val TICK_QUIET_AFTER_HEARTBEAT_NANOS = 150_000_000L
+
+/** A blind navigation pulse: [LOCK], the strong one on turning onto the target, and [HEARTBEAT], the soft one while still facing it. */
+enum class Pulse { LOCK, HEARTBEAT }
+
+/**
+ * Where the blind navigation pulses stand: [Silent], or pulsing, with the time the latest pulse was due.
+ * That time is on the beat that started at the lock, not the time of the frame that gave the pulse.
+ */
+@JvmInline
+value class BlindPulses internal constructor(val lastNanos: Long) {
+    val pulsing: Boolean get() = lastNanos != Long.MIN_VALUE
+    companion object { val Silent = BlindPulses(Long.MIN_VALUE) }
+}
+
+/**
+ * The pulses after a frame at [nowNanos]. They run while the wearer is [facing] the focused target (the one
+ * facing state there is, [nextFacing]), the setting is on ([enabled]) and the compass is the screen in view
+ * ([inView]); when any of the three is not so they are [BlindPulses.Silent]. [pulseBetween] says what the step
+ * from the state before to the state returned gives the wearer.
+ *
+ * Going from silent to pulsing is the lock, whichever of the three came true: turning onto the target, the
+ * compass coming back into view while the wearer still faces it, or the setting being switched on. The pulse
+ * after any silence is therefore the strong one, and a soft one only ever follows a pulse that was felt.
+ * The focus moving to another target that is faced too ([targetChanged]) starts the pulses again with a lock for
+ * that target.
+ *
+ * While pulsing, a heartbeat is due each [BLIND_HEARTBEAT_NANOS] after the lock. A frame gives at most one: after
+ * a gap of any length between frames the beats missed in it are not made up, and the beat stays where the lock
+ * put it. A clock that has stepped back gives nothing.
+ */
+fun nextBlindPulses(
+    current: BlindPulses, facing: Boolean, enabled: Boolean, inView: Boolean, nowNanos: Long, targetChanged: Boolean = false,
+): BlindPulses {
+    if (!facing || !enabled || !inView) return BlindPulses.Silent
+    if (!current.pulsing || targetChanged) return BlindPulses(nowNanos)
+    val beats = (nowNanos - current.lastNanos) / BLIND_HEARTBEAT_NANOS
+    return if (beats >= 1) BlindPulses(current.lastNanos + beats * BLIND_HEARTBEAT_NANOS) else current
+}
+
+/**
+ * The pulse a frame gives, from the pulses [before] it and [after] it and the [targetChanged] that
+ * [nextBlindPulses] was given; null for none.
+ */
+fun pulseBetween(before: BlindPulses, after: BlindPulses, targetChanged: Boolean = false): Pulse? = when {
+    !after.pulsing -> null
+    !before.pulsing || targetChanged -> Pulse.LOCK
+    after != before -> Pulse.HEARTBEAT
+    else -> null
+}
+
+/**
+ * Whether a tick tap at [nowNanos] is clear of the latest pulse, [lastPulse] given at [lastPulseNanos] (null
+ * when there has been none). On the frame of a pulse, and for [TICK_QUIET_AFTER_LOCK_NANOS] after a lock or
+ * [TICK_QUIET_AFTER_HEARTBEAT_NANOS] after a heartbeat, it is not: the tap is dropped, not kept for later.
+ */
+fun tickClearOfPulse(nowNanos: Long, lastPulse: Pulse?, lastPulseNanos: Long): Boolean = when (lastPulse) {
+    null -> true
+    Pulse.LOCK -> nowNanos - lastPulseNanos >= TICK_QUIET_AFTER_LOCK_NANOS
+    Pulse.HEARTBEAT -> nowNanos - lastPulseNanos >= TICK_QUIET_AFTER_HEARTBEAT_NANOS
+}
+
 /**
  * The 2-degree cell between two minor ticks that the shown heading counts as being in: cell `index` runs from
  * `2 * index` to `2 * index + 2` degrees, 0 to 179 around the dial. [Unset] until a first heading arrives.

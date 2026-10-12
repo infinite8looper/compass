@@ -58,7 +58,7 @@ import kotlin.math.roundToInt
  * - hidden, the screen does no work: no heading is taken from the sensor, no frame is asked for, no timer runs;
  * - passing, while the row of screens moves, it is drawn live and does nothing else;
  * - in view, it also takes the crown, the side button, the vertical swipe and the long press, gives the tick and
- *   the confirming tap, and counts the time a logging result is shown.
+ *   the confirming tap and the blind navigation pulses, and counts the time a logging result is shown.
  *
  * The pager may build this screen twice, once where the wearer sees it and once further along its row, so nothing
  * here may count on being the only one: what there is one of (the screen's keep-awake switch) is not set here.
@@ -98,16 +98,23 @@ fun CompassScreen(
         var lastTap = 0L
         var reference = Float.NaN
         var stale: HeadingReading? = null
-        // The facing state for this loop: a later frame-by-frame consumer (the blind navigation pulses) reads
-        // [facing], and [wasFacing] and [targetChanged] below, here, without going through composition.
+        // The facing state for this loop. The blind navigation pulses are decided from it below, on the frame,
+        // without going through composition.
         var facing = false
         var facingId = NO_TARGET
+        var blind = BlindPulses.Silent
+        var lastPulse: Pulse? = null
+        var lastPulseNanos = 0L
         facingState.value = false
         while (true) {
             // Hidden, the loop waits here and asks for no frame. Its state is kept, so the first frame back sees
             // the whole time away as one long gap, which is handled like any other pause: the dial catches up
-            // and the ticks stay quiet until it has.
-            if (paneView() == PaneView.HIDDEN) snapshotFlow { paneView() }.first { it != PaneView.HIDDEN }
+            // and the ticks stay quiet until it has. The pulses do not wait: they end here, so the first one
+            // after the compass is back is the strong one.
+            if (paneView() == PaneView.HIDDEN) {
+                blind = BlindPulses.Silent
+                snapshotFlow { paneView() }.first { it != PaneView.HIDDEN }
+            }
             withFrameNanos { now ->
                 val reading = readingState.value
                 if (reading != null) {
@@ -136,16 +143,6 @@ fun CompassScreen(
                     targetCell = nextTickCell(targetCell, target)
                     val wasSettling = settling.active
                     settling = nextTickSettling(settling, disturbed, now, next, targetCell)
-                    // The frame on which the dial arrives is still part of the catch-up. A compass that is sliding
-                    // past, or stands behind a screen that is being swiped away, is drawn and gives no tap.
-                    if (isTickCrossing(cell, next) && !wasSettling && !settling.active && !hold && n.tickFeedback &&
-                        paneView() == PaneView.IN_VIEW && lifecycle.currentState == Lifecycle.State.RESUMED &&
-                        tickTapDue(now, lastTap)
-                    ) {
-                        view.performHapticFeedback(TICK_HAPTIC)
-                        lastTap = now
-                    }
-                    cell = next
 
                     // Facing is decided from the heading the dial shows, and only while that heading is live: not
                     // while the dial is frozen by the hold-flat state, and not while it is catching up.
@@ -159,12 +156,35 @@ fun CompassScreen(
                         targetChanged = targetChanged,
                     )
                     if (facing != wasFacing) facingState.value = facing
-                    // Turning onto a target is `facing && (!wasFacing || targetChanged)` on this frame. Feedback for
-                    // it belongs to the compass in view, like the tick above.
-                } else if (facing) {
+
+                    // A compass that is sliding past, or stands behind a screen that is being swiped away, is
+                    // drawn and gives no tap and no pulse.
+                    val inView = paneView() == PaneView.IN_VIEW && lifecycle.currentState == Lifecycle.State.RESUMED
+
+                    // Blind navigation: the strong pulse on turning onto the focused target, the soft one each
+                    // second while still facing it.
+                    val nextBlind = nextBlindPulses(blind, facing, n.blindNavigation, inView, now, targetChanged)
+                    val pulse = pulseBetween(blind, nextBlind, targetChanged)
+                    blind = nextBlind
+                    if (pulse != null) {
+                        view.performHapticFeedback(if (pulse == Pulse.LOCK) LOCK_HAPTIC else HEARTBEAT_HAPTIC)
+                        lastPulse = pulse
+                        lastPulseNanos = now
+                    }
+
+                    // The frame on which the dial arrives is still part of the catch-up. A tick that falls on a
+                    // pulse, or just after one, is dropped: the pulse is the one the wearer is to feel.
+                    if (isTickCrossing(cell, next) && !wasSettling && !settling.active && !hold && n.tickFeedback &&
+                        inView && tickTapDue(now, lastTap) && tickClearOfPulse(now, lastPulse, lastPulseNanos)
+                    ) {
+                        view.performHapticFeedback(TICK_HAPTIC)
+                        lastTap = now
+                    }
+                    cell = next
+                } else {
                     // Without a heading nothing is faced.
-                    facing = false
-                    facingState.value = false
+                    if (facing) { facing = false; facingState.value = false }
+                    blind = BlindPulses.Silent
                 }
                 last = now
             }
@@ -410,6 +430,18 @@ private const val DIAL_DIMMED = 0.4f
 private val TICK_HAPTIC =
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) HapticFeedbackConstants.SEGMENT_FREQUENT_TICK
     else HapticFeedbackConstants.CLOCK_TICK
+
+/**
+ * The blind navigation pulses: the platform's confirmation for the strong one and its context click for the soft
+ * one, on every API level the app runs on. Both are haptic feedback, which needs no permission and which the
+ * system drops while touch vibration is switched off in the watch's settings.
+ * In the platform's own table (API 33 to 35) the confirmation plays the click effect, the context click the tick
+ * effect and the tick tap the texture tick, strongest first; a watch's system can replace entries, and the Wear OS
+ * emulator images play the confirmation as two thuds. The long press, the platform's heavy click, is not the
+ * strong pulse because a vibrator need not support that effect: the emulators' does not, and nothing plays.
+ */
+private const val LOCK_HAPTIC = HapticFeedbackConstants.CONFIRM
+private const val HEARTBEAT_HAPTIC = HapticFeedbackConstants.CONTEXT_CLICK
 
 /** The heading number. The text is read here, not in [CompassScreen], so a new whole degree recomposes only this. */
 @Composable
