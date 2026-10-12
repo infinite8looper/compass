@@ -1,5 +1,6 @@
 package com.infinite8looper.compass.ui
 
+import android.content.Context
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -29,6 +31,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.findRootCoordinates
@@ -43,8 +46,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.wear.compose.material3.dynamicColorScheme
 import com.infinite8looper.compass.nav.Pane
 import com.infinite8looper.compass.nav.ScrollArc
+import com.infinite8looper.compass.nav.WatchScheme
+import com.infinite8looper.compass.nav.roleColors
 import com.infinite8looper.compass.nav.rowInset
 
 // The colors the screens share, each named for what it is used for. A screen takes a color from here by its
@@ -57,12 +63,37 @@ internal val Dim = Color(0xFF9E9E9E)
 /** Fine ticks, and anything that is switched off or not the current one. */
 internal val Faint = Color(0xFF6E6E6E)
 
+// Three of the colors follow the watch: on a watch whose system gives apps a color scheme taken from its watch
+// face, the accent is that scheme's primary color, north its tertiary and the error color its error color, after
+// the checks in nav/WatchColors.kt. On any other watch they are the app's own blue and red. They are held as
+// state, so a place that reads one while composing is composed again when it changes, and a place that reads one
+// while drawing is drawn again: nothing has to be told. Setting them to what they already are changes nothing.
+private val roles = mutableStateOf(roleColors(null))
+
 /** The heading pointer, and anything that is on or can be acted on. */
-val AccentColor = Color(0xFF2F8BFF)
+val AccentColor: Color get() = opaque(roles.value.accent)
 /** North on the dial. */
-val NorthColor = Color(0xFFFF3B30)
-/** A failure, and deleting. It has the same value as [NorthColor] but is a separate role, so the two are kept as two values. */
-val ErrorColor = Color(0xFFFF3B30)
+val NorthColor: Color get() = opaque(roles.value.north)
+/** A failure, and deleting. Without a scheme it has the same value as [NorthColor]; it is a separate role. */
+val ErrorColor: Color get() = opaque(roles.value.error)
+
+private fun opaque(rgb: Int): Color = Color(0xFF000000.toInt() or rgb)
+
+/**
+ * The watch's color scheme as the Wear Material 3 library reports it, or null where the library reports none. The
+ * library reports one only on API level 35 and above, and only while the system's setting for dynamic color is on.
+ */
+fun watchScheme(context: Context): WatchScheme? =
+    dynamicColorScheme(context)?.let { WatchScheme(it.primary.toArgb(), it.tertiary.toArgb(), it.error.toArgb()) }
+
+/**
+ * Reads the watch's color scheme and sets the three colors that follow it. The activity calls this before it shows
+ * anything and each time it comes back on screen, so a scheme that changed while the app was out of sight is in
+ * the app when the wearer returns.
+ */
+fun followWatchColors(context: Context) {
+    roles.value = roleColors(watchScheme(context))
+}
 
 /** A confirmation that something was done, such as a waypoint saved: a soft green. */
 val ConfirmColor = Color(0xFF7FD99A)
