@@ -49,6 +49,7 @@ import com.infinite8looper.compass.nav.pageViewUnder
 import com.infinite8looper.compass.nav.paneOnScreen
 import com.infinite8looper.compass.nav.paneOf
 import com.infinite8looper.compass.nav.topScreen
+import com.infinite8looper.compass.nav.trailKeepsAwake
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
@@ -89,6 +90,19 @@ fun CompassApp() {
     DisposableEffect(vm, wantHeading) {
         vm.setHeadingWanted(wantHeading)
         onDispose { vm.setHeadingWanted(false) }
+    }
+    // A breadcrumb trail asks for location only while the compass is on screen: one of the three screens is on top
+    // and the compass is at rest in view or passing in a swipe, so a swipe that is begun and let go does not stop
+    // and start the fixes. The view model decides what that means for location.
+    val compassOnScreen by remember(panes) {
+        derivedStateOf {
+            topScreen(route?.destination?.route) == TopScreen.PANES &&
+                paneOnScreen(Pane.COMPASS, panes.currentPage, panes.currentPageOffsetFraction, panes.targetPage, panes.isScrollInProgress)
+        }
+    }
+    DisposableEffect(vm, compassOnScreen) {
+        vm.setCompassOnScreen(compassOnScreen)
+        onDispose { vm.setCompassOnScreen(false) }
     }
     AppScaffold(timeText = {}) {
         // The three screens are the host's first destination, which has nothing behind it to swipe back to, so a
@@ -178,7 +192,8 @@ private fun Panes(
 }
 
 /**
- * Keeps the screen on while the compass is in view with targets to walk to. It also keeps it on while a save is in
+ * Keeps the screen on while the compass is in view with targets to walk to, or with a breadcrumb trail being
+ * retraced ([trailKeepsAwake]). It also keeps it on while a save is in
  * progress, with or without targets and on whichever screen the wearer is, the ones opened from a row included:
  * the system gives an app that is not on screen no location, so a watch that went to sleep during a save would end
  * it in "No GPS fix".
@@ -192,7 +207,10 @@ private fun KeepAwake(vm: CompassViewModel, compassInView: () -> Boolean) {
     val nav = vm.nav.collectAsStateWithLifecycle()
     val status = vm.logStatus.collectAsStateWithLifecycle()
     val awake by remember(compassInView) {
-        derivedStateOf { (nav.value.targets.isNotEmpty() && compassInView()) || status.value is LogStatus.Saving }
+        derivedStateOf {
+            (nav.value.targets.isNotEmpty() && compassInView()) || trailKeepsAwake(nav.value.trail.mode, compassInView()) ||
+                status.value is LogStatus.Saving
+        }
     }
     DisposableEffect(view, awake) {
         view.keepScreenOn = awake

@@ -7,6 +7,7 @@ import android.os.SystemClock
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.infinite8looper.compass.data.Crumb
 import com.infinite8looper.compass.data.SettingsStore
 import com.infinite8looper.compass.data.Waypoint
 import com.infinite8looper.compass.data.WaypointDatabase
@@ -36,7 +37,13 @@ data class NavUi(
     val showCoordinates: Boolean = false,
     val backupEnabled: Boolean = true,
     val blindNavigation: Boolean = true,
+    /** The breadcrumb trail setting. */
     val breadcrumbTrail: Boolean = false,
+    /**
+     * The breadcrumb trail: its mode, how many crumbs it has, the crumb that is walked to and the other crumbs'
+     * ticks. While it is retraced, [focused] is that crumb and none of [targets] is focused.
+     */
+    val trail: TrailUi = TrailUi(),
 ) {
     companion object {
         val EMPTY = NavUi(emptyList(), null, Units.METRIC, NorthRef.TRUE, null, null, emptyList(), emptyMap(), loaded = false)
@@ -92,13 +99,31 @@ class CompassViewModel(app: Application, val locationSource: LocationSource) : A
     private val waypoints = dao.observeAll()
     private val hasTargets = waypoints.map { ws -> ws.any { it.isTarget } }.distinctUntilChanged()
 
+    private val crumbDao = database.crumbs()
+    /** The breadcrumb trail's crumbs, newest first. */
+    private val crumbs = crumbDao.observeAll()
+    /** What the trail is doing: the stored mode, as the setting and the crumbs let it stand ([effectiveTrailMode]). */
+    private val trailMode: Flow<TrailMode> =
+        combine(settingsStore.settings, crumbs) { s, cs -> effectiveTrailMode(s.trailMode, s.breadcrumbTrail, cs.size) }
+            .distinctUntilChanged()
+
+    private val compassOnScreen = MutableStateFlow(false)
+
     /**
-     * Whether location should be running right now. This is the one place that decides it: today only when at
-     * least one waypoint is a target and the permission is held; another reason can be added here.
+     * The screens say here whether the compass is on screen: one of the three screens is on top and the compass is
+     * the one at rest in view, or is passing during a swipe. A trail asks for location only then.
+     */
+    fun setCompassOnScreen(on: Boolean) { compassOnScreen.value = on }
+
+    /**
+     * Whether location should be running right now. This is the one place that decides it: while at least one
+     * waypoint is a target, or while a breadcrumb trail is being laid or retraced and the compass is on screen
+     * ([trailWantsLocation]); in either case only with the permission held.
      */
     private val locationWanted: Flow<Boolean> =
-        combine(hasTargets, permissionTick) { hasTargets, _ -> hasTargets && locationSource.hasPermission() }
-            .distinctUntilChanged()
+        combine(hasTargets, trailMode, compassOnScreen, permissionTick) { hasTargets, mode, compass, _ ->
+            (hasTargets || trailWantsLocation(mode, compass)) && locationSource.hasPermission()
+        }.distinctUntilChanged()
 
     /** The live fix, or null when location is not wanted, so a fix never outlives the updates that made it. */
     private val fix: Flow<Fix?> = locationWanted
@@ -106,21 +131,40 @@ class CompassViewModel(app: Application, val locationSource: LocationSource) : A
             if (!wanted) flowOf(null)
             else locationSource.updates(5_000)
                 .onEach { quietly("save last position") { settingsStore.setLastPosition(it.point, it.altitudeM) } }
+                // Each fix is looked at once for the trail, here, before the screens get it: one fix, at most
+                // one crumb consumed.
+                .onEach { quietly("follow the trail") { retrace(it) } }
                 .map<Fix, Fix?> { it }
                 // A location failure ends the fixes, not the screen state: the waypoints and settings keep flowing.
                 .catch { Log.w(TAG, "location updates failed", it) }
         }
         .onStart { emit(null) }
 
-    val nav: StateFlow<NavUi> = combine(waypoints, settingsStore.settings, fix) { ws, s, f ->
+    /**
+     * The targets, and the crumb walked to, that the wearer counted as arrived at when [nav] was last worked out:
+     * arrival ends further out than it begins ([nextArrived]), so it has to be remembered. Only [nav] reads and
+     * writes it. With no live fix nothing has arrived, so it empties whenever location stops.
+     */
+    private var arrived: Set<Long> = emptySet()
+
+    val nav: StateFlow<NavUi> = combine(waypoints, settingsStore.settings, fix, crumbs) { ws, s, f, cs ->
         val known = f?.point ?: s.lastPosition
         val declination = known?.let { declinationAt(it, f?.altitudeM ?: s.lastAltitudeM ?: 0f, System.currentTimeMillis()) }
-        val targets = buildTargets(ws.map { it.toInfo() }, s.focusedId, f?.point, declination, s.north, s.units)
+        val mode = effectiveTrailMode(s.trailMode, s.breadcrumbTrail, cs.size)
+        // While a trail is retraced the crumb walked to stands where the focused target does, and the waypoints
+        // are all still targets with none of them focused. The stored focus is not touched, so it is back afterwards.
+        val targets = buildTargets(
+            ws.map { it.toInfo() }, s.focusedId, f?.point, declination, s.north, s.units, arrived,
+            focusSuspended = mode == TrailMode.RETRACING,
+        )
+        val trail = buildTrail(mode, cs.map { it.toPoint() }, f?.point, declination, s.north, s.units, arrived)
+        val focused = trail.current ?: targets.firstOrNull { it.focused }
+        arrived = (targets + listOfNotNull(trail.current)).filter { it.arrived }.mapTo(HashSet()) { it.id }
         // Only a live fix gives distances; the saved last position is not presented as where the wearer is now.
         val distances = f?.let { live -> ws.associate { it.id to distanceMeters(live.point, GeoPoint(it.lat, it.lon)) } }.orEmpty()
-        NavUi(targets, targets.firstOrNull { it.focused }, s.units, s.north, declination, f?.elapsedMs, ws, distances,
+        NavUi(targets, focused, s.units, s.north, declination, f?.elapsedMs, ws, distances,
             tickFeedback = s.tickFeedback, showCoordinates = s.showCoordinates, backupEnabled = s.backupEnabled,
-            blindNavigation = s.blindNavigation, breadcrumbTrail = s.breadcrumbTrail)
+            blindNavigation = s.blindNavigation, breadcrumbTrail = s.breadcrumbTrail, trail = trail)
     }
         .catch { Log.w(TAG, "screen state stopped updating", it) }
         .stateIn(viewModelScope, sharing, NavUi.EMPTY)
@@ -148,6 +192,8 @@ class CompassViewModel(app: Application, val locationSource: LocationSource) : A
     }
 
     fun moveFocus(step: Int) = launchQuietly("move focus") {
+        // While a trail is retraced the waypoint focus is suspended: it does not move, and is back afterwards.
+        if (readTrail().first.mode == TrailMode.RETRACING) return@launchQuietly
         val (ids, focused) = targetsAndFocus()
         // With no targets there is nothing to step to, and a stored focus must survive.
         if (ids.isNotEmpty()) settingsStore.setFocused(stepFocus(ids, focused, step))
@@ -181,6 +227,14 @@ class CompassViewModel(app: Application, val locationSource: LocationSource) : A
     private val logLock = Any()
 
     /**
+     * A single press of the side button: what [logHere] does, except that while a breadcrumb trail is being laid
+     * the fix is stored as a crumb of the trail and not as a waypoint ([singlePress]). The status, the fix rules
+     * and the rule for a press while a save is in progress are the same for both; a dropped crumb is reported as
+     * saved under its place in the trail (`Saved Crumb 3`).
+     */
+    fun sidePress(): Job = save(byTrail = true)
+
+    /**
      * Saves the position as a new waypoint, from the first fix good enough that is taken after this call.
      * Does nothing while a save is in progress; a press while a result is waiting or showing starts a new save.
      * Without the location permission it reports that and saves nothing: asking for the permission is the
@@ -191,7 +245,9 @@ class CompassViewModel(app: Application, val locationSource: LocationSource) : A
      * that takes: a result that arrives while no one can see it is not lost.
      * The returned job ends when this press's save has ended, or at once for a press that was not taken up.
      */
-    fun logHere(): Job {
+    fun logHere(): Job = save(byTrail = false)
+
+    private fun save(byTrail: Boolean): Job {
         val pressedAt = SystemClock.elapsedRealtime()
         // On the main thread, where presses are handled one after another, so two of them cannot both start a save.
         return viewModelScope.launch(Dispatchers.Main.immediate) {
@@ -205,7 +261,7 @@ class CompassViewModel(app: Application, val locationSource: LocationSource) : A
                 logPressCount.value += 1
                 logState.value = refused ?: LogStatus.Saving(null)
             }
-            if (refused == null) logState.value = saveFreshFix(pressedAt)
+            if (refused == null) logState.value = saveFreshFix(pressedAt, byTrail)
         }
     }
 
@@ -234,9 +290,20 @@ class CompassViewModel(app: Application, val locationSource: LocationSource) : A
     private fun isLocationOn(): Boolean =
         getApplication<Application>().getSystemService(LocationManager::class.java)?.isLocationEnabled == true
 
-    /** Waits for a fix taken since [pressedAt] and stores it. Never throws, except to pass a cancellation on. */
-    private suspend fun saveFreshFix(pressedAt: Long): LogStatus {
+    /**
+     * Waits for a fix taken since [pressedAt] and stores it: as a crumb if [byTrail] and a trail is being laid when
+     * the press is taken up, and as a waypoint otherwise. Never throws, except to pass a cancellation on.
+     */
+    private suspend fun saveFreshFix(pressedAt: Long, byTrail: Boolean): LogStatus {
         var passedOver = 0
+        val asCrumb = try {
+            byTrail && singlePress(readTrail().first.mode) == SinglePress.CRUMB
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "could not read the trail (" + e.javaClass.simpleName + ")")
+            return LogStatus.Failed(LogFailure.SAVE_FAILED)
+        }
         val fix = try {
             // The location source already drops fixes older than ten seconds; this also drops any from before the press.
             val fixes = locationSource.updates(1_000).onEach { if (!isFixSincePress(it, pressedAt)) passedOver++ }
@@ -253,12 +320,89 @@ class CompassViewModel(app: Application, val locationSource: LocationSource) : A
             return LogStatus.Failed(LogFailure.NO_FIX)
         }
         return try {
-            LogStatus.Saved(logWaypoint(fix).name, fix.accuracyM, fix.elapsedMs)
+            if (asCrumb) dropCrumb(fix) else LogStatus.Saved(logWaypoint(fix).name, fix.accuracyM, fix.elapsedMs)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.w(TAG, "could not save the waypoint (" + e.javaClass.simpleName + ")")
+            Log.w(TAG, "could not save the " + (if (asCrumb) "crumb" else "waypoint") + " (" + e.javaClass.simpleName + ")")
             LogStatus.Failed(LogFailure.SAVE_FAILED)
+        }
+    }
+
+    // The breadcrumb trail. Its crumbs are rows of the waypoint database and its mode is in the settings file. Every
+    // change to either is made under the lock the waypoint edits use, from what the stores hold at that moment, and
+    // is decided by the pure functions in nav/Trail.kt.
+
+    /** The trail as the stores hold it now, with its crumbs' positions and the units arrival is judged in. */
+    private suspend fun readTrail(): Triple<Trail, List<CrumbPoint>, Units> {
+        val s = settingsStore.settings.first()
+        val points = crumbDao.all().map { it.toPoint() }
+        return Triple(Trail(effectiveTrailMode(s.trailMode, s.breadcrumbTrail, points.size), points.map { it.id }), points, s.units)
+    }
+
+    /** Stores what [change] did to the trail that was [before]: the crumb it consumed is deleted, and a new mode is written. */
+    private suspend fun applyTrail(before: Trail, change: TrailChange) {
+        // The store's own delete, as for a waypoint, which is what keeps a deleted crumb's position out of backups.
+        change.removedId?.let { crumbDao.delete(it) }
+        if (change.trail.mode != before.mode) settingsStore.setTrailMode(change.trail.mode)
+        if (change.completed) {
+            // Shown where a logging result is shown, for as long. A save that is in progress keeps its status.
+            synchronized(logLock) {
+                if (logState.value !is LogStatus.Saving) {
+                    logPressCount.value += 1
+                    logState.value = LogStatus.TrailComplete
+                }
+            }
+        }
+    }
+
+    /**
+     * What a double press of the side button does, and a tap on the trail's row: starts a trail, switches from
+     * laying to retracing, or returns from retracing to laying ([nextTrail]). Nothing while the setting is off.
+     */
+    fun trailDoublePress(): Job = launchEdit("switch the trail") {
+        if (!settingsStore.settings.first().breadcrumbTrail) return@launchEdit
+        val trail = readTrail().first
+        applyTrail(trail, nextTrail(trail, TrailEvent.DoublePress))
+    }
+
+    /** Removes every crumb, through the store's own delete, and ends the trail. Waypoints are not touched. */
+    fun clearTrail(): Job = launchEdit("clear the trail") {
+        crumbDao.clear()
+        settingsStore.setTrailMode(TrailMode.OFF)
+    }
+
+    /**
+     * Stores [fix] as the trail's newest crumb, if the trail is still being laid now that the fix is here: a press
+     * taken while laying whose fix arrives after the trail was switched to retracing, or off, stores nothing and
+     * reports nothing.
+     */
+    private suspend fun dropCrumb(fix: Fix): LogStatus = waypointEdits.withLock {
+        val trail = readTrail().first
+        val dropped = nextTrail(trail, TrailEvent.CrumbDropped(NEW_CRUMB)).trail
+        if (dropped == trail) return@withLock LogStatus.Idle
+        quietly("save last position") { settingsStore.setLastPosition(fix.point, fix.altitudeM) }
+        crumbDao.insert(Crumb(lat = fix.point.lat, lon = fix.point.lon, accuracyM = fix.accuracyM, createdAt = System.currentTimeMillis()))
+        LogStatus.Saved(crumbName(dropped.crumbIds.size), fix.accuracyM, fix.elapsedMs)
+    }
+
+    /** The crumb the last fix arrived at, for [trailAfterFix]. */
+    private var crumbArrivedAt: Long? = null
+
+    /**
+     * Looks at one position fix for the trail: while it is retraced, a fix within the arrival distance of the crumb
+     * walked to deletes that crumb, by its id, and the next newest takes over; after the last one the trail is off
+     * and `Trail complete` is shown. Called once for each fix.
+     */
+    private suspend fun retrace(fix: Fix) {
+        // Read from memory, so a fix costs the database nothing unless a trail is being retraced.
+        val s = settingsStore.settings.first()
+        if (!s.breadcrumbTrail || s.trailMode != TrailMode.RETRACING) return
+        waypointEdits.withLock {
+            val (trail, points, units) = readTrail()
+            val step = trailAfterFix(trail, points, crumbArrivedAt, fix.point, units)
+            crumbArrivedAt = step.arrivedAt
+            applyTrail(trail, step.change)
         }
     }
 
@@ -288,10 +432,9 @@ class CompassViewModel(app: Application, val locationSource: LocationSource) : A
     fun setUnits(u: Units) = launchQuietly("set units") { settingsStore.setUnits(u) }
     fun setTickFeedback(on: Boolean) = launchQuietly("set tick feedback") { settingsStore.setTickFeedback(on) }
     fun setShowCoordinates(on: Boolean) = launchQuietly("set show coordinates") { settingsStore.setShowCoordinates(on) }
-    /** Stores the switch. Nothing acts on it yet: the pulses on facing a target are not built. */
     fun setBlindNavigation(on: Boolean) = launchQuietly("set blind navigation") { settingsStore.setBlindNavigation(on) }
-    /** Stores the switch. Nothing acts on it yet: the trail is not built. */
-    fun setBreadcrumbTrail(on: Boolean) = launchQuietly("set breadcrumb trail") { settingsStore.setBreadcrumbTrail(on) }
+    /** Stores the switch. Off also ends laying or retracing; the crumbs stay until the trail is cleared. */
+    fun setBreadcrumbTrail(on: Boolean) = launchEdit("set breadcrumb trail") { settingsStore.setBreadcrumbTrail(on) }
 
     fun setBackupEnabled(on: Boolean) = launchQuietly("set backup") {
         settingsStore.setBackupEnabled(on)
@@ -310,5 +453,7 @@ class CompassViewModel(app: Application, val locationSource: LocationSource) : A
         const val TAG = "CompassViewModel"
         /** How long the heading sensor keeps running after it is no longer wanted. */
         const val HEADING_STOP_DELAY_MS = 2_000L
+        /** Stands for a crumb that is not stored yet, where [nextTrail] is asked whether one may be added. Row ids start at 1. */
+        const val NEW_CRUMB = 0L
     }
 }

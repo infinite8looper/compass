@@ -14,6 +14,7 @@ import com.infinite8looper.compass.data.SettingsStore
 import com.infinite8looper.compass.data.defaultUnits
 import com.infinite8looper.compass.nav.GeoPoint
 import com.infinite8looper.compass.nav.NorthRef
+import com.infinite8looper.compass.nav.TrailMode
 import com.infinite8looper.compass.nav.Units
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -250,5 +251,56 @@ class SettingsStoreTest {
         } finally {
             legacyJob.cancelAndJoin(); job1.cancelAndJoin(); job2.cancelAndJoin(); main.delete(); pos.delete()
         }
+    }
+
+    // The breadcrumb trail's mode, which is kept with the settings.
+
+    @Test fun theTrailsModeIsOffUntilItIsSetAndRoundTrips() = withStore { s, _ ->
+        assertEquals(TrailMode.OFF, s.settings.first().trailMode)
+        s.setBreadcrumbTrail(true)
+        assertEquals(TrailMode.OFF, s.settings.first().trailMode)
+        for (mode in listOf(TrailMode.LAYING, TrailMode.RETRACING, TrailMode.OFF, TrailMode.LAYING)) {
+            s.setTrailMode(mode)
+            assertEquals(mode, s.settings.first().trailMode)
+        }
+        assertTrue(s.settings.first().breadcrumbTrail)
+    }
+    @Test fun theTrailsModeSurvivesANewStoreOnTheSameFile() = runBlocking {
+        val file = "test-settings-${UUID.randomUUID()}"
+        try {
+            val firstJob = SupervisorJob()
+            val first = SettingsStore(ctx, file, CoroutineScope(Dispatchers.IO + firstJob))
+            first.setBreadcrumbTrail(true); first.setTrailMode(TrailMode.RETRACING)
+            firstJob.cancelAndJoin()
+            val secondJob = SupervisorJob()
+            try {
+                val v = SettingsStore(ctx, file, CoroutineScope(Dispatchers.IO + secondJob)).settings.first()
+                assertEquals(TrailMode.RETRACING, v.trailMode); assertTrue(v.breadcrumbTrail)
+            } finally { secondJob.cancelAndJoin() }
+        } finally {
+            ctx.preferencesDataStoreFile(file).delete(); ctx.preferencesDataStoreFile("$file-position").delete()
+        }
+    }
+    @Test fun switchingTheBreadcrumbTrailOffPutsTheModeBackToOffAndSwitchingItOnDoesNotBringItBack() = withStore { s, _ ->
+        s.setBreadcrumbTrail(true); s.setTrailMode(TrailMode.RETRACING)
+        s.setBreadcrumbTrail(false)
+        var v = s.settings.first()
+        assertFalse(v.breadcrumbTrail); assertEquals(TrailMode.OFF, v.trailMode)
+        s.setBreadcrumbTrail(true)
+        v = s.settings.first()
+        assertTrue(v.breadcrumbTrail); assertEquals(TrailMode.OFF, v.trailMode)
+    }
+    @Test fun theTrailsModeIsInTheSettingsFileAndChangesNoOtherSetting() = withStore { s, file ->
+        s.setBackupEnabled(false); s.setTickFeedback(false); s.setBlindNavigation(false); s.setBreadcrumbTrail(true); s.setFocused(7)
+        s.setLastPosition(GeoPoint(43.7022, -72.2896), 160f)
+        s.setTrailMode(TrailMode.LAYING)
+        val v = s.settings.first()
+        assertFalse(v.backupEnabled); assertFalse(v.tickFeedback); assertFalse(v.blindNavigation); assertTrue(v.breadcrumbTrail)
+        assertEquals(7L, v.focusedId); assertEquals(TrailMode.LAYING, v.trailMode)
+        assertEquals(false, s.readBackupEnabled())
+        val main = ctx.preferencesDataStoreFile(file).readBytes().decodeToString()
+        val pos = ctx.preferencesDataStoreFile("$file-position").readBytes().decodeToString()
+        assertTrue(main.contains("trail_mode")); assertTrue(main.contains("LAYING"))
+        assertFalse(pos.contains("trail_mode"))
     }
 }
