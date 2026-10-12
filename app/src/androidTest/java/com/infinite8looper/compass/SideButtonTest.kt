@@ -104,6 +104,8 @@ class SideButtonTest {
             delay(200)
             assertEquals("${SystemClock.uptimeMillis() - up} ms after the press", LogStatus.Idle, vm.logStatus.value)
             withTimeout(60_000) { while (crumbDao.all().isEmpty()) delay(20) }
+            // The status follows the crumb being stored.
+            withTimeout(10_000) { while (vm.logStatus.value is LogStatus.Saving) delay(10) }
             assertEquals("Crumb 1", (vm.logStatus.value as? LogStatus.Saved)?.name)
             assertTrue(dao.observeAll().first().isEmpty())
 

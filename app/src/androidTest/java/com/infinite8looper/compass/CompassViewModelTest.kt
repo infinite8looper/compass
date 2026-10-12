@@ -741,7 +741,8 @@ class CompassViewModelTest {
             counting.cancel()
             val done = withTimeout(10_000) { vm.nav.first { it.trail.count == 0 && it.trail.mode == TrailMode.OFF && it.focused != null } }
             assertTrue(crumbDao.all().isEmpty())
-            assertEquals(TrailMode.OFF, settings.settings.first().trailMode)
+            // The stored mode is written straight after the crumb is deleted; the trail counts as off from the deletion.
+            withTimeout(10_000) { while (settings.settings.first().trailMode != TrailMode.OFF) delay(10) }
             // The waypoint is untouched and has the focus again.
             assertEquals(listOf(w.id), dao.observeAll().first().map { it.id })
             assertEquals(w.id, done.focused?.id)
