@@ -1,7 +1,6 @@
 package com.infinite8looper.compass.data
 
 import android.content.Context
-import android.database.SQLException
 import android.database.sqlite.SQLiteException
 import android.util.Log
 import androidx.room.*
@@ -154,21 +153,11 @@ abstract class WaypointDatabase : RoomDatabase() {
                             Log.w(TAG, "could not set the waypoint database's journal mode (" + e.javaClass.simpleName + ")")
                         }
                         // The platform runs this on every connection it has for the database and on every one it
-                        // opens later, so a replaced or added connection overwrites deleted content too.
-                        try {
-                            db.execPerConnectionSQL("PRAGMA secure_delete = ON", null)
-                        } catch (e: SQLException) {
-                            // In case a platform version refuses a statement that answers with a row here: set it
-                            // on the connection that writes. [copyIfSettled] reads it back before any copy.
-                            Log.w(TAG, "could not set secure deletion for every connection (" + e.javaClass.simpleName + ")")
-                            db.beginTransaction()
-                            try {
-                                db.query("PRAGMA secure_delete = ON").use { it.moveToFirst() }
-                                db.setTransactionSuccessful()
-                            } finally {
-                                db.endTransaction()
-                            }
-                        }
+                        // opens later, so a replaced or added connection overwrites deleted content too. Android 13,
+                        // 14 and 15 all accept a pragma that answers with a row here. A statement that failed would
+                        // not be reported by this call (the platform logs it and closes the connection), so there
+                        // is nothing to catch: [copyIfSettled] reads the setting back before any copy.
+                        db.execPerConnectionSQL("PRAGMA secure_delete = ON", null)
                     }
                 })
                 .build()
@@ -178,14 +167,20 @@ abstract class WaypointDatabase : RoomDatabase() {
             instance ?: synchronized(this) { instance ?: open(context, FILE_NAME).also { instance = it } }
 
         /**
-         * Runs [copy] only if the app has no waypoint database at all, neither a file nor one opened in this
-         * process, and keeps one from being opened meanwhile. Returns whether that was the case.
+         * Runs [copy] only if the app has no waypoint database at all, neither files (see [hasFiles]) nor one opened
+         * in this process, and keeps one from being opened meanwhile. Returns whether that was the case.
          */
         fun copyWithoutDatabase(context: Context, copy: () -> Unit): Boolean = synchronized(this) {
-            if (instance != null || context.getDatabasePath(FILE_NAME).exists()) return false
+            if (instance != null || hasFiles(context.getDatabasePath(FILE_NAME))) return false
             copy()
             true
         }
+
+        /**
+         * True when anything of a database that a backup would copy is at [databaseFile]: the file itself, or a
+         * journal or log with bytes in it that was left behind without one.
+         */
+        fun hasFiles(databaseFile: File): Boolean = databaseFile.exists() || hasJournalData(databaseFile)
 
         /**
          * True when the rollback journal or a write-ahead log next to [databaseFile] holds any bytes. Such a file

@@ -291,6 +291,58 @@ class DeletedWaypointTest {
     }
 
     /**
+     * The backup agent copies without opening a database only when the app has none. A journal or log file with
+     * bytes in it counts as having one even when the database file itself is missing, since it would be copied too.
+     */
+    @Test fun journalOrLogLeftWithoutADatabaseFileCountsAsADatabase() {
+        val file = ctx.getDatabasePath(name)
+        file.parentFile!!.mkdirs()
+        // Controls: nothing there at all, and the database file alone.
+        assertEquals(emptyMap<String, File>(), companions(name).filterValues { it.exists() })
+        assertFalse(WaypointDatabase.hasFiles(file))
+        file.writeBytes(deleted.toByteArray())
+        assertTrue(WaypointDatabase.hasFiles(file))
+        assertTrue(file.delete())
+
+        for (ending in listOf("-journal", "-wal")) {
+            val companion = companions(name).getValue(ending)
+            try {
+                companion.writeBytes(deleted.toByteArray())
+                assertFalse(file.exists())
+                assertTrue(ending, WaypointDatabase.hasFiles(file))
+                // An empty one holds nothing that could be copied.
+                companion.writeBytes(ByteArray(0))
+                assertFalse(ending, WaypointDatabase.hasFiles(file))
+            } finally {
+                companion.delete()
+            }
+        }
+    }
+
+    /**
+     * What follows from the test above: with such a file there, the backup agent opens the database instead of
+     * copying blindly. The left-behind bytes must then be gone before the copy is allowed to run.
+     */
+    @Test fun journalOrLogLeftWithoutADatabaseFileDoesNotReachACopy() = runBlocking {
+        val file = ctx.getDatabasePath(name)
+        file.parentFile!!.mkdirs()
+        for (ending in listOf("-journal", "-wal")) {
+            companions(name).getValue(ending).writeBytes(deleted.toByteArray())
+            assertEquals(ending, mapOf(ending to 1), found(name, deleted))
+
+            val d = WaypointDatabase.open(ctx, name).also { db = it }
+            for ((i, k) in kept.withIndex()) d.waypoints().insert(wp(k, i + 1L))
+            assertTrue(ending, d.sanitize())
+            var seen: Map<String, Int>? = null
+            assertTrue(ending, d.copyIfSettled(file) { seen = found(name, deleted) })
+            assertEquals(ending, emptyMap<String, Int>(), seen!!.filterValues { it > 0 })
+            assertDeletedNameGoneAndKeptNamesPresent(name, "open, after a left-behind $ending")
+            d.close()
+            removeFiles()
+        }
+    }
+
+    /**
      * A second connection holds the file in write-ahead-log mode with data in its log and is reading from it, as
      * nothing in the app does. The app's database cannot leave that mode or empty the log while that goes on, so
      * nothing is copied. Once the other connection is gone, the log is emptied and the copy runs.
