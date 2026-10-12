@@ -20,11 +20,13 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 data class NavUi(
     val targets: List<TargetUi>, val focused: TargetUi?, val units: Units, val north: NorthRef,
@@ -398,11 +400,16 @@ class CompassViewModel(app: Application, val locationSource: LocationSource) : A
         // Read from memory, so a fix costs the database nothing unless a trail is being retraced.
         val s = settingsStore.settings.first()
         if (!s.breadcrumbTrail || s.trailMode != TrailMode.RETRACING) return
-        waypointEdits.withLock {
-            val (trail, points, units) = readTrail()
-            val step = trailAfterFix(trail, points, crumbArrivedAt, fix.point, units)
-            crumbArrivedAt = step.arrivedAt
-            applyTrail(trail, step.change)
+        // Not to be cut short: this runs inside the stream of fixes, and deleting the last crumb ends the trail,
+        // which, with no waypoint as a target, ends the reason for location and so cancels that stream while the
+        // rest of the work (the mode, `Trail complete`) is still to do.
+        withContext(NonCancellable) {
+            waypointEdits.withLock {
+                val (trail, points, units) = readTrail()
+                val step = trailAfterFix(trail, points, crumbArrivedAt, fix.point, units)
+                crumbArrivedAt = step.arrivedAt
+                applyTrail(trail, step.change)
+            }
         }
     }
 

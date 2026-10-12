@@ -756,6 +756,33 @@ class CompassViewModelTest {
         }
     }
 
+    /**
+     * With no waypoint as a target, the trail is the only reason location runs, and reaching the last crumb ends
+     * that reason in the middle of the work the fix set off. The work is finished all the same.
+     */
+    @Test fun arrivingAtTheLastCrumbWithNoTargetsCompletesTheTrailToo() = runBlocking {
+        settings.setBreadcrumbTrail(true)
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            val vm = viewModelOf(scenario)
+            val statuses = CopyOnWriteArrayList<LogStatus>()
+            val watching = launch(Dispatchers.Main) { vm.logStatus.collect { statuses += it } }
+            val counts = CopyOnWriteArrayList<Int>()
+            val counting = launch(Dispatchers.Main) { crumbDao.observeAll().collect { counts += it.size } }
+            withTimeout(10_000) { while (counts.isEmpty()) delay(10) }
+            crumbDao.insert(crumbAt(hanover.point))
+            settings.setTrailMode(TrailMode.RETRACING)
+            withTimeout(60_000) { while (counts.toList() != listOf(0, 1, 0)) delay(10) }
+            counting.cancel()
+            withTimeout(10_000) { while (settings.settings.first().trailMode != TrailMode.OFF) delay(10) }
+            withTimeout(10_000) { while (LogStatus.TrailComplete !in statuses) delay(10) }
+            val shownFor = msUntilIdle(vm)
+            watching.cancel()
+            assertTrue("shown for $shownFor ms", shownFor in 1_000..4_500)
+            assertEquals(listOf(LogStatus.Idle, LogStatus.TrailComplete, LogStatus.Idle), statuses.toList())
+            assertTrue(dao.observeAll().first().isEmpty())
+        }
+    }
+
     @Test fun aTrailBringsPositionFixesOnlyWhileTheCompassIsOnScreen() = runBlocking {
         settings.setBreadcrumbTrail(true)
         ActivityScenario.launch(MainActivity::class.java).use {
