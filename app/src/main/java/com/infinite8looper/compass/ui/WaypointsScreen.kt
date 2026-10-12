@@ -27,7 +27,7 @@ import com.infinite8looper.compass.CompassViewModel
 import com.infinite8looper.compass.nav.formatDistance
 
 @Composable
-fun WaypointsScreen(vm: CompassViewModel, onEdit: (Long) -> Unit, onSettings: () -> Unit, onLog: () -> Unit) {
+fun WaypointsScreen(vm: CompassViewModel, onEdit: (Long) -> Unit, onLog: () -> Unit) {
     val nav by vm.nav.collectAsStateWithLifecycle()
     val listState = rememberScalingLazyListState()
     // The same check the compass uses: a fix that has stopped arriving makes the distances old.
@@ -66,7 +66,6 @@ fun WaypointsScreen(vm: CompassViewModel, onEdit: (Long) -> Unit, onSettings: ()
                     }
                 }
             }
-            item { Button(onClick = onSettings, modifier = Modifier.fillMaxWidth()) { Text("Settings") } }
         }
     }
 }

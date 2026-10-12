@@ -38,8 +38,6 @@ import kotlinx.coroutines.flow.collectLatest
 
 private const val STRAP_ANGLE = 26f
 
-private val LevelMark = Color(0xFF6E6E6E)
-
 /**
  * What the compass shows in place of the heading while the watch is tilted too far to give one: a watch seen
  * from the side that turns from upright to level, again and again, between two level marks, and the words
@@ -50,11 +48,14 @@ private val LevelMark = Color(0xFF6E6E6E)
  * drawing's own edge: the compass keeps a line of its own between the two. With [showLabel] false only the
  * drawing shows, for the moments when the compass needs the words' place for something else.
  *
- * The loop runs only while the screen is started, stands still on the level position when the system has
- * animations switched off, and is read only while drawing, so a new frame recomposes nothing.
+ * The loop runs only while the screen is started and [running] says so, stands still on the level position when
+ * the system has animations switched off, and is read only while drawing, so a new frame recomposes nothing.
+ * While [running] is false the drawing keeps the position it had.
  */
 @Composable
-fun HoldFlatHint(labelStyle: TextStyle, labelOffset: Dp, modifier: Modifier = Modifier, showLabel: Boolean = true) {
+fun HoldFlatHint(
+    labelStyle: TextStyle, labelOffset: Dp, modifier: Modifier = Modifier, showLabel: Boolean = true, running: () -> Boolean = { true },
+) {
     val motion = rememberCoroutineScope().coroutineContext[MotionDurationScale]
     // The time into the loop, in milliseconds. With animations off it is the still position from the first
     // frame on; otherwise it starts at 0, where the watch has not yet faded in.
@@ -62,7 +63,9 @@ fun HoldFlatHint(labelStyle: TextStyle, labelOffset: Dp, modifier: Modifier = Mo
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(lifecycle, motion) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            snapshotFlow { motion?.scaleFactor ?: 1f }.collectLatest { scale ->
+            // No scale stands for "not running": the loop below is left, and no frame is asked for.
+            snapshotFlow { if (running()) motion?.scaleFactor ?: 1f else null }.collectLatest { scale ->
+                if (scale == null) return@collectLatest
                 if (scale <= 0f) {
                     loopMs.floatValue = HOLD_FLAT_STILL_MS
                     return@collectLatest
@@ -95,7 +98,7 @@ private fun DrawScope.drawWatch(ms: Float) {
     // Two level marks, one either side, in the weight of the dial's fine ticks. They do not fade with the watch:
     // they are what it lines up with, and they brighten when it does.
     val center = Offset(size.width / 2f, h / 2f)
-    val markColor = lerp(LevelMark, Ink, reached * visible * 0.75f)
+    val markColor = lerp(Faint, Ink, reached * visible * 0.75f)
     val weight = h * 0.04f
     drawLine(markColor, Offset(center.x - h * 0.90f, center.y), Offset(center.x - h * 0.62f, center.y), weight, StrokeCap.Round)
     drawLine(markColor, Offset(center.x + h * 0.62f, center.y), Offset(center.x + h * 0.90f, center.y), weight, StrokeCap.Round)

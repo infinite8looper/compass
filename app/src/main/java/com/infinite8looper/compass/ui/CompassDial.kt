@@ -21,7 +21,6 @@ import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import com.infinite8looper.compass.nav.TargetUi
 
-private val TickGray = Color(0xFF6E6E6E)
 private val LabelGray = Color(0xFF7C7C7C)
 
 // Fractions of the dial radius, shared with the screen so its readout can stay inside the letters.
@@ -82,7 +81,7 @@ fun CompassDial(
                     val heavy = d % 30 == 0
                     rotate(d.toFloat(), c) {
                         drawLine(
-                            color = if (d == 0) NorthColor else if (heavy) Ink else TickGray,
+                            color = if (d == 0) NorthColor else if (heavy) Ink else Faint,
                             start = Offset(c.x, c.y - r * RING_OUTER), end = Offset(c.x, c.y - r * RING_INNER),
                             strokeWidth = if (heavy) r * HEAVY_TICK else r * 0.01f, cap = StrokeCap.Round,
                         )
