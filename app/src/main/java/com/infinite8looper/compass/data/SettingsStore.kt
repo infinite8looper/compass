@@ -17,7 +17,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import java.util.Locale
 
@@ -53,10 +55,23 @@ class SettingsStore(
         migrations = listOf(legacyPositionMigration()),
     ) { app.preferencesDataStoreFile(fileName) }
 
-    private val positionData: Flow<Preferences> = positionStore.data.catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+    /** The settings file's contents. A file that cannot be read stands as defaults with the backup switch off. */
+    private val settingsData: Flow<Preferences> =
+        store.data.catch { if (it is IOException) emit(mutablePreferencesOf(BACKUP_ENABLED to false)) else throw it }
+
+    /**
+     * The position file's contents, read only once the settings file has been read for the first time. That first
+     * read is when DataStore runs the migration below, which may write the position file: read side by side, the
+     * position file could give its earlier, empty contents first, and an upgraded install would see no last
+     * position for a moment.
+     */
+    private val positionData: Flow<Preferences> = flow {
+        settingsData.first()
+        emitAll(positionStore.data)
+    }.catch { if (it is IOException) emit(emptyPreferences()) else throw it }
 
     val settings: Flow<Settings> = combine(
-        store.data.catch { if (it is IOException) emit(mutablePreferencesOf(BACKUP_ENABLED to false)) else throw it },
+        settingsData,
         positionData,
     ) { p, q -> Pair(p, q) }.map { (p, q) ->
         val lat = q[LAT]; val lon = q[LON]
