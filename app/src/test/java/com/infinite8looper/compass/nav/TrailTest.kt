@@ -428,7 +428,7 @@ class TrailTest {
         }
         // Only retracing keeps the screen on, and only with the compass in view.
         for (mode in TrailMode.entries) for (compass in listOf(true, false)) {
-            assertEquals("$mode $compass", mode == TrailMode.RETRACING && compass, trailKeepsAwake(mode, compass))
+            assertEquals("$mode $compass", mode == TrailMode.RETRACING && compass, trailKeepsAwake(mode, compass, locationCanRun = true))
         }
     }
 
@@ -437,5 +437,109 @@ class TrailTest {
         assertEquals(TrailMode.OFF, trailModeOf(null))
         assertEquals(TrailMode.OFF, trailModeOf(""))
         assertEquals(TrailMode.OFF, trailModeOf("WALKING"))
+    }
+
+    // Fix round 1.
+
+    @Test fun retracingKeepsTheScreenOnOnlyWhileLocationCanRun() {
+        assertTrue(trailKeepsAwake(TrailMode.RETRACING, compassInView = true, locationCanRun = true))
+        assertFalse(trailKeepsAwake(TrailMode.RETRACING, compassInView = true, locationCanRun = false))
+        for (mode in TrailMode.entries) assertFalse(trailKeepsAwake(mode, compassInView = false, locationCanRun = false))
+        // Why there can be no position, in the words of the logging failures; the permission comes first.
+        assertNull(noPositionReason(hasPermission = true, locationOn = true))
+        assertEquals(LogFailure.NO_PERMISSION, noPositionReason(hasPermission = false, locationOn = true))
+        assertEquals(LogFailure.NO_PERMISSION, noPositionReason(hasPermission = false, locationOn = false))
+        assertEquals(LogFailure.LOCATION_OFF, noPositionReason(hasPermission = true, locationOn = false))
+    }
+
+    @Test fun aFixThatIsNotAccurateEnoughToSaveConsumesNoCrumb() {
+        val crumbs = listOf(crumb(2, 0.0), crumb(1, -30.0))
+        val t = Trail(TrailMode.RETRACING, listOf(2, 1))
+        // The rule is the one a save uses: 15 m or better.
+        assertEquals(15f, GOOD_FIX_METERS, 0f)
+        for (accuracy in listOf(15.1f, 30f, 80f, Float.NaN)) {
+            val fix = trailAfterFix(t, crumbs, null, north(3.0), Units.METRIC, accuracyM = accuracy)
+            assertEquals("$accuracy", TrailChange(t), fix.change)
+            assertNull("$accuracy", fix.arrivedAt)
+        }
+        for (accuracy in listOf(0f, 5f, 15f)) {
+            assertEquals("$accuracy", 2L, trailAfterFix(t, crumbs, null, north(3.0), Units.METRIC, accuracyM = accuracy).change.removedId)
+        }
+        // A poor fix inside the distance, then a good one: the crumb goes with the good one, once.
+        val poor = trailAfterFix(t, crumbs, null, north(3.0), Units.METRIC, accuracyM = 40f)
+        val good = trailAfterFix(poor.change.trail, crumbs, poor.arrivedAt, north(3.0), Units.METRIC, accuracyM = 8f)
+        assertEquals(TrailChange(Trail(TrailMode.RETRACING, listOf(1)), removedId = 2), good.change)
+        // A crumb that had been arrived at is not kept so by a poor fix.
+        assertNull(trailAfterFix(t, crumbs, 2, north(11.0), Units.METRIC, accuracyM = 40f).arrivedAt)
+    }
+
+    @Test fun aCrumbIsConsumedOnlyWhileTheCompassIsInView() {
+        val crumbs = listOf(crumb(2, 0.0), crumb(1, -30.0))
+        val t = Trail(TrailMode.RETRACING, listOf(2, 1))
+        val away = trailAfterFix(t, crumbs, null, north(1.0), Units.METRIC, accuracyM = 5f, compassInView = false)
+        assertEquals(TrailChange(t), away.change)
+        assertNull(away.arrivedAt)
+        val back = trailAfterFix(t, crumbs, away.arrivedAt, north(1.0), Units.METRIC, accuracyM = 5f, compassInView = true)
+        assertEquals(2L, back.change.removedId)
+    }
+
+    @Test fun aPoorFixShowsNoArrivalForTheCrumbWalkedTo() {
+        val crumbs = listOf(CrumbPoint(2, north(4.0)))
+        val poor = buildTrail(TrailMode.RETRACING, crumbs, north(0.0), null, NorthRef.TRUE, fixGoodEnough = false)
+        assertFalse(poor.current!!.arrived)
+        assertEquals(0f, poor.current!!.dialAngleDeg!!, 0.01f)
+        assertEquals(4.0, poor.current!!.distanceM!!, 0.01)
+        assertFalse(crumbTargetId(2) in poor.arrivedIds)
+        // Not even when it had counted as arrived at before.
+        val held = buildTrail(TrailMode.RETRACING, crumbs, north(0.0), null, NorthRef.TRUE, previouslyArrived = setOf(crumbTargetId(2)), fixGoodEnough = false)
+        assertFalse(held.current!!.arrived)
+        val good = buildTrail(TrailMode.RETRACING, crumbs, north(0.0), null, NorthRef.TRUE, fixGoodEnough = true)
+        assertTrue(good.current!!.arrived)
+        assertEquals(setOf(crumbTargetId(2)), good.arrivedIds)
+    }
+
+    @Test fun aCrumbsTickComesAndGoesAtTheTwoArrivalDistances() {
+        val at = { meters: Double, before: Set<Long> ->
+            buildTrail(TrailMode.LAYING, listOf(CrumbPoint(7, north(meters)), CrumbPoint(3, east)), north(0.0), null, NorthRef.TRUE, previouslyArrived = before)
+        }
+        // Coming nearer: the tick is there at 11 m and gone under 10 m.
+        assertEquals(listOf(0f, 90f), at(11.0, emptySet()).tickAngles)
+        assertEquals(emptySet<Long>(), at(11.0, emptySet()).arrivedIds)
+        val near = at(9.0, emptySet())
+        assertEquals(listOf(90f), near.tickAngles)
+        assertEquals(setOf(crumbTargetId(7)), near.arrivedIds)
+        // Going away again: still gone at 11 m, back beyond 12 m.
+        val wavering = at(11.0, near.arrivedIds)
+        assertEquals(listOf(90f), wavering.tickAngles)
+        assertEquals(setOf(crumbTargetId(7)), wavering.arrivedIds)
+        val left = at(12.5, wavering.arrivedIds)
+        assertEquals(listOf(0f, 90f), left.tickAngles)
+        assertEquals(emptySet<Long>(), left.arrivedIds)
+        // A position that wavers at the line does not make the tick blink.
+        var before = emptySet<Long>()
+        val shown = listOf(10.4, 9.9, 10.2, 9.8, 10.3, 11.9, 12.1, 10.5).map { m -> at(m, before).also { before = it.arrivedIds }.tickAngles.size == 2 }
+        assertEquals(listOf(true, false, false, false, false, false, true, true), shown)
+        // A tick does not depend on how accurate the fix is: it deletes nothing.
+        assertEquals(listOf(90f), buildTrail(TrailMode.LAYING, listOf(CrumbPoint(7, north(9.0)), CrumbPoint(3, east)), north(0.0), null, NorthRef.TRUE, fixGoodEnough = false).tickAngles)
+    }
+
+    @Test fun trailCompleteWaitsForAStatusThatIsShowingAndIsShownOnce() {
+        // Nothing showing: it is shown at once and nothing is owed.
+        assertEquals(CompleteStep(LogStatus.TrailComplete, owed = false), trailCompleteOver(LogStatus.Idle))
+        // A save in progress or its result keeps its place, and the words are owed.
+        val saved = LogStatus.Saved("Waypoint 4", 5f, 1_000)
+        for (showing in listOf(LogStatus.Saving(null), LogStatus.Saving(12f), saved, LogStatus.Failed(LogFailure.NO_FIX))) {
+            assertEquals(CompleteStep(showing, owed = true), trailCompleteOver(showing))
+        }
+        // When that status ends, what is owed is shown in its place, and then nothing is owed.
+        assertEquals(CompleteStep(LogStatus.TrailComplete, owed = false), statusEnded(owed = true))
+        assertEquals(CompleteStep(LogStatus.Idle, owed = false), statusEnded(owed = false))
+        // From a save through to the end: Saving, Saved, Trail complete, nothing. Once.
+        var step = trailCompleteOver(LogStatus.Saving(null))
+        val seen = mutableListOf(step.status)
+        step = CompleteStep(saved, step.owed); seen += step.status
+        step = statusEnded(step.owed); seen += step.status
+        step = statusEnded(step.owed); seen += step.status
+        assertEquals(listOf(LogStatus.Saving(null), saved, LogStatus.TrailComplete, LogStatus.Idle), seen)
     }
 }

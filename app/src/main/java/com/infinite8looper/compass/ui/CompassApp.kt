@@ -19,6 +19,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.platform.LocalView
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -75,6 +76,18 @@ fun CompassApp() {
         }
     }
     KeepAwake(vm, compassInView = { compassInView.value })
+    // A crumb of a trail is consumed only while the compass is the screen in view; the view model is told when.
+    val compassAtRest = compassInView.value
+    DisposableEffect(vm, compassAtRest) {
+        vm.setCompassInView(compassAtRest)
+        onDispose { vm.setCompassInView(false) }
+    }
+    // Whether a position can come at all is looked at again each time the app is back on screen: the permission and
+    // the location switch are changed in the system's settings, away from the app.
+    LifecycleResumeEffect(vm) {
+        vm.refreshLocationState()
+        onPauseOrDispose { }
+    }
     // The heading sensor runs for the compass and for calibration and for nothing else. What is on screen is
     // gathered here, above every screen, and the decision is [headingWanted].
     val appState by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
@@ -193,7 +206,7 @@ private fun Panes(
 
 /**
  * Keeps the screen on while the compass is in view with targets to walk to, or with a breadcrumb trail being
- * retraced ([trailKeepsAwake]). It also keeps it on while a save is in
+ * retraced while a position can come ([trailKeepsAwake]). It also keeps it on while a save is in
  * progress, with or without targets and on whichever screen the wearer is, the ones opened from a row included:
  * the system gives an app that is not on screen no location, so a watch that went to sleep during a save would end
  * it in "No GPS fix".
@@ -208,7 +221,7 @@ private fun KeepAwake(vm: CompassViewModel, compassInView: () -> Boolean) {
     val status = vm.logStatus.collectAsStateWithLifecycle()
     val awake by remember(compassInView) {
         derivedStateOf {
-            (nav.value.targets.isNotEmpty() && compassInView()) || trailKeepsAwake(nav.value.trail.mode, compassInView()) ||
+            (nav.value.targets.isNotEmpty() && compassInView()) || trailKeepsAwake(nav.value.trail.mode, compassInView(), locationCanRun = nav.value.noPosition == null) ||
                 status.value is LogStatus.Saving
         }
     }

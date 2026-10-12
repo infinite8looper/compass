@@ -560,6 +560,8 @@ class CompassViewModelTest {
 
         settings.setBreadcrumbTrail(true)
         val id = crumbDao.insert(crumbAt(farNorth))
+        // The crumb is put in the table behind the app's back here, so the app is given the moment it needs to see it.
+        trailOf(vm) { it.count == 1 }
         withTimeout(10_000) { vm.trailDoublePress().join(); vm.trailDoublePress().join() }
         assertEquals(TrailMode.RETRACING, trailOf(vm) { it.mode == TrailMode.RETRACING }.mode)
         withTimeout(10_000) { vm.setBreadcrumbTrail(false).join() }
@@ -594,6 +596,7 @@ class CompassViewModelTest {
         val second = vm.logWaypoint(hanover.copy(point = farNorth))
         settings.setFocused(first.id)
         val crumb = crumbDao.insert(crumbAt(GeoPoint(43.6950, -72.3000)))
+        trailOf(vm) { it.count == 1 }
         withTimeout(10_000) { vm.trailDoublePress().join(); vm.trailDoublePress().join() }
         val nav = withTimeout(10_000) { vm.nav.first { it.trail.mode == TrailMode.RETRACING } }
         // The waypoints are still targets, none of them focused; the crumb stands where the focused target does.
@@ -784,6 +787,82 @@ class CompassViewModelTest {
             assertEquals(listOf(LogStatus.Idle, LogStatus.TrailComplete, LogStatus.Idle), statuses.toList())
             assertTrue(dao.observeAll().first().isEmpty())
         }
+    }
+
+    /** Sends Back to the real activity, which turns the row of screens one screen toward settings, and lets it come to rest. */
+    private suspend fun back() {
+        androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+        delay(1_500)
+    }
+
+    /**
+     * A waypoint is a target, so fixes keep arriving on every screen. The wearer stands on the crumb walked to with
+     * settings, then the waypoints, in view: nothing is consumed. Back on the compass, it is.
+     */
+    @Test fun aCrumbIsConsumedOnlyWhileTheCompassIsInView() = runBlocking {
+        settings.setBreadcrumbTrail(true)
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            val vm = viewModelOf(scenario)
+            vm.logWaypoint(hanover.copy(point = farNorth))
+            delay(1_500)
+            back()   // settings
+            val crumb = crumbDao.insert(crumbAt(hanover.point))
+            settings.setTrailMode(TrailMode.RETRACING)
+            // Fixes are arriving there: the waypoint has a distance that keeps being worked out.
+            withTimeout(60_000) { vm.nav.first { it.trail.mode == TrailMode.RETRACING && it.distances.isNotEmpty() && it.focused?.distanceM != null } }
+            delay(12_000)
+            assertEquals(listOf(crumb), crumbDao.all().map { it.id })
+            back()   // waypoints
+            delay(8_000)
+            assertEquals(listOf(crumb), crumbDao.all().map { it.id })
+            assertEquals(TrailMode.RETRACING, settings.settings.first().trailMode)
+            assertEquals(LogStatus.Idle, vm.logStatus.value)
+            back()   // the compass
+            withTimeout(30_000) { while (crumbDao.all().isNotEmpty()) delay(20) }
+            withTimeout(10_000) { while (settings.settings.first().trailMode != TrailMode.OFF) delay(10) }
+        }
+    }
+
+    /**
+     * The last crumb is reached while a save is in progress or its result is showing. The save keeps its status,
+     * and `Trail complete` is shown after it, once.
+     */
+    @Test fun trailCompleteThatFallsDuringASaveIsShownAfterItOnce() = runBlocking {
+        settings.setBreadcrumbTrail(true)
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            val vm = viewModelOf(scenario)
+            delay(1_500)
+            val statuses = CopyOnWriteArrayList<LogStatus>()
+            val watching = launch(Dispatchers.Main) { vm.logStatus.collect { statuses += it } }
+            crumbDao.insert(crumbAt(hanover.point))
+            trailOf(vm) { it.count == 1 }
+            // A waypoint is saved with `Log here`, and the trail is switched to retracing while that save runs.
+            val save = withContext(Dispatchers.Main) { vm.logHere().also { assertTrue(vm.logStatus.value is LogStatus.Saving) } }
+            settings.setTrailMode(TrailMode.RETRACING)
+            withTimeout(60_000) { save.join() }
+            withTimeout(30_000) { while (crumbDao.all().isNotEmpty()) delay(20) }
+            withTimeout(30_000) { while (LogStatus.TrailComplete !in statuses) delay(10) }
+            withTimeout(10_000) { while (statuses.last() != LogStatus.Idle) delay(10) }
+            delay(3_000)
+            watching.cancel()
+            val seen = statuses.toList()
+            // Saving, then the saved result, then `Trail complete`, then nothing: each in its turn, the last two once.
+            assertEquals("$seen", 1, seen.count { it == LogStatus.TrailComplete })
+            assertEquals("$seen", 1, seen.count { it is LogStatus.Saved })
+            val saved = seen.indexOfFirst { it is LogStatus.Saved }
+            assertTrue("$seen", seen.subList(1, saved).all { it is LogStatus.Saving })
+            assertEquals("$seen", listOf(LogStatus.TrailComplete, LogStatus.Idle), seen.subList(saved + 1, seen.size))
+            assertEquals(LogStatus.Idle, seen.first())
+            assertEquals(1, dao.observeAll().first().size)
+        }
+    }
+
+    @Test fun withoutThePermissionTheScreenStateSaysNoPositionCanCome() = runBlocking {
+        val without = viewModelWithoutPermission()
+        assertEquals(LogFailure.NO_PERMISSION, withTimeout(10_000) { without.nav.first { it.loaded } }.noPosition)
+        // With it, and location switched on as the tests have it, a position can come.
+        val with = viewModel()
+        assertNull(withTimeout(10_000) { with.nav.first { it.loaded } }.noPosition)
     }
 
     @Test fun aTrailBringsPositionFixesOnlyWhileTheCompassIsOnScreen() = runBlocking {

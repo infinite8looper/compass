@@ -320,6 +320,15 @@ const val LOG_FAILED_SHOW_MS = 3_000L
  */
 fun isFixSincePress(fix: Fix, pressedAtMs: Long): Boolean = fix.elapsedMs >= pressedAtMs
 
+/** A fix is good enough to act on when its reported accuracy is this or better. */
+const val GOOD_FIX_METERS = 15f
+
+/**
+ * The one accuracy rule: a fix whose reported accuracy is [goodEnoughM] or better is good enough to be saved as it
+ * is ([acquireFix]) and to consume a crumb ([trailAfterFix]). An accuracy that is not a number is not.
+ */
+fun isGoodEnough(accuracyM: Float, goodEnoughM: Float = GOOD_FIX_METERS): Boolean = accuracyM <= goodEnoughM
+
 /**
  * Collects [fixes] until one is at least [goodEnoughM] accurate, or [timeoutMs] passes.
  * On timeout, or if the flow ends, returns the most accurate fix seen, or null if none arrived.
@@ -327,7 +336,7 @@ fun isFixSincePress(fix: Fix, pressedAtMs: Long): Boolean = fix.elapsedMs >= pre
  * to [onProgress].
  */
 suspend fun acquireFix(
-    fixes: Flow<Fix>, goodEnoughM: Float = 15f, timeoutMs: Long = 20_000, notBeforeMs: Long = Long.MIN_VALUE,
+    fixes: Flow<Fix>, goodEnoughM: Float = GOOD_FIX_METERS, timeoutMs: Long = 20_000, notBeforeMs: Long = Long.MIN_VALUE,
     onProgress: (Fix) -> Unit = {},
 ): Fix? {
     var best: Fix? = null
@@ -336,7 +345,7 @@ suspend fun acquireFix(
             if (!isFixSincePress(f, notBeforeMs)) return@firstOrNull false
             if (best == null || f.accuracyM < best!!.accuracyM) best = f
             onProgress(f)
-            f.accuracyM <= goodEnoughM
+            isGoodEnough(f.accuracyM, goodEnoughM)
         }
     }
     return good ?: best

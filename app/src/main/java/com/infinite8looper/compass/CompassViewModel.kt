@@ -27,6 +27,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 data class NavUi(
     val targets: List<TargetUi>, val focused: TargetUi?, val units: Units, val north: NorthRef,
@@ -46,6 +47,8 @@ data class NavUi(
      * ticks. While it is retraced, [focused] is that crumb and none of [targets] is focused.
      */
     val trail: TrailUi = TrailUi(),
+    /** Why no position can come at all, or null when one can: the location permission is not held, or location is switched off. */
+    val noPosition: LogFailure? = null,
 ) {
     companion object {
         val EMPTY = NavUi(emptyList(), null, Units.METRIC, NorthRef.TRUE, null, null, emptyList(), emptyMap(), loaded = false)
@@ -102,20 +105,44 @@ class CompassViewModel(app: Application, val locationSource: LocationSource) : A
     private val hasTargets = waypoints.map { ws -> ws.any { it.isTarget } }.distinctUntilChanged()
 
     private val crumbDao = database.crumbs()
-    /** The breadcrumb trail's crumbs, newest first. */
-    private val crumbs = crumbDao.observeAll()
+    /**
+     * The breadcrumb trail's crumbs, newest first, as places: read from the database once and again whenever the
+     * table changes, and held here. Everything that needs the crumbs (a press, a turn of the crown, a position fix,
+     * the screens) takes them from here, so none of those reads the database. Null until the first read.
+     */
+    private val crumbsHeld: StateFlow<List<CrumbPoint>?> = crumbDao.observeAll().map<List<Crumb>, List<CrumbPoint>?> { rows -> rows.map { it.toPoint() } }
+        // A table that cannot be read stands as no crumbs, so presses and the crown still work.
+        .catch { Log.w(TAG, "the crumbs could not be read (" + it.javaClass.simpleName + ")"); emit(emptyList()) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    private val crumbs: Flow<List<CrumbPoint>> = crumbsHeld.filterNotNull()
     /** What the trail is doing: the stored mode, as the setting and the crumbs let it stand ([effectiveTrailMode]). */
     private val trailMode: Flow<TrailMode> =
         combine(settingsStore.settings, crumbs) { s, cs -> effectiveTrailMode(s.trailMode, s.breadcrumbTrail, cs.size) }
             .distinctUntilChanged()
 
     private val compassOnScreen = MutableStateFlow(false)
+    private val compassInView = MutableStateFlow(false)
 
     /**
      * The screens say here whether the compass is on screen: one of the three screens is on top and the compass is
      * the one at rest in view, or is passing during a swipe. A trail asks for location only then.
      */
     fun setCompassOnScreen(on: Boolean) { compassOnScreen.value = on }
+
+    /**
+     * The screens say here whether the compass is the screen at rest in view. A crumb is consumed only then: on
+     * another screen location may be running for the targets, and the trail does not advance.
+     */
+    fun setCompassInView(inView: Boolean) { compassInView.value = inView }
+
+    private val noPosition = MutableStateFlow<LogFailure?>(null)
+
+    /**
+     * Looks again at whether a position can come at all (the permission, and location being switched on). Called
+     * when the permission may have changed and each time the app comes back on screen, which is when the wearer
+     * can have changed either in the system's settings.
+     */
+    fun refreshLocationState() { noPosition.value = noPositionReason(locationSource.hasPermission(), isLocationOn()) }
 
     /**
      * Whether location should be running right now. This is the one place that decides it: while at least one
@@ -149,7 +176,7 @@ class CompassViewModel(app: Application, val locationSource: LocationSource) : A
      */
     private var arrived: Set<Long> = emptySet()
 
-    val nav: StateFlow<NavUi> = combine(waypoints, settingsStore.settings, fix, crumbs) { ws, s, f, cs ->
+    val nav: StateFlow<NavUi> = combine(waypoints, settingsStore.settings, fix, crumbs, noPosition) { ws, s, f, cs, noPosition ->
         val known = f?.point ?: s.lastPosition
         val declination = known?.let { declinationAt(it, f?.altitudeM ?: s.lastAltitudeM ?: 0f, System.currentTimeMillis()) }
         val mode = effectiveTrailMode(s.trailMode, s.breadcrumbTrail, cs.size)
@@ -159,19 +186,21 @@ class CompassViewModel(app: Application, val locationSource: LocationSource) : A
             ws.map { it.toInfo() }, s.focusedId, f?.point, declination, s.north, s.units, arrived,
             focusSuspended = mode == TrailMode.RETRACING,
         )
-        val trail = buildTrail(mode, cs.map { it.toPoint() }, f?.point, declination, s.north, s.units, arrived)
+        // The crumb walked to is shown as arrived at only by a fix that could consume it.
+        val trail = buildTrail(mode, cs, f?.point, declination, s.north, s.units, arrived, fixGoodEnough = f != null && isGoodEnough(f.accuracyM))
         val focused = trail.current ?: targets.firstOrNull { it.focused }
-        arrived = (targets + listOfNotNull(trail.current)).filter { it.arrived }.mapTo(HashSet()) { it.id }
+        arrived = targets.filter { it.arrived }.mapTo(HashSet(trail.arrivedIds)) { it.id }
         // Only a live fix gives distances; the saved last position is not presented as where the wearer is now.
         val distances = f?.let { live -> ws.associate { it.id to distanceMeters(live.point, GeoPoint(it.lat, it.lon)) } }.orEmpty()
         NavUi(targets, focused, s.units, s.north, declination, f?.elapsedMs, ws, distances,
             tickFeedback = s.tickFeedback, showCoordinates = s.showCoordinates, backupEnabled = s.backupEnabled,
-            blindNavigation = s.blindNavigation, breadcrumbTrail = s.breadcrumbTrail, trail = trail)
+            blindNavigation = s.blindNavigation, breadcrumbTrail = s.breadcrumbTrail, trail = trail, noPosition = noPosition)
     }
         .catch { Log.w(TAG, "screen state stopped updating", it) }
         .stateIn(viewModelScope, sharing, NavUi.EMPTY)
 
     init {
+        refreshLocationState()
         // Rebuilds the database file once, off the main thread, so it holds nothing of rows deleted or changed
         // by an earlier build or on another device. A failure is not fatal: the backup agent tries again.
         viewModelScope.launch(Dispatchers.IO) {
@@ -185,7 +214,7 @@ class CompassViewModel(app: Application, val locationSource: LocationSource) : A
         }
     }
 
-    fun permissionChanged() { permissionTick.value++ }
+    fun permissionChanged() { permissionTick.value++; refreshLocationState() }
 
     /** The target ids, newest first, and which of them has the focus, read from the stores themselves. */
     private suspend fun targetsAndFocus(): Pair<List<Long>, Long?> {
@@ -263,8 +292,23 @@ class CompassViewModel(app: Application, val locationSource: LocationSource) : A
                 logPressCount.value += 1
                 logState.value = refused ?: LogStatus.Saving(null)
             }
-            if (refused == null) logState.value = saveFreshFix(pressedAt, byTrail)
+            if (refused == null) {
+                val result = saveFreshFix(pressedAt, byTrail)
+                // A save that stored nothing and has nothing to say ends the status here.
+                synchronized(logLock) { if (result == LogStatus.Idle) endStatus() else logState.value = result }
+            }
         }
+    }
+
+    /** `Trail complete` is owed a showing: a trail was completed while another status had its place ([trailCompleteOver]). Guarded by [logLock]. */
+    private var completeOwed = false
+
+    /** The status that was showing has ended: what is owed is shown in its place, as a result of its own, or nothing is. Call with [logLock] held. */
+    private fun endStatus() {
+        val step = statusEnded(completeOwed)
+        completeOwed = step.owed
+        if (step.status != LogStatus.Idle) logPressCount.value += 1
+        logState.value = step.status
     }
 
     /**
@@ -280,12 +324,13 @@ class CompassViewModel(app: Application, val locationSource: LocationSource) : A
 
     /**
      * Called by the screen that shows the result of press number [press], once the result has been in view for
-     * its time ([logStatusShowMs]): the status returns to [LogStatus.Idle]. A report for an earlier press, or one
+     * its time ([logStatusShowMs]): the status returns to [LogStatus.Idle], or, if a trail was completed meanwhile,
+     * gives its place to `Trail complete`. A report for an earlier press, or one
      * that comes while a save is in progress, changes nothing, so it cannot remove a newer status.
      */
     fun logResultShown(press: Int) {
         synchronized(logLock) {
-            if (press == logPressCount.value && logStatusShowMs(logState.value) != null) logState.value = LogStatus.Idle
+            if (press == logPressCount.value && logStatusShowMs(logState.value) != null) endStatus()
         }
     }
 
@@ -335,24 +380,38 @@ class CompassViewModel(app: Application, val locationSource: LocationSource) : A
     // change to either is made under the lock the waypoint edits use, from what the stores hold at that moment, and
     // is decided by the pure functions in nav/Trail.kt.
 
-    /** The trail as the stores hold it now, with its crumbs' positions and the units arrival is judged in. */
+    /**
+     * The trail as it stands now, with its crumbs' positions and the units arrival is judged in: the mode from the
+     * settings and the crumbs from the list held in memory ([crumbsHeld]), so this reads no database.
+     */
     private suspend fun readTrail(): Triple<Trail, List<CrumbPoint>, Units> {
         val s = settingsStore.settings.first()
-        val points = crumbDao.all().map { it.toPoint() }
+        val points = crumbs.first()
         return Triple(Trail(effectiveTrailMode(s.trailMode, s.breadcrumbTrail, points.size), points.map { it.id }), points, s.units)
+    }
+
+    /**
+     * Waits until the held list shows a change this view model has just made to the crumbs, so that what is read
+     * next under the lock is what was written. The database reports a change within moments; the wait is bounded.
+     */
+    private suspend fun awaitCrumbs(shows: (List<CrumbPoint>) -> Boolean) {
+        withTimeoutOrNull(CRUMBS_SEEN_WITHIN_MS) { crumbs.first(shows) }
     }
 
     /** Stores what [change] did to the trail that was [before]: the crumb it consumed is deleted, and a new mode is written. */
     private suspend fun applyTrail(before: Trail, change: TrailChange) {
         // The store's own delete, as for a waypoint, which is what keeps a deleted crumb's position out of backups.
-        change.removedId?.let { crumbDao.delete(it) }
+        change.removedId?.let { id -> crumbDao.delete(id); awaitCrumbs { held -> held.none { it.id == id } } }
         if (change.trail.mode != before.mode) settingsStore.setTrailMode(change.trail.mode)
         if (change.completed) {
-            // Shown where a logging result is shown, for as long. A save that is in progress keeps its status.
+            // Shown where a logging result is shown, for as long. A save in progress or a result that is showing
+            // keeps its place, and `Trail complete` follows it, once.
             synchronized(logLock) {
-                if (logState.value !is LogStatus.Saving) {
+                val step = trailCompleteOver(logState.value)
+                completeOwed = completeOwed || step.owed
+                if (step.status != logState.value) {
                     logPressCount.value += 1
-                    logState.value = LogStatus.TrailComplete
+                    logState.value = step.status
                 }
             }
         }
@@ -371,6 +430,7 @@ class CompassViewModel(app: Application, val locationSource: LocationSource) : A
     /** Removes every crumb, through the store's own delete, and ends the trail. Waypoints are not touched. */
     fun clearTrail(): Job = launchEdit("clear the trail") {
         crumbDao.clear()
+        awaitCrumbs { it.isEmpty() }
         settingsStore.setTrailMode(TrailMode.OFF)
     }
 
@@ -384,7 +444,8 @@ class CompassViewModel(app: Application, val locationSource: LocationSource) : A
         val dropped = nextTrail(trail, TrailEvent.CrumbDropped(NEW_CRUMB)).trail
         if (dropped == trail) return@withLock LogStatus.Idle
         quietly("save last position") { settingsStore.setLastPosition(fix.point, fix.altitudeM) }
-        crumbDao.insert(Crumb(lat = fix.point.lat, lon = fix.point.lon, accuracyM = fix.accuracyM, createdAt = System.currentTimeMillis()))
+        val id = crumbDao.insert(Crumb(lat = fix.point.lat, lon = fix.point.lon, accuracyM = fix.accuracyM, createdAt = System.currentTimeMillis()))
+        awaitCrumbs { held -> held.any { it.id == id } }
         LogStatus.Saved(crumbName(dropped.crumbIds.size), fix.accuracyM, fix.elapsedMs)
     }
 
@@ -392,12 +453,13 @@ class CompassViewModel(app: Application, val locationSource: LocationSource) : A
     private var crumbArrivedAt: Long? = null
 
     /**
-     * Looks at one position fix for the trail: while it is retraced, a fix within the arrival distance of the crumb
-     * walked to deletes that crumb, by its id, and the next newest takes over; after the last one the trail is off
-     * and `Trail complete` is shown. Called once for each fix.
+     * Looks at one position fix for the trail ([trailAfterFix]): while it is retraced and the compass is in view, a
+     * fix accurate enough to be saved and within the arrival distance of the crumb walked to deletes that crumb, by
+     * its id, and the next newest takes over; after the last one the trail is off and `Trail complete` is shown.
+     * Called once for each fix.
      */
     private suspend fun retrace(fix: Fix) {
-        // Read from memory, so a fix costs the database nothing unless a trail is being retraced.
+        // Read from memory, so a fix costs nothing more unless a trail is being retraced.
         val s = settingsStore.settings.first()
         if (!s.breadcrumbTrail || s.trailMode != TrailMode.RETRACING) return
         // Not to be cut short: this runs inside the stream of fixes, and deleting the last crumb ends the trail,
@@ -406,7 +468,7 @@ class CompassViewModel(app: Application, val locationSource: LocationSource) : A
         withContext(NonCancellable) {
             waypointEdits.withLock {
                 val (trail, points, units) = readTrail()
-                val step = trailAfterFix(trail, points, crumbArrivedAt, fix.point, units)
+                val step = trailAfterFix(trail, points, crumbArrivedAt, fix.point, units, fix.accuracyM, compassInView.value)
                 crumbArrivedAt = step.arrivedAt
                 applyTrail(trail, step.change)
             }
@@ -462,5 +524,7 @@ class CompassViewModel(app: Application, val locationSource: LocationSource) : A
         const val HEADING_STOP_DELAY_MS = 2_000L
         /** Stands for a crumb that is not stored yet, where [nextTrail] is asked whether one may be added. Row ids start at 1. */
         const val NEW_CRUMB = 0L
+        /** The longest a change this view model made to the crumbs is waited for to show in the held list. */
+        const val CRUMBS_SEEN_WITHIN_MS = 2_000L
     }
 }

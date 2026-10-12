@@ -209,6 +209,17 @@ fun CompassScreen(
         }
     }
 
+    // While a trail is retraced and no position can come at all (the permission is not held, or location is switched
+    // off), the compass says so where the crumb's distance would be, in the words the logging status uses for it.
+    val noPositionLines by remember {
+        derivedStateOf {
+            val n = navState.value
+            val reason = n.noPosition
+            if (reason == null || n.focused?.isCrumb != true) null
+            else statusText(LogStatus.Failed(reason), n.units).let { (text, detail) -> StatusLines(text, detail, ErrorColor, ErrorColor) }
+        }
+    }
+
     LogResultTimer(vm, paneView)
 
     val headingText by remember { derivedStateOf { if (shown.floatValue.isNaN()) "--" else "${shown.floatValue.roundToInt() % 360}°" } }
@@ -320,7 +331,7 @@ fun CompassScreen(
         // or without targets. A slot added next to the heading belongs in [linesAroundHeading] too.
         val focused = nav.focused
         val noTarget = focused == null && nav.loaded && nav.waypoints.isNotEmpty()
-        val status = logLines
+        val status = logLines ?: noPositionLines
         val linesAroundHeading = focused != null || noTarget || status != null
         // The status's second line sits where the prompts' words do, and has that place for as long as it shows.
         // The hold-flat drawing goes on looping above it.

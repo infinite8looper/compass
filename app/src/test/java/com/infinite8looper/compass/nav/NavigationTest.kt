@@ -713,4 +713,11 @@ class NavigationTest {
         // A dropped crumb reads as a saved waypoint does.
         assertEquals("Saved Crumb 3" to "±5 m", statusText(LogStatus.Saved(crumbName(3), 5f, 100_000), Units.METRIC))
     }
+
+    @Test fun aFixIsGoodEnoughAtFifteenMetersOrBetter() {
+        assertTrue(isGoodEnough(0f)); assertTrue(isGoodEnough(14.9f)); assertTrue(isGoodEnough(15f))
+        assertFalse(isGoodEnough(15.1f)); assertFalse(isGoodEnough(100f)); assertFalse(isGoodEnough(Float.NaN))
+        // The limit a save is given is the one that counts for it.
+        assertTrue(isGoodEnough(25f, 30f)); assertFalse(isGoodEnough(31f, 30f))
+    }
 }

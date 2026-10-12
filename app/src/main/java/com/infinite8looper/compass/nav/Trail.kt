@@ -155,10 +155,19 @@ data class TrailFix(val change: TrailChange, val arrivedAt: Long?)
  * [arrivedAt] is the crumb the fix before this one arrived at. A crumb is removed when it is arrived at, so the
  * leaving distance comes into it only for a crumb whose removal has not happened yet when the next fix comes; the
  * crumb after it starts from not arrived.
+ *
+ * Consuming a crumb cannot be undone, so two things have to hold for a fix to do it. Its reported accuracy
+ * ([accuracyM]) has to pass the rule a save uses for the fix it stores ([isGoodEnough]): a poorer fix arrives at
+ * nothing, however near it puts the wearer. And the compass has to be in view ([compassInView]), where the wearer
+ * sees the crumb change: on any other screen the trail does not advance, whatever else keeps location running.
  */
-fun trailAfterFix(trail: Trail, crumbs: List<CrumbPoint>, arrivedAt: Long?, position: GeoPoint, units: Units): TrailFix {
+fun trailAfterFix(
+    trail: Trail, crumbs: List<CrumbPoint>, arrivedAt: Long?, position: GeoPoint, units: Units, accuracyM: Float = 0f,
+    compassInView: Boolean = true,
+): TrailFix {
     val id = walkingTo(trail)
-    val crumb = crumbs.firstOrNull { it.id == id } ?: return TrailFix(TrailChange(trail), null)
+    val crumb = crumbs.firstOrNull { it.id == id }
+    if (crumb == null || !compassInView || !isGoodEnough(accuracyM)) return TrailFix(TrailChange(trail), null)
     return if (nextArrived(arrivedAt == crumb.id, distanceMeters(position, crumb.point), units)) {
         TrailFix(nextTrail(trail, TrailEvent.Arrived(crumb.id)), crumb.id)
     } else TrailFix(TrailChange(trail), null)
@@ -169,10 +178,12 @@ fun trailAfterFix(trail: Trail, crumbs: List<CrumbPoint>, arrivedAt: Long?, posi
 /**
  * The trail as the screens show it: its [mode], how many crumbs it has, the crumb that is walked to while it is
  * retraced ([current], which the compass treats as the focused target), and where the other crumbs' ticks are on
- * the dial ([tickAngles]).
+ * the dial ([tickAngles]). [arrivedIds] are the target ids ([crumbTargetId]) of the crumbs the wearer counts as
+ * arrived at, to be handed back the next time the trail is built.
  */
 data class TrailUi(
     val mode: TrailMode = TrailMode.OFF, val count: Int = 0, val current: TargetUi? = null, val tickAngles: List<Float> = emptyList(),
+    val arrivedIds: Set<Long> = emptySet(),
 )
 
 /** The id the crumb with [crumbId] has as a target on the compass: below zero, where no waypoint's id is, and never zero. */
@@ -183,22 +194,27 @@ fun crumbTargetId(crumbId: Long): Long = -crumbId
  *
  * While it is retraced the newest crumb is the one walked to: a focused target named by its place in the trail,
  * which is its number among the crumbs that are left, the oldest being 1. Like any target it has a distance, and a
- * dial angle unless it is arrived at ([nextArrived], with [previouslyArrived] holding its target id if it had
- * arrived before).
+ * dial angle unless it is arrived at. It is shown as arrived at only by a fix that could also consume it
+ * ([fixGoodEnough], see [trailAfterFix]): a poorer fix shows its direction and distance, however near.
  *
  * Every other crumb is a tick at its bearing, at the whole degree nearest to it, and crumbs in the same direction
- * share one: however long the trail, there are at most 360 ticks, in rising order. A crumb within the arrival
- * distance has no tick, as a target there has no line. With no [position] there are no ticks.
+ * share one: however long the trail, there are at most 360 ticks, in rising order. A crumb the wearer has arrived
+ * at has no tick, as a target there has no line. With no [position] there are no ticks.
+ *
+ * Arrival, for the tick as for the crumb walked to, begins under the arrival distance and ends beyond the leaving
+ * distance ([nextArrived]): [previouslyArrived] holds the [TrailUi.arrivedIds] of the time before.
  */
 fun buildTrail(
     mode: TrailMode, crumbs: List<CrumbPoint>, position: GeoPoint?, declination: Float?, north: NorthRef,
-    units: Units = Units.METRIC, previouslyArrived: Set<Long> = emptySet(),
+    units: Units = Units.METRIC, previouslyArrived: Set<Long> = emptySet(), fixGoodEnough: Boolean = true,
 ): TrailUi {
     val walked = if (mode == TrailMode.RETRACING) crumbs.firstOrNull() else null
+    var arrivedIds: MutableSet<Long>? = null
     val current = walked?.let { c ->
         val id = crumbTargetId(c.id)
         val distance = position?.let { distanceMeters(it, c.point) }
-        val arrived = distance != null && nextArrived(id in previouslyArrived, distance, units)
+        val arrived = distance != null && fixGoodEnough && nextArrived(id in previouslyArrived, distance, units)
+        if (arrived) arrivedIds = mutableSetOf(id)
         TargetUi(
             id = id, name = crumbName(crumbs.size), hue = 0f,
             dialAngleDeg = position?.takeUnless { arrived }?.let { dialAngle(bearingDeg(it, c.point), declination, north) },
@@ -208,12 +224,17 @@ fun buildTrail(
     val ticks = if (position == null) emptyList() else {
         val taken = BooleanArray(360)
         for (c in crumbs) {
-            if (c === walked || hasArrived(distanceMeters(position, c.point), units)) continue
+            if (c === walked) continue
+            val id = crumbTargetId(c.id)
+            if (nextArrived(previouslyArrived.isNotEmpty() && id in previouslyArrived, distanceMeters(position, c.point), units)) {
+                (arrivedIds ?: mutableSetOf<Long>().also { arrivedIds = it }) += id
+                continue
+            }
             taken[dialAngle(bearingDeg(position, c.point), declination, north).roundToInt().mod(360)] = true
         }
         (0 until 360).filter { taken[it] }.map { it.toFloat() }
     }
-    return TrailUi(mode, crumbs.size, current, ticks)
+    return TrailUi(mode, crumbs.size, current, ticks, arrivedIds ?: emptySet())
 }
 
 /** What the compass shows while a trail is being laid. */
@@ -242,5 +263,37 @@ fun trailRowAction(mode: TrailMode, count: Int): String = when (nextTrail(Trail(
 /** Whether the trail is a reason for location to run: while it is laid or retraced and the compass is on screen. */
 fun trailWantsLocation(mode: TrailMode, compassOnScreen: Boolean): Boolean = mode != TrailMode.OFF && compassOnScreen
 
-/** Whether the trail is a reason to keep the screen on: while it is retraced with the compass in view, as for a target. */
-fun trailKeepsAwake(mode: TrailMode, compassInView: Boolean): Boolean = mode == TrailMode.RETRACING && compassInView
+/**
+ * Whether the trail is a reason to keep the screen on: while it is retraced with the compass in view, as for a
+ * target, and only while location can run at all ([locationCanRun]: the permission is held and location is switched
+ * on). Without that no position will come, and the screen would be kept on over a message.
+ */
+fun trailKeepsAwake(mode: TrailMode, compassInView: Boolean, locationCanRun: Boolean): Boolean =
+    mode == TrailMode.RETRACING && compassInView && locationCanRun
+
+/**
+ * Why no position can come, in the terms of the logging failures, or null when one can: the permission is not held,
+ * or location is switched off. The compass says so, in the words of [statusText], where the distance to the crumb
+ * walked to would be.
+ */
+fun noPositionReason(hasPermission: Boolean, locationOn: Boolean): LogFailure? = when {
+    !hasPermission -> LogFailure.NO_PERMISSION
+    !locationOn -> LogFailure.LOCATION_OFF
+    else -> null
+}
+
+// `Trail complete` and the logging status share one place.
+
+/** The status to show, and whether `Trail complete` is still owed a showing. */
+data class CompleteStep(val status: LogStatus, val owed: Boolean)
+
+/**
+ * A trail has just been completed while [current] is the status: with nothing showing, `Trail complete` is shown
+ * at once. A save in progress, or a result that is showing or waiting to be shown, keeps its place, and
+ * `Trail complete` is owed.
+ */
+fun trailCompleteOver(current: LogStatus): CompleteStep =
+    if (current == LogStatus.Idle) CompleteStep(LogStatus.TrailComplete, owed = false) else CompleteStep(current, owed = true)
+
+/** A status has ended (its result was shown for its time, or its save stored nothing): what is owed is shown now, once. */
+fun statusEnded(owed: Boolean): CompleteStep = CompleteStep(if (owed) LogStatus.TrailComplete else LogStatus.Idle, owed = false)
