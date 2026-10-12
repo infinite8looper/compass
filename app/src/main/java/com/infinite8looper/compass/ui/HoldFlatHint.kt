@@ -1,6 +1,5 @@
 package com.infinite8looper.compass.ui
 
-import androidx.compose.animation.core.EaseInOutCubic
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.offset
@@ -9,6 +8,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -29,21 +29,15 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.wear.compose.material3.Text
+import com.infinite8looper.compass.nav.HOLD_FLAT_LOOP_MS
+import com.infinite8looper.compass.nav.HOLD_FLAT_STILL_MS
+import com.infinite8looper.compass.nav.holdFlatLevelReached
+import com.infinite8looper.compass.nav.holdFlatTiltDeg
+import com.infinite8looper.compass.nav.holdFlatVisibility
 import kotlinx.coroutines.flow.collectLatest
-
-// One loop, in milliseconds: the watch appears upright, turns level, rests there, and fades out.
-private const val LOOP_MS = 2000f
-private const val APPEAR_END = 200f
-private const val TILT_START = 300f
-private const val TILT_END = 1300f
-private const val REST_END = 1800f
-/** The point of the loop shown when the system has animations switched off: level and fully visible. */
-private const val STILL = (TILT_END + REST_END) / 2f / LOOP_MS
 
 private const val STRAP_ANGLE = 26f
 
-private val Ink = Color(0xFFE8EAED)
-private val Strap = Color(0xFF9E9E9E)
 private val LevelMark = Color(0xFF6E6E6E)
 
 /**
@@ -60,28 +54,29 @@ private val LevelMark = Color(0xFF6E6E6E)
  */
 @Composable
 fun HoldFlatHint(labelStyle: TextStyle, labelOffset: Dp, modifier: Modifier = Modifier) {
-    // The position in the loop, 0 to 1. It starts at 0, where the watch has not yet faded in.
-    val loop = remember { mutableFloatStateOf(0f) }
+    val motion = rememberCoroutineScope().coroutineContext[MotionDurationScale]
+    // The time into the loop, in milliseconds. With animations off it is the still position from the first
+    // frame on; otherwise it starts at 0, where the watch has not yet faded in.
+    val loopMs = remember { mutableFloatStateOf(if (motion?.scaleFactor == 0f) HOLD_FLAT_STILL_MS else 0f) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    LaunchedEffect(lifecycle) {
+    LaunchedEffect(lifecycle, motion) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            val motion = coroutineContext[MotionDurationScale]
             snapshotFlow { motion?.scaleFactor ?: 1f }.collectLatest { scale ->
                 if (scale <= 0f) {
-                    loop.floatValue = STILL
+                    loopMs.floatValue = HOLD_FLAT_STILL_MS
                     return@collectLatest
                 }
-                val lengthNanos = (LOOP_MS * 1e6f * scale).toLong().coerceAtLeast(1L)
+                val lengthNanos = (HOLD_FLAT_LOOP_MS * 1e6f * scale).toLong().coerceAtLeast(1L)
                 val start = withFrameNanos { it }
                 while (true) {
                     val now = withFrameNanos { it }
-                    loop.floatValue = ((now - start) % lengthNanos) / lengthNanos.toFloat()
+                    loopMs.floatValue = ((now - start) % lengthNanos) / lengthNanos.toFloat() * HOLD_FLAT_LOOP_MS
                 }
             }
         }
     }
     Box(modifier, contentAlignment = Alignment.Center) {
-        Spacer(Modifier.matchParentSize().drawBehind { drawWatch(loop.floatValue * LOOP_MS) })
+        Spacer(Modifier.matchParentSize().drawBehind { drawWatch(loopMs.floatValue) })
         Text(
             "Hold flat", color = Dim, style = labelStyle, maxLines = 1, softWrap = false,
             modifier = Modifier.wrapContentSize(unbounded = true).offset(y = labelOffset),
@@ -92,14 +87,9 @@ fun HoldFlatHint(labelStyle: TextStyle, labelOffset: Dp, modifier: Modifier = Mo
 /** The drawing at [ms] into the loop. Every length is a fraction of the box height. */
 private fun DrawScope.drawWatch(ms: Float) {
     val h = size.height
-    val visible = when {
-        ms < APPEAR_END -> ms / APPEAR_END
-        ms > REST_END -> (LOOP_MS - ms) / (LOOP_MS - REST_END)
-        else -> 1f
-    }.coerceIn(0f, 1f)
-    val laidDown = EaseInOutCubic.transform(((ms - TILT_START) / (TILT_END - TILT_START)).coerceIn(0f, 1f))
-    val tilt = 90f * (1f - laidDown)
-    val reached = ((ms - TILT_END) / 150f).coerceIn(0f, 1f)
+    val visible = holdFlatVisibility(ms)
+    val tilt = holdFlatTiltDeg(ms)
+    val reached = holdFlatLevelReached(ms)
 
     // Two level marks, one either side, in the weight of the dial's fine ticks. They do not fade with the watch:
     // they are what it lines up with, and they brighten when it does.
@@ -122,11 +112,11 @@ private fun DrawScope.drawWatch(ms: Float) {
         val strapRound = CornerRadius(strapDepth / 2f)
         val right = Offset(center.x + caseHalf - strapDepth / 2f, center.y + strapY)
         rotate(STRAP_ANGLE, right) {
-            drawRoundRect(Strap, Offset(right.x, right.y - strapDepth / 2f), strapSize, strapRound, alpha = visible)
+            drawRoundRect(Dim, Offset(right.x, right.y - strapDepth / 2f), strapSize, strapRound, alpha = visible)
         }
         val left = Offset(center.x - caseHalf + strapDepth / 2f, center.y + strapY)
         rotate(-STRAP_ANGLE, left) {
-            drawRoundRect(Strap, Offset(left.x - strapLength, left.y - strapDepth / 2f), strapSize, strapRound, alpha = visible)
+            drawRoundRect(Dim, Offset(left.x - strapLength, left.y - strapDepth / 2f), strapSize, strapRound, alpha = visible)
         }
         drawRoundRect(
             Ink, Offset(center.x - caseHalf, center.y - caseDepth / 2f), Size(caseHalf * 2f, caseDepth),

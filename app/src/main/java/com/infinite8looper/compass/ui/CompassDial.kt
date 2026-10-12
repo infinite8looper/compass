@@ -25,7 +25,8 @@ val HeadingBlue = Color(0xFF2F8BFF)
 val NorthRed = Color(0xFFFF3B30)
 private val TickGray = Color(0xFF6E6E6E)
 private val LabelGray = Color(0xFF7C7C7C)
-private val Ink = Color(0xFFE8EAED)
+/** The light color of text, heavy ticks and outlines. */
+internal val Ink = Color(0xFFE8EAED)
 
 // Fractions of the dial radius, shared with the screen so its readout can stay inside the letters.
 private const val RING_OUTER = 0.84f

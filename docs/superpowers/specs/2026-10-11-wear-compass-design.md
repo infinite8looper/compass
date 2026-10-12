@@ -207,6 +207,7 @@ The saved waypoints (the `waypoints.db` database) and the settings (the DataStor
 - A heading that rests on a tick, or wavers around it, gives no taps: the heading has to pass a tick by about 0.3° before that tick counts, and has to come back the same amount past it for it to count again.
 - There is at most one tap every 40 ms. During a fast turn the taps that would come sooner are dropped, not saved up, and several ticks crossed in one display frame give one tap.
 - No taps are given while the setting is off, while the "hold flat" hint shows, while the compass is not the screen in front, before the first heading has arrived, or on a watch with no compass sensor.
+- No taps are given while the dial is catching up with a heading it did not follow, because those ticks pass without the wearer turning. That is the case when the app opens or comes back to the front, when the watch is level again after "hold flat", after a pause in drawing, and when the dial's north moves (the declination becomes known, or the north setting changes). The dial still swings smoothly to the heading; only the taps are held back. They return when the dial has arrived, which takes between about 0.4 and 1.2 seconds.
 - The tap is the lightest tick the system offers for frequent feedback, and it follows the system's own setting for touch feedback. The app does not ask for the vibration permission.
 
 ### Smoothness

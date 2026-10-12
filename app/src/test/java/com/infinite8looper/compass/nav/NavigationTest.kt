@@ -170,7 +170,7 @@ class NavigationTest {
         return (0..kotlin.math.abs(tenths)).map { normalizeDeg(from + it * step / 10f) }
     }
 
-    @Test fun tickSlowSweepZeroToTenGivesFiveTaps() {
+    @Test fun tickSlowSweepFromZeroPastTheLineAtTenGivesFiveTapsAndFourWhenStoppingOnIt() {
         // The lines at 2, 4, 6, 8 and 10. Each counts once the heading is 0.3 past it, so the tap for the line
         // at 10 comes at 10.3: stopping exactly on the line has not crossed it yet.
         assertEquals(5, taps(sweep(0f, 10.5f)))
@@ -216,6 +216,15 @@ class NavigationTest {
         assertEquals(0, taps(listOf(Float.NaN, 7f, Float.NaN, 7.5f)))
         assertEquals(1, taps(listOf(7f, Float.NaN, 9f)))
         assertFalse(isTickCrossing(TickCell.Unset, armed))
+    }
+    @Test fun tickIgnoresInfiniteHeadings() {
+        assertEquals(TickCell.Unset, nextTickCell(TickCell.Unset, Float.POSITIVE_INFINITY))
+        assertEquals(TickCell.Unset, nextTickCell(TickCell.Unset, Float.NEGATIVE_INFINITY))
+        val armed = nextTickCell(TickCell.Unset, 7f)
+        assertEquals(armed, nextTickCell(armed, Float.POSITIVE_INFINITY))
+        assertEquals(armed, nextTickCell(armed, Float.NEGATIVE_INFINITY))
+        assertEquals(0, taps(listOf(7f, Float.POSITIVE_INFINITY, 7.5f, Float.NEGATIVE_INFINITY, 7f)))
+        assertEquals(1, taps(listOf(7f, Float.POSITIVE_INFINITY, 9f)))
     }
     @Test fun tickTapsAreAtLeastFortyMillisecondsApart() {
         val ms = 1_000_000L

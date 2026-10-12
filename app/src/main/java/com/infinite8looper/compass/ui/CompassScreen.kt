@@ -37,11 +37,11 @@ import androidx.wear.compose.foundation.requestFocusOnHierarchyActive
 import androidx.wear.compose.material3.Text
 import com.infinite8looper.compass.CompassViewModel
 import com.infinite8looper.compass.nav.*
+import com.infinite8looper.compass.sensors.HeadingReading
 import kotlinx.coroutines.delay
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-private val Ink = Color(0xFFE8EAED)
 internal val Dim = Color(0xFF9E9E9E)
 
 @Composable
@@ -59,22 +59,41 @@ fun CompassScreen(vm: CompassViewModel, onOpenList: () -> Unit, onLog: () -> Uni
     LaunchedEffect(view, lifecycle) {
         var last = 0L
         var cell = TickCell.Unset
+        var targetCell = TickCell.Unset
+        var settling = TickSettling.Settled
         var lastTap = 0L
+        var reference = Float.NaN
+        var stale: HeadingReading? = null
         while (true) withFrameNanos { now ->
             val reading = readingState.value
             if (reading != null) {
                 val n = navState.value
-                val hold = nextHoldFlat(holdFlat, reading.pitchDeg)
+                val wasHold = holdFlat
+                val hold = nextHoldFlat(wasHold, reading.pitchDeg)
                 holdFlat = hold
+                val first = shown.floatValue.isNaN()
+                val gap = if (last == 0L) 0L else now - last
+                val target = displayHeading(reading.magneticDeg, n.declination, n.north).deg
                 // While the watch is tilted too far the heading is not taken, so the dial keeps its last value.
-                if (!hold) {
-                    val target = displayHeading(reading.magneticDeg, n.declination, n.north).deg
-                    val dt = if (last == 0L) 0f else (now - last) / 1e9f
-                    shown.floatValue = if (shown.floatValue.isNaN()) target else smoothAngle(shown.floatValue, target, dt)
-                }
-                // The cell is followed on every frame, so nothing is owed when the taps are allowed again.
+                if (!hold) shown.floatValue = if (first) target else smoothAngle(shown.floatValue, target, gap / 1e9f)
+
+                // After a pause the reading in hand is the one from before it, until the sensor sends another.
+                if (gap > TICK_GAP_NANOS) stale = reading else if (reading !== stale) stale = null
+                // How far the dial's north is from magnetic north: it moves when the declination or the setting does.
+                val newReference = shortestDelta(reading.magneticDeg, target)
+                val disturbed = isTickDisturbance(
+                    firstHeading = first, staleReading = stale != null, frameGapNanos = gap, leftHoldFlat = wasHold && !hold,
+                    referenceShiftDeg = if (reference.isNaN()) 0f else shortestDelta(reference, newReference),
+                )
+                reference = newReference
+
+                // Both cells are followed on every frame, so nothing is owed when the taps are allowed again.
                 val next = nextTickCell(cell, shown.floatValue)
-                if (isTickCrossing(cell, next) && !hold && n.tickFeedback &&
+                targetCell = nextTickCell(targetCell, target)
+                val wasSettling = settling.active
+                settling = nextTickSettling(settling, disturbed, now, next, targetCell)
+                // The frame on which the dial arrives is still part of the catch-up.
+                if (isTickCrossing(cell, next) && !wasSettling && !settling.active && !hold && n.tickFeedback &&
                     lifecycle.currentState == Lifecycle.State.RESUMED && tickTapDue(now, lastTap)
                 ) {
                     view.performHapticFeedback(TICK_HAPTIC)
@@ -174,9 +193,11 @@ fun CompassScreen(vm: CompassViewModel, onOpenList: () -> Unit, onLog: () -> Uni
             )
         }
 
+        // What the slots just above and below the heading hold: a target's name and distance, the words
+        // "No target", or nothing. A slot added next to the heading belongs in [linesAroundHeading] too.
         val focused = nav.focused
-        // Whether the slots just above and below the heading hold any text: a target's name and distance, or "No target".
-        val linesAroundHeading = focused != null || (nav.loaded && nav.waypoints.isNotEmpty())
+        val noTarget = focused == null && nav.loaded && nav.waypoints.isNotEmpty()
+        val linesAroundHeading = focused != null || noTarget
 
         if (!vm.supported) {
             Text("This watch has no compass sensor", color = Ink, style = bodyStyle, modifier = Modifier.slot(0f, 0.8f))
@@ -219,7 +240,7 @@ fun CompassScreen(vm: CompassViewModel, onOpenList: () -> Unit, onLog: () -> Uni
             }
             // With no waypoints saved, or before the first real state arrives, nothing is shown here: the screen
             // is a plain compass, and a tap on the middle still opens the waypoints list.
-            nav.loaded && nav.waypoints.isNotEmpty() ->
+            noTarget ->
                 Text("No target", color = Dim, style = bodyStyle, maxLines = 1, modifier = Modifier.slot(0.195f, 0.78f))
         }
     }

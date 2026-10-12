@@ -22,6 +22,10 @@ const val HOLD_FLAT_LEAVE_DEG = 60f
 const val TICK_STEP_DEG = 2f
 const val TICK_MARGIN_DEG = 0.3f
 const val TICK_MIN_INTERVAL_NANOS = 40_000_000L
+const val TICK_GAP_NANOS = 250_000_000L
+const val TICK_REFERENCE_SHIFT_DEG = 0.5f
+const val TICK_SETTLE_MIN_NANOS = 400_000_000L
+const val TICK_SETTLE_MAX_NANOS = 1_200_000_000L
 private const val TICK_CELLS = 180
 
 fun normalizeDeg(d: Float): Float = ((d % 360f) + 360f) % 360f
@@ -108,10 +112,11 @@ value class TickCell internal constructor(val index: Int) {
 /**
  * The cell after the heading moves to [headingDeg]. The heading stays in its cell until it is [TICK_MARGIN_DEG]
  * past one of the cell's two tick lines, so resting on a line or jittering around it changes nothing, and coming
- * back over the same line needs the same margin on the other side. NaN changes nothing.
+ * back over the same line needs the same margin on the other side. A heading that is not a finite number
+ * changes nothing.
  */
 fun nextTickCell(current: TickCell, headingDeg: Float): TickCell {
-    if (headingDeg.isNaN()) return current
+    if (!headingDeg.isFinite()) return current
     if (current != TickCell.Unset) {
         val fromCenter = shortestDelta(current.index * TICK_STEP_DEG + TICK_STEP_DEG / 2f, headingDeg)
         if (abs(fromCenter) < TICK_STEP_DEG / 2f + TICK_MARGIN_DEG) return current
@@ -124,6 +129,46 @@ fun isTickCrossing(before: TickCell, after: TickCell): Boolean = before != TickC
 
 /** Taps are at least [TICK_MIN_INTERVAL_NANOS] apart. A tap that comes sooner is dropped, not kept for later. */
 fun tickTapDue(nowNanos: Long, lastTapNanos: Long): Boolean = nowNanos - lastTapNanos >= TICK_MIN_INTERVAL_NANOS
+
+/**
+ * Whether the dial is catching up with a heading it did not follow, and since when. While that is so the dial
+ * still turns smoothly, but the ticks it passes are not the wearer's doing and give no taps.
+ */
+@JvmInline
+value class TickSettling internal constructor(val sinceNanos: Long) {
+    val active: Boolean get() = sinceNanos != Long.MIN_VALUE
+    companion object { val Settled = TickSettling(Long.MIN_VALUE) }
+}
+
+/**
+ * Whether something other than the wearer turning may be about to move the dial on this frame:
+ * the first heading; a reading that has not been replaced since a pause ([staleReading]); a gap of more than
+ * [TICK_GAP_NANOS] since the last frame; the hold-flat state ending, which unfreezes the dial; or the dial's
+ * north moving by more than [TICK_REFERENCE_SHIFT_DEG], as when the declination first arrives or the north
+ * setting changes. The declination's own drift from one position fix to the next is far below that.
+ */
+fun isTickDisturbance(
+    firstHeading: Boolean, staleReading: Boolean, frameGapNanos: Long, leftHoldFlat: Boolean, referenceShiftDeg: Float,
+): Boolean = firstHeading || staleReading || leftHoldFlat || frameGapNanos > TICK_GAP_NANOS ||
+    abs(referenceShiftDeg) > TICK_REFERENCE_SHIFT_DEG
+
+/**
+ * The settling state after a frame. A disturbance starts it, or starts it again. It ends when the dial has
+ * arrived in the cell the sensor's heading is in ([shownCell] equals [targetCell]), so the rest of its way
+ * crosses no tick, but not before [TICK_SETTLE_MIN_NANOS], because the heading right after a disturbance may not
+ * be the true one yet. It always ends after [TICK_SETTLE_MAX_NANOS]: the longest catch-up, half a turn, takes
+ * about 0.6 s, so a dial still behind after that is behind because the wearer keeps turning fast.
+ */
+fun nextTickSettling(
+    current: TickSettling, disturbed: Boolean, nowNanos: Long, shownCell: TickCell, targetCell: TickCell,
+): TickSettling {
+    val settling = if (disturbed) TickSettling(nowNanos) else current
+    if (!settling.active) return TickSettling.Settled
+    val elapsed = nowNanos - settling.sinceNanos
+    if (elapsed >= TICK_SETTLE_MAX_NANOS) return TickSettling.Settled
+    if (elapsed >= TICK_SETTLE_MIN_NANOS && shownCell != TickCell.Unset && shownCell == targetCell) return TickSettling.Settled
+    return settling
+}
 
 fun isFieldNormal(microTesla: Float): Boolean = microTesla in 25f..65f
 fun accuracyLabel(accuracy: Int?): String = when (accuracy) {
