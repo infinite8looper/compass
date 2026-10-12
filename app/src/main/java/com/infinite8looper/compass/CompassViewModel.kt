@@ -19,6 +19,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -55,7 +56,28 @@ class CompassViewModel(app: Application, val locationSource: LocationSource) : A
     private val sharing = SharingStarted.WhileSubscribed(2_000)
     private val permissionTick = MutableStateFlow(0)
 
-    val heading: StateFlow<HeadingReading?> = headingSource.readings().stateIn(viewModelScope, sharing, null)
+    private val headingOn = MutableStateFlow(false)
+
+    /**
+     * The screens say here whether the heading sensor is wanted; what they say is decided in one place,
+     * [headingWanted]. The sensor starts at once and stops [HEADING_STOP_DELAY_MS] after it is no longer wanted, so
+     * going from the compass to calibration, or the system restarting the screen, does not stop and start it.
+     */
+    fun setHeadingWanted(wanted: Boolean) { headingOn.value = wanted }
+
+    /** The latest reading. While the sensor is not running this stays the last one it gave; null before the first. */
+    val heading: StateFlow<HeadingReading?> = headingOn
+        .mapLatest { wanted -> if (!wanted) delay(HEADING_STOP_DELAY_MS); wanted }
+        .distinctUntilChanged()
+        .flatMapLatest { running -> if (running) headingSource.readings() else emptyFlow() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    /**
+     * The accuracy the magnetometer last reported while the sensor ran, for the settings screen, which does not
+     * run it. Null until there has been one.
+     */
+    val lastAccuracy: StateFlow<Int?> = heading.mapNotNull { it?.accuracy }.distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     private val waypoints = dao.observeAll()
     private val hasTargets = waypoints.map { ws -> ws.any { it.isTarget } }.distinctUntilChanged()
@@ -274,5 +296,9 @@ class CompassViewModel(app: Application, val locationSource: LocationSource) : A
 
     private fun launchQuietly(what: String, block: suspend () -> Unit): Job = viewModelScope.launch { quietly(what, block) }
 
-    private companion object { const val TAG = "CompassViewModel" }
+    private companion object {
+        const val TAG = "CompassViewModel"
+        /** How long the heading sensor keeps running after it is no longer wanted. */
+        const val HEADING_STOP_DELAY_MS = 2_000L
+    }
 }

@@ -27,8 +27,8 @@ import kotlinx.coroutines.flow.collectLatest
 /**
  * What "log here" does wherever the app offers it: with the precise location permission it starts the save.
  * Without it, it shows the system's permission dialog first and starts the save when the dialog closes, so a grant
- * needs no second press and a denial is reported by the save itself as "Needs location access". The same goes for
- * a grant of approximate location only: a waypoint needs the precise one, and the next press asks again.
+ * needs no second press and a denial is reported by the save itself as "Needs access to precise location". The same
+ * goes for a grant of approximate location only: a waypoint needs the precise one, and the next press asks again.
  *
  * Precise and approximate location are requested together, as the system expects of an app that wants the
  * precise one.

@@ -135,7 +135,7 @@ The compass screen also shows a small prompt that leads here when the reported a
 - North: true or magnetic.
 - Units: metric or imperial, defaulting from the watch's locale.
 - Tick feedback (default on): a faint vibration as the heading crosses the dial's minor tick marks.
-- Show coordinates (default off): shows the current GPS position on the compass screen. Turning it on asks for location access with the system dialog if it has not been granted; if the wearer denies it, the switch stays off and a line under it says "Needs location access". If access is already granted it turns on without asking, and turning it off never asks for anything.
+- Show coordinates (default off): shows the current GPS position on the compass screen. Turning it on asks for location access with the system dialog if it has not been granted; if the wearer denies it, the switch stays off and a line under it says "Needs access to precise location". If access is already granted it turns on without asking, and turning it off never asks for anything.
 - Back up waypoints (default on): includes the saved waypoints and settings in the watch's system backup (when the watch can encrypt it) and in device-to-device transfer. See "Backup and transfer" under Behavior for what turning it off does and does not do.
 - Calibrate.
 - About: version and the MIT license.

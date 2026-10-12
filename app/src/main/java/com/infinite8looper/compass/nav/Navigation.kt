@@ -196,6 +196,11 @@ fun nextTickSettling(
 }
 
 fun isFieldNormal(microTesla: Float): Boolean = microTesla in 25f..65f
+/**
+ * Whether the magnetometer's field strength says something magnetic is near: a strength that is known and is not
+ * one the earth's field can have. A strength that is not known yet is not interference.
+ */
+fun isInterference(fieldMicroTesla: Float?): Boolean = fieldMicroTesla != null && !fieldMicroTesla.isNaN() && !isFieldNormal(fieldMicroTesla)
 fun accuracyLabel(accuracy: Int?): String = when (accuracy) {
     3 -> "High"; 2 -> "Medium"; 1 -> "Low"; 0 -> "Unreliable"; else -> "Unknown"
 }
@@ -261,7 +266,7 @@ fun statusText(status: LogStatus, units: Units): Pair<String, String?> = when (s
     is LogStatus.Failed -> when (status.reason) {
         LogFailure.NO_FIX -> "No GPS fix" to "Try again outdoors"
         LogFailure.LOCATION_OFF -> "Location is off" to null
-        LogFailure.NO_PERMISSION -> "Needs location access" to null
+        LogFailure.NO_PERMISSION -> "Needs access to precise location" to null
         LogFailure.SAVE_FAILED -> "Couldn't save" to null
     }
 }

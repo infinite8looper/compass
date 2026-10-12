@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -11,6 +12,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.platform.LocalView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.wear.compose.foundation.GestureInclusion
@@ -22,15 +25,21 @@ import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.currentBackStackEntryAsState
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import com.infinite8looper.compass.CompassViewModel
+import com.infinite8looper.compass.nav.CALIBRATE_ROUTE
+import com.infinite8looper.compass.nav.EDIT_ROUTE
 import com.infinite8looper.compass.nav.LogStatus
 import com.infinite8looper.compass.nav.PANE_PAGES
+import com.infinite8looper.compass.nav.PANES_ROUTE
 import com.infinite8looper.compass.nav.PANE_START_PAGE
 import com.infinite8looper.compass.nav.Pane
 import com.infinite8looper.compass.nav.PaneView
 import com.infinite8looper.compass.nav.backPage
+import com.infinite8looper.compass.nav.headingWanted
 import com.infinite8looper.compass.nav.pageToward
 import com.infinite8looper.compass.nav.pageView
+import com.infinite8looper.compass.nav.paneOnScreen
 import com.infinite8looper.compass.nav.paneOf
+import com.infinite8looper.compass.nav.topScreen
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
@@ -54,6 +63,22 @@ fun CompassApp() {
         }
     }
     KeepAwake(vm, compassInView = { compassInView.value })
+    // The heading sensor runs for the compass and for calibration and for nothing else. What is on screen is
+    // gathered here, above every screen, and the decision is [headingWanted].
+    val appState by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
+    val wantHeading by remember(panes) {
+        derivedStateOf {
+            headingWanted(
+                topScreen(route?.destination?.route),
+                paneOnScreen(Pane.COMPASS, panes.currentPage, panes.currentPageOffsetFraction, panes.targetPage, panes.isScrollInProgress),
+                appOnScreen = appState.isAtLeast(Lifecycle.State.STARTED),
+            )
+        }
+    }
+    DisposableEffect(vm, wantHeading) {
+        vm.setHeadingWanted(wantHeading)
+        onDispose { vm.setHeadingWanted(false) }
+    }
     AppScaffold(timeText = {}) {
         // The three screens are the host's first destination, which has nothing behind it to swipe back to, so a
         // right swipe there is only ever the pager's. The screens opened from a row keep the usual swipe back.
@@ -61,7 +86,7 @@ fun CompassApp() {
             composable(PANES_ROUTE) {
                 Panes(
                     vm, panes, onLogHere = logHere, onEdit = { nav.navigate("edit/$it") { launchSingleTop = true } },
-                    onCalibrate = { nav.navigate("calibrate") { launchSingleTop = true } },
+                    onCalibrate = { nav.navigate(CALIBRATE_ROUTE) { launchSingleTop = true } },
                 )
             }
             composable(EDIT_ROUTE) { entry ->
@@ -71,7 +96,7 @@ fun CompassApp() {
                 val id = entry.arguments?.getString("id")?.toLongOrNull()
                 if (id == null) LeaveOnce(leave) else EditScreen(vm, id, onDone = leave)
             }
-            composable("calibrate") { CalibrationScreen(vm) }
+            composable(CALIBRATE_ROUTE) { CalibrationScreen(vm) }
         }
     }
 }
@@ -163,12 +188,6 @@ private fun KeepAwake(vm: CompassViewModel, compassInView: () -> Boolean) {
 private val EveryTouchPages = object : GestureInclusion {
     override fun ignoreGestureStart(offset: Offset, layoutCoordinates: LayoutCoordinates): Boolean = false
 }
-
-/** The route of the three side-by-side screens, the navigation host's first destination. */
-private const val PANES_ROUTE = "panes"
-
-/** The route of the screen that edits the waypoint with the given id. */
-private const val EDIT_ROUTE = "edit/{id}"
 
 /** A route reached with an unusable id has nothing to show, so it goes back, once. */
 @Composable

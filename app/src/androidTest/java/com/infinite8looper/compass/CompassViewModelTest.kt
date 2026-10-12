@@ -420,4 +420,50 @@ class CompassViewModelTest {
             assertEquals(3, dao.observeAll().first().size)
         }
     }
+
+    /** Whether the system's sensor service lists a listener of the app's heading source as an active connection. */
+    private fun headingSensorRegistered(): Boolean =
+        android.os.ParcelFileDescriptor.AutoCloseInputStream(
+            androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand("dumpsys sensorservice"),
+        ).use { it.readBytes().decodeToString() }.lineSequence().any { "sensors.HeadingSource" in it && "WakeLockRefCount" in it }
+
+    @Test fun theHeadingSensorRunsOnlyWhileItIsWantedAndStopsTwoSecondsAfter() = runBlocking {
+        val vm = viewModel()
+        // Not asked for: nothing is registered and there is no reading.
+        delay(500)
+        assertFalse(headingSensorRegistered())
+        assertNull(vm.heading.value)
+        assertNull(vm.lastAccuracy.value)
+
+        withContext(Dispatchers.Main) { vm.setHeadingWanted(true) }
+        val reading = withTimeout(10_000) { vm.heading.first { it != null } }!!
+        assertTrue(headingSensorRegistered())
+        assertTrue("heading ${reading.magneticDeg}", reading.magneticDeg >= 0f && reading.magneticDeg < 360f)
+
+        withContext(Dispatchers.Main) { vm.setHeadingWanted(false) }
+        // It keeps running through the stop delay, so a quick change of screen does not stop and start it.
+        delay(1_000)
+        assertTrue(headingSensorRegistered())
+        withContext(Dispatchers.Main) { vm.setHeadingWanted(true) }
+        delay(2_500)
+        assertTrue(headingSensorRegistered())
+
+        withContext(Dispatchers.Main) { vm.setHeadingWanted(false) }
+        delay(3_500)
+        assertFalse(headingSensorRegistered())
+        // The last reading stays for the screens to show.
+        assertNotNull(vm.heading.value)
+    }
+
+    @Test fun theLastAccuracyOutlivesTheSensor() = runBlocking {
+        val vm = viewModel()
+        withContext(Dispatchers.Main) { vm.setHeadingWanted(true) }
+        // The magnetometer's accuracy comes with its own first event, a little after the first heading.
+        val accuracy = withTimeout(15_000) { vm.lastAccuracy.first { it != null } }!!
+        assertTrue("accuracy $accuracy", accuracy in 0..3)
+        withContext(Dispatchers.Main) { vm.setHeadingWanted(false) }
+        delay(3_500)
+        assertFalse(headingSensorRegistered())
+        assertEquals(accuracy, vm.lastAccuracy.value)
+    }
 }

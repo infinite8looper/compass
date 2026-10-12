@@ -88,3 +88,32 @@ fun pageView(page: Int, nearestPage: Int, offsetFraction: Float, targetPage: Int
     page == nearestPage - 1 && offsetFraction < -PANE_ON_SCREEN -> PaneView.PASSING
     else -> PaneView.HIDDEN
 }
+
+/** Whether any page that shows [pane] has something of itself on screen: at rest there, or passing while the row moves. */
+fun paneOnScreen(pane: Pane, nearestPage: Int, offsetFraction: Float, targetPage: Int, scrollInProgress: Boolean): Boolean =
+    (nearestPage - 1..nearestPage + 1).any { page ->
+        paneOf(page) == pane && pageView(page, nearestPage, offsetFraction, targetPage, scrollInProgress) != PaneView.HIDDEN
+    }
+
+/** What is on top: the three side-by-side screens, or one of the two screens opened from a row. */
+enum class TopScreen { PANES, EDIT, CALIBRATION }
+
+/** The routes of the navigation host: the three screens, the screen that edits the waypoint with an id, calibration. */
+const val PANES_ROUTE = "panes"
+const val EDIT_ROUTE = "edit/{id}"
+const val CALIBRATE_ROUTE = "calibrate"
+
+/** The screen on top for the navigation host's current [route]; the three screens before it has one. */
+fun topScreen(route: String?): TopScreen = when (route) {
+    EDIT_ROUTE -> TopScreen.EDIT
+    CALIBRATE_ROUTE -> TopScreen.CALIBRATION
+    else -> TopScreen.PANES
+}
+
+/**
+ * Whether the heading sensor should be running. This is the one decision: while the app is on screen, and either
+ * calibration is open or the three screens are on top with the compass on screen ([paneOnScreen]: at rest in
+ * view, or passing during a swipe, when it is drawn live). Settings, waypoints and the edit screen do not run it.
+ */
+fun headingWanted(top: TopScreen, compassOnScreen: Boolean, appOnScreen: Boolean): Boolean =
+    appOnScreen && (top == TopScreen.CALIBRATION || (top == TopScreen.PANES && compassOnScreen))

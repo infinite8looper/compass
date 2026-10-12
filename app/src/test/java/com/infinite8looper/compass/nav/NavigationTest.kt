@@ -154,6 +154,14 @@ class NavigationTest {
         assertNull(acquireFix(flow { emit(fixAt(99_000, 2f)) }, notBeforeMs = 100_000))
     }
 
+    @Test fun interferenceIsAFieldTheEarthsCannotBeAndNeverAnUnknownOne() {
+        assertFalse(isInterference(null))
+        assertFalse(isInterference(48f))
+        assertFalse(isInterference(25f)); assertFalse(isInterference(65f))
+        assertTrue(isInterference(24.9f)); assertTrue(isInterference(65.1f))
+        assertTrue(isInterference(0f)); assertTrue(isInterference(400f))
+        assertFalse(isInterference(Float.NaN))
+    }
     @Test fun statusTextGivesTheTwoLinesForEveryState() {
         assertEquals("" to null, statusText(LogStatus.Idle, Units.METRIC))
         assertEquals("Saving…" to null, statusText(LogStatus.Saving(null), Units.METRIC))
@@ -161,7 +169,7 @@ class NavigationTest {
         assertEquals("Saved Waypoint 5" to "±5 m", statusText(LogStatus.Saved("Waypoint 5", 5f, 100_000), Units.METRIC))
         assertEquals("No GPS fix" to "Try again outdoors", statusText(LogStatus.Failed(LogFailure.NO_FIX), Units.METRIC))
         assertEquals("Location is off" to null, statusText(LogStatus.Failed(LogFailure.LOCATION_OFF), Units.METRIC))
-        assertEquals("Needs location access" to null, statusText(LogStatus.Failed(LogFailure.NO_PERMISSION), Units.METRIC))
+        assertEquals("Needs access to precise location" to null, statusText(LogStatus.Failed(LogFailure.NO_PERMISSION), Units.METRIC))
         assertEquals("Couldn't save" to null, statusText(LogStatus.Failed(LogFailure.SAVE_FAILED), Units.METRIC))
     }
     @Test fun statusTextGivesTheAccuracyInTheChosenUnits() {

@@ -231,4 +231,53 @@ class PanesTest {
             }
         }
     }
+
+    // Whether a pane has anything on screen, and whether the heading sensor is wanted
+
+    @Test fun aPaneIsOnScreenWhenThePageAtRestOrAPagePassingShowsIt() {
+        // At rest on the compass: only the compass.
+        assertTrue(paneOnScreen(Pane.COMPASS, start, 0f, start, false))
+        assertFalse(paneOnScreen(Pane.WAYPOINTS, start, 0f, start, false))
+        assertFalse(paneOnScreen(Pane.SETTINGS, start, 0f, start, false))
+        // Dragged a third of the way toward waypoints: both, and not settings.
+        assertTrue(paneOnScreen(Pane.COMPASS, start, 0.33f, start, true))
+        assertTrue(paneOnScreen(Pane.WAYPOINTS, start, 0.33f, start, true))
+        assertFalse(paneOnScreen(Pane.SETTINGS, start, 0.33f, start, true))
+        // Past half way the nearest page is waypoints and the compass is the one behind.
+        assertTrue(paneOnScreen(Pane.COMPASS, start + 1, -0.4f, start + 1, true))
+        assertTrue(paneOnScreen(Pane.WAYPOINTS, start + 1, -0.4f, start + 1, true))
+        // The other way, toward settings.
+        assertTrue(paneOnScreen(Pane.SETTINGS, start, -0.2f, start - 1, true))
+        assertTrue(paneOnScreen(Pane.COMPASS, start, -0.2f, start - 1, true))
+        assertFalse(paneOnScreen(Pane.WAYPOINTS, start, -0.2f, start - 1, true))
+        // At rest on waypoints or on settings the compass has nothing on screen.
+        assertFalse(paneOnScreen(Pane.COMPASS, start + 1, 0f, start + 1, false))
+        assertFalse(paneOnScreen(Pane.COMPASS, start - 1, 0f, start - 1, false))
+        assertFalse(paneOnScreen(Pane.COMPASS, start + 2, 0f, start + 2, false))
+        // At the two ends of the row.
+        assertTrue(paneOnScreen(Pane.SETTINGS, 0, 0f, 0, false))
+        assertTrue(paneOnScreen(Pane.WAYPOINTS, PANE_PAGES - 1, 0f, PANE_PAGES - 1, false))
+    }
+    @Test fun theHeadingIsWantedOnTheCompassAndOnCalibrationWhileTheAppIsOnScreen() {
+        assertTrue(headingWanted(TopScreen.PANES, compassOnScreen = true, appOnScreen = true))
+        assertTrue(headingWanted(TopScreen.CALIBRATION, compassOnScreen = false, appOnScreen = true))
+        assertTrue(headingWanted(TopScreen.CALIBRATION, compassOnScreen = true, appOnScreen = true))
+    }
+    @Test fun theHeadingIsNotWantedOnSettingsWaypointsOrEdit() {
+        // Settings or waypoints: the three screens are on top and the compass has nothing on screen.
+        assertFalse(headingWanted(TopScreen.PANES, compassOnScreen = false, appOnScreen = true))
+        // Edit covers the three screens, wherever their row stands under it.
+        assertFalse(headingWanted(TopScreen.EDIT, compassOnScreen = false, appOnScreen = true))
+        assertFalse(headingWanted(TopScreen.EDIT, compassOnScreen = true, appOnScreen = true))
+    }
+    @Test fun theHeadingIsNeverWantedWhileTheAppIsOffScreen() {
+        for (top in TopScreen.entries) for (compass in listOf(true, false)) assertFalse(headingWanted(top, compass, appOnScreen = false))
+    }
+    @Test fun theTopScreenIsReadFromTheRoute() {
+        assertEquals(TopScreen.PANES, topScreen("panes"))
+        assertEquals(TopScreen.EDIT, topScreen("edit/{id}"))
+        assertEquals(TopScreen.CALIBRATION, topScreen("calibrate"))
+        // Before the navigation host has a destination the three screens are what it starts on.
+        assertEquals(TopScreen.PANES, topScreen(null))
+    }
 }

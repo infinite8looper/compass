@@ -35,7 +35,7 @@ import androidx.wear.compose.material3.Text
 import com.infinite8looper.compass.CompassViewModel
 import com.infinite8looper.compass.nav.accuracyLabel
 import com.infinite8looper.compass.nav.accuracyQuarters
-import com.infinite8looper.compass.nav.isFieldNormal
+import com.infinite8looper.compass.nav.isInterference
 import com.infinite8looper.compass.sensors.HeadingReading
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -48,14 +48,15 @@ import kotlin.math.sin
 private data class CalibrationView(val accuracy: Int?, val fieldMicroTesla: Int?, val interference: Boolean)
 
 private fun HeadingReading?.toView() = CalibrationView(
-    this?.accuracy, this?.fieldMicroTesla?.roundToInt(), this?.fieldMicroTesla?.let { !isFieldNormal(it) } ?: false,
+    this?.accuracy, this?.fieldMicroTesla?.roundToInt(), isInterference(this?.fieldMicroTesla),
 )
 
 /**
  * Calibration, opened from the settings or from the compass's prompt, in fractions of the screen's radius from the
  * top: what to do, the figure 8 to follow, the accuracy the magnetometer reports as the large word, and the field
  * strength small under it. The frame fills in the confirming green by quarters as the accuracy improves
- * ([accuracyQuarters]). A field outside what the earth's can be is reported under the rest, in the error color.
+ * ([accuracyQuarters]). A field outside what the earth's can be ([isInterference]) is reported under the rest, in
+ * the error color, and for as long as it lasts the frame's fill is in the error color too.
  *
  * Everything stands where it is whatever is shown: the warning has its own place and comes and goes there.
  * A right swipe and Back leave, which is the navigation host's doing. The crown and a side button do nothing here.
@@ -77,7 +78,8 @@ fun CalibrationScreen(vm: CompassViewModel) {
         val wordStyle = remember(r, density) { density.instrumentText(r * 0.24f, FontWeight.Light, TextAlign.Center) }
         val warningStyle = remember(r, density) { density.instrumentText(r * 0.085f, align = TextAlign.Center) }
 
-        FrameRing(fill = { filled.value }, fillColor = ConfirmColor, fillInner = FILL_INNER)
+        // The level and the interference change about once a second at most, and the color with them.
+        FrameRing(fill = { filled.value }, fillColor = if (shown.interference) ErrorColor else ConfirmColor, fillInner = FILL_INNER)
 
         Text(
             "Move your wrist in a figure 8", color = Dim, style = smallStyle, maxLines = 2,
