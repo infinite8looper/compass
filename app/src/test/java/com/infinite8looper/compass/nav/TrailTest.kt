@@ -611,4 +611,27 @@ class TrailTest {
         assertEquals(30_000L, crumbsRetryDelayMs(1_000))
         assertEquals(1_000L, crumbsRetryDelayMs(-1))
     }
+
+    @Test fun theModeIsKnownWithoutTheCrumbsExceptWhereRetracingIsStoredWithTheSettingOn() {
+        // With the setting off the trail is off, whatever is stored.
+        for (stored in TrailMode.entries) assertEquals(TrailMode.OFF, trailModeUnread(stored, settingOn = false))
+        assertEquals(TrailMode.OFF, trailModeUnread(TrailMode.OFF, settingOn = true))
+        assertEquals(TrailMode.LAYING, trailModeUnread(TrailMode.LAYING, settingOn = true))
+        // Retracing stands only while there is a crumb to walk to, which an unread list does not say.
+        assertNull(trailModeUnread(TrailMode.RETRACING, settingOn = true))
+        // Where the mode is known without the crumbs, it is what any number of them gives.
+        for (stored in TrailMode.entries) for (on in listOf(false, true)) for (crumbs in listOf(0, 1, 40)) {
+            trailModeUnread(stored, on)?.let { assertEquals("$stored $on $crumbs", effectiveTrailMode(stored, on, crumbs), it) }
+        }
+    }
+
+    @Test fun anUnreadCrumbListStandsForNoCrumbsOnlyWithTheSettingOff() {
+        // A list that has been read is the list, with the setting on or off.
+        assertEquals(listOf(3, 2, 1), crumbsForScreens(listOf(3, 2, 1), settingOn = true))
+        assertEquals(listOf(3, 2, 1), crumbsForScreens(listOf(3, 2, 1), settingOn = false))
+        assertEquals(emptyList<Int>(), crumbsForScreens(emptyList<Int>(), settingOn = true))
+        // Unread: no crumbs with the setting off, and not known (null) with it on.
+        assertEquals(emptyList<Int>(), crumbsForScreens<Int>(null, settingOn = false))
+        assertNull(crumbsForScreens<Int>(null, settingOn = true))
+    }
 }

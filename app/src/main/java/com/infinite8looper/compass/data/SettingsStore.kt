@@ -35,6 +35,9 @@ data class Settings(
     val trailMode: TrailMode = TrailMode.OFF,
 )
 
+/** The breadcrumb trail as the settings file holds it: the stored mode and the Breadcrumb trail switch. */
+data class StoredTrail(val mode: TrailMode, val settingOn: Boolean)
+
 fun defaultUnits(locale: Locale): Units =
     if (locale.country in setOf("US", "GB", "LR", "MM")) Units.IMPERIAL else Units.METRIC
 
@@ -96,6 +99,15 @@ class SettingsStore(
             trailMode = trailModeOf(p[TRAIL_MODE]),
         )
     }
+
+    /**
+     * The breadcrumb trail's stored mode and its switch as the settings file has them when this is called. [settings]
+     * joins two files and gives its reader the newest contents there are by the time the reader gets to run, which on
+     * a busy main thread can already hold a change made after the call. This reads the one file and takes the first
+     * contents it gives. It is for a press, which acts on what the trail was doing when it was made.
+     */
+    suspend fun storedTrail(): StoredTrail =
+        settingsData.first().let { StoredTrail(trailModeOf(it[TRAIL_MODE]), it[BREADCRUMB_TRAIL] ?: false) }
 
     /**
      * Older installs kept the last position in the settings file, which is backed up. On first use this moves it to

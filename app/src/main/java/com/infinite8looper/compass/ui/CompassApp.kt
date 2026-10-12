@@ -19,6 +19,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.platform.LocalView
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -77,14 +78,32 @@ fun CompassApp() {
             ) == PaneView.IN_VIEW
         }
     }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
     // Whether the app is on screen, and in front, for the decisions below.
-    val appState by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
+    val appState by lifecycle.currentStateFlow.collectAsState()
     KeepAwake(vm, compassInView = { compassInView.value })
-    // A crumb of a trail is consumed only while the compass is the screen in view; the view model is told when.
-    val compassAtRest = compassInViewForTrail(compassInView.value, appState == Lifecycle.State.RESUMED)
+    // A crumb of a trail is consumed only while the compass is the screen in view with the app in front; the view
+    // model is told when. Whether the app is in front is taken from the activity's lifecycle as each change of it
+    // is announced, not from a recomposition: leaving for Home pauses and stops the activity one right after the
+    // other, and no frame, and so no recomposition, has to come in between.
+    val appInFront = remember(lifecycle) { object { var now = false } }
+    DisposableEffect(vm, lifecycle) {
+        // An observer that is added is first brought up to the state the lifecycle is in, so it starts out right.
+        val observer = LifecycleEventObserver { _, event ->
+            appInFront.now = event.targetState == Lifecycle.State.RESUMED
+            vm.setCompassInView(compassInViewForTrail(compassInView.value, appInFront.now))
+        }
+        lifecycle.addObserver(observer)
+        onDispose {
+            lifecycle.removeObserver(observer)
+            vm.setCompassInView(false)
+        }
+    }
+    // The row of screens coming to rest on the compass, or leaving it, happens with the app in front and is followed here.
+    val compassAtRest = compassInView.value
     DisposableEffect(vm, compassAtRest) {
-        vm.setCompassInView(compassAtRest)
-        onDispose { vm.setCompassInView(false) }
+        vm.setCompassInView(compassInViewForTrail(compassAtRest, appInFront.now))
+        onDispose { }
     }
     // Whether a position can come at all is looked at again each time the app is back on screen: the permission and
     // the location switch are changed in the system's settings, away from the app.

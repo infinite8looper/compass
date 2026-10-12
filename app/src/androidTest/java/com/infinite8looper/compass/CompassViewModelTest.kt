@@ -2,8 +2,10 @@ package com.infinite8looper.compass
 
 import android.Manifest
 import android.app.Application
+import android.database.sqlite.SQLiteDatabase
 import android.os.SystemClock
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
@@ -714,7 +716,7 @@ class CompassViewModelTest {
             assertEquals(TrailMode.RETRACING, settings.settings.first().trailMode)
             val now = withTimeout(10_000) { vm.nav.first { it.focused?.distanceM != null } }
             assertEquals(distanceMeters(hanover.point, farNorth), now.focused!!.distanceM!!, 60.0)
-            assertFalse(now.focused!!.arrived)
+            assertFalse(now.focused.arrived)
             assertEquals(LogStatus.Idle, vm.logStatus.value)
         }
     }
@@ -882,6 +884,8 @@ class CompassViewModelTest {
             vm.logWaypoint(hanover.copy(point = farNorth))
             delay(1_500)
             scenario.moveToState(Lifecycle.State.STARTED)
+            // The view model has been told by the time the activity is paused, with no frame waited for.
+            assertFalse(vm.compassInView.value)
             val crumb = crumbDao.insert(crumbAt(hanover.point))
             settings.setTrailMode(TrailMode.RETRACING)
             val fixBefore = withTimeout(60_000) { vm.nav.first { it.trail.mode == TrailMode.RETRACING && it.fixElapsedMs != null } }.fixElapsedMs
@@ -890,8 +894,133 @@ class CompassViewModelTest {
             delay(8_000)
             assertEquals(listOf(crumb), crumbDao.all().map { it.id })
             scenario.moveToState(Lifecycle.State.RESUMED)
+            withTimeout(5_000) { vm.compassInView.first { it } }
             withTimeout(30_000) { while (crumbDao.all().isNotEmpty()) delay(20) }
         }
+    }
+
+    /**
+     * The app is left for Home, where the activity is paused and stopped one right after the other and no frame is
+     * drawn in between. The view model has been told the compass is out of view when the stop is announced, each
+     * time, and is told it is in view again when the app is back in front. The crumb the wearer stands on stays while
+     * the app is at Home, whatever fixes the system still delivers there, and is consumed once the app is in front.
+     */
+    @Test fun aCrumbIsNotConsumedWhileTheAppIsAtHome() = runBlocking {
+        settings.setBreadcrumbTrail(true)
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            val vm = viewModelOf(scenario)
+            vm.logWaypoint(hanover.copy(point = farNorth))
+            withTimeout(10_000) { vm.compassInView.first { it } }
+            // What the view model has been told at the moment the activity is stopped, read from inside the
+            // lifecycle's own announcement of the stop, where no frame can have come since the pause before it
+            // unless one already had.
+            val toldAtStop = CopyOnWriteArrayList<Boolean>()
+            scenario.onActivity { activity ->
+                activity.lifecycle.addObserver(LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_STOP) toldAtStop += vm.compassInView.value })
+            }
+            repeat(5) { round ->
+                scenario.moveToState(Lifecycle.State.CREATED)
+                assertFalse("round $round", vm.compassInView.value)
+                scenario.moveToState(Lifecycle.State.RESUMED)
+                withTimeout(5_000) { vm.compassInView.first { it } }
+            }
+            assertEquals(List(5) { false }, toldAtStop.toList())
+            scenario.moveToState(Lifecycle.State.CREATED)
+            assertFalse(vm.compassInView.value)
+            val crumb = crumbDao.insert(crumbAt(hanover.point))
+            settings.setTrailMode(TrailMode.RETRACING)
+            // The screens stop watching the screen state at Home, and fixes come only while it is watched: here it
+            // is watched, so that any fix the system delivers to an app at Home reaches the trail.
+            val watching = launch(Dispatchers.Main) { vm.nav.collect { } }
+            withTimeout(60_000) { vm.nav.first { it.trail.mode == TrailMode.RETRACING } }
+            delay(20_000)
+            assertFalse(vm.compassInView.value)
+            assertEquals(listOf(crumb), crumbDao.all().map { it.id })
+            watching.cancel()
+            scenario.moveToState(Lifecycle.State.RESUMED)
+            withTimeout(30_000) { while (crumbDao.all().isNotEmpty()) delay(20) }
+        }
+    }
+
+    /**
+     * Runs [block] while the crumbs cannot be read: the `crumbs` table is dropped from the app's own database file
+     * through a second connection, with the app's database open, so the app's next read of it fails as a read of a
+     * damaged file would. [block] is given the way to put the table back, made by the statements the file itself
+     * held for it; it is put back afterwards in any case.
+     */
+    private suspend fun whileTheCrumbsCannotBeRead(block: suspend (putBack: () -> Unit) -> Unit) {
+        val params = SQLiteDatabase.OpenParams.Builder().setOpenFlags(SQLiteDatabase.OPEN_READWRITE).setJournalMode("TRUNCATE").build()
+        SQLiteDatabase.openDatabase(app.getDatabasePath(WaypointDatabase.FILE_NAME), params).use { raw ->
+            val made = raw.rawQuery("SELECT sql FROM sqlite_master WHERE tbl_name = 'crumbs' AND sql IS NOT NULL ORDER BY type = 'table' DESC", null)
+                .use { rows -> buildList { while (rows.moveToNext()) add(rows.getString(0)) } }
+            assertTrue("$made", made.first().startsWith("CREATE TABLE"))
+            var gone = false
+            val putBack = { if (gone) { made.forEach(raw::execSQL); gone = false } }
+            raw.execSQL("DROP TABLE crumbs")
+            gone = true
+            try { block(putBack) } finally { putBack() }
+        }
+    }
+
+    /** With the breadcrumb trail setting off, crumbs that cannot be read hold up nothing: the screen state, a save, the focus. */
+    @Test fun withTheSettingOffCrumbsThatCannotBeReadHoldUpNothing() = runBlocking {
+        val first = dao.insert(com.infinite8looper.compass.data.Waypoint(name = "A", lat = farNorth.lat, lon = farNorth.lon, accuracyM = 5f, createdAt = 1, hue = 0f, isTarget = true))
+        val second = dao.insert(com.infinite8looper.compass.data.Waypoint(name = "B", lat = farNorth.lat, lon = farNorth.lon, accuracyM = 5f, createdAt = 2, hue = 90f, isTarget = true))
+        // Retracing is stored from an earlier trail; with the setting off it means nothing.
+        settings.setTrailMode(TrailMode.RETRACING)
+        try { whileTheCrumbsCannotBeRead {
+            // The app is in front, as it has to be for a position fix to come.
+            ActivityScenario.launch(MainActivity::class.java).use {
+            val vm = viewModel()
+            // The read really fails: the store's own read throws.
+            assertNotNull(runCatching { crumbDao.all() }.exceptionOrNull())
+            val ui = withTimeout(5_000) { vm.nav.first { it.loaded } }
+            assertEquals(setOf(first, second), ui.waypoints.map { it.id }.toSet())
+            assertEquals(TrailMode.OFF, ui.trail.mode)
+            // The crown moves the focus at once.
+            assertEquals(second, withTimeout(5_000) { vm.nav.first { it.focused != null } }.focused?.id)
+            val started = SystemClock.elapsedRealtime()
+            withTimeout(5_000) { vm.moveFocus(1).join() }
+            assertTrue("${SystemClock.elapsedRealtime() - started} ms", SystemClock.elapsedRealtime() - started < 1_000)
+            assertEquals(first, settings.settings.first().focusedId)
+            // The side button saves a waypoint, and is saving as soon as it is pressed.
+            val save = withContext(Dispatchers.Main) { vm.sidePress().also { assertTrue(vm.logStatus.value is LogStatus.Saving) } }
+            withTimeout(60_000) { save.join() }
+            assertTrue("${vm.logStatus.value}", vm.logStatus.value is LogStatus.Saved)
+            assertEquals(3, dao.observeAll().first().size)
+            }
+        } } finally { settings.setTrailMode(TrailMode.OFF) }
+    }
+
+    /**
+     * With the setting on and a trail being laid, a press of the side button while the crumbs cannot be read ends in
+     * `Couldn't save` and stores nothing; `Log here` still saves a waypoint. The reading is tried again, so once the
+     * table is back a press drops a crumb.
+     */
+    @Test fun withTheSettingOnAPressWhileTheCrumbsCannotBeReadCouldNotSaveAndTheReadIsTriedAgain() = runBlocking {
+        settings.setBreadcrumbTrail(true)
+        settings.setTrailMode(TrailMode.LAYING)
+        try { whileTheCrumbsCannotBeRead { putBack ->
+            ActivityScenario.launch(MainActivity::class.java).use {
+            val vm = viewModel()
+            assertNotNull(runCatching { crumbDao.all() }.exceptionOrNull())
+            withTimeout(60_000) { vm.sidePress().join() }
+            assertEquals(LogStatus.Failed(LogFailure.SAVE_FAILED), vm.logStatus.value)
+            assertEquals(0, dao.observeAll().first().size)
+            // `Log here` saves a waypoint whatever the trail is doing.
+            assertTrue(pressAndAwaitSaved(vm).name.startsWith("Waypoint"))
+            assertEquals(1, dao.observeAll().first().size)
+            putBack()
+            assertEquals(emptyList<Long>(), crumbDao.all().map { it.id })
+            // The view model's own reading comes right without anything being done to it: the trail shows up as laid, with no crumbs.
+            assertEquals(0, withTimeout(60_000) { vm.nav.first { it.loaded && it.trail.mode == TrailMode.LAYING } }.trail.count)
+            withTimeout(60_000) { vm.sidePress().join() }
+            assertEquals("Crumb 1", (vm.logStatus.value as? LogStatus.Saved)?.name)
+            assertEquals(1, crumbDao.all().size)
+            // The table that was put back is watched like the one before: the new crumb reaches the screen state.
+            trailOf(vm) { it.count == 1 }
+            }
+        } } finally { settings.setTrailMode(TrailMode.OFF) }
     }
 
     /**
@@ -983,8 +1112,8 @@ class CompassViewModelTest {
             val vm = viewModel()
             vm.logWaypoint(hanover)
             val nav = withTimeout(60_000) { vm.nav.first { it.focused?.distanceM != null } }
-            assertTrue("${nav.focused!!.distanceM} m", nav.focused!!.arrived)
-            assertNull(nav.focused!!.dialAngleDeg)
+            assertTrue("${nav.focused!!.distanceM} m", nav.focused.arrived)
+            assertNull(nav.focused.dialAngleDeg)
         }
     }
 }

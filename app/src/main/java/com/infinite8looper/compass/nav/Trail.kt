@@ -138,6 +138,26 @@ fun effectiveTrailMode(stored: TrailMode, settingOn: Boolean, crumbs: Int): Trai
     else -> stored
 }
 
+/**
+ * The mode the trail is in while its crumbs have not been read, where that does not depend on them: off with the
+ * setting off, and the [stored] mode when that is off or laying. Where it is not null it is what
+ * [effectiveTrailMode] gives for any number of crumbs. Null with the setting on and retracing stored: retracing
+ * stands only while there is a crumb to walk to, which an unread list does not say.
+ */
+fun trailModeUnread(stored: TrailMode, settingOn: Boolean): TrailMode? = when {
+    !settingOn -> TrailMode.OFF
+    stored == TrailMode.RETRACING -> null
+    else -> stored
+}
+
+/**
+ * The crumbs the screens are given, from the list that is [held] (null while no read of it has worked): the list
+ * once it has been read. Unread, it stands for no crumbs with the setting off, where a trail is neither laid nor
+ * retraced, so nothing on the screens waits for it; with the setting on it is not known (null), and an unread trail
+ * is not shown as an empty one.
+ */
+fun <T> crumbsForScreens(held: List<T>?, settingOn: Boolean): List<T>? = held ?: if (settingOn) null else emptyList()
+
 /** The mode a stored name stands for; anything that is not a mode's name, or nothing, is off. */
 fun trailModeOf(stored: String?): TrailMode = TrailMode.entries.firstOrNull { it.name == stored } ?: TrailMode.OFF
 

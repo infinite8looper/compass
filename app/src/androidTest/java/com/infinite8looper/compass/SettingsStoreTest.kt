@@ -11,17 +11,21 @@ import androidx.datastore.preferences.preferencesDataStoreFile
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.infinite8looper.compass.data.SettingsStore
+import com.infinite8looper.compass.data.StoredTrail
 import com.infinite8looper.compass.data.defaultUnits
 import com.infinite8looper.compass.nav.GeoPoint
 import com.infinite8looper.compass.nav.NorthRef
 import com.infinite8looper.compass.nav.TrailMode
 import com.infinite8looper.compass.nav.Units
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -265,6 +269,32 @@ class SettingsStoreTest {
         }
         assertTrue(s.settings.first().breadcrumbTrail)
     }
+    /**
+     * A press reads the trail's stored mode and switch as it is made. The answer is what the file held when it was
+     * asked, even if the one who asked gets to take it only after the file has changed: here it is asked on the main
+     * thread, which is then kept busy while the switch is turned off.
+     */
+    @Test fun theStoredTrailIsWhatTheFileHeldWhenItWasAskedHoweverLateTheAnswerIsTaken() = withStore { s, _ ->
+        assertEquals(StoredTrail(TrailMode.OFF, settingOn = false), s.storedTrail())
+        s.setBreadcrumbTrail(true)
+        assertEquals(StoredTrail(TrailMode.OFF, settingOn = true), s.storedTrail())
+        for (mode in listOf(TrailMode.RETRACING, TrailMode.LAYING)) {
+            s.setTrailMode(mode)
+            assertEquals(StoredTrail(mode, settingOn = true), s.storedTrail())
+        }
+        val asked = withContext(Dispatchers.Main) {
+            val answer = async(start = CoroutineStart.UNDISPATCHED) { s.storedTrail() }
+            // The file's contents are fetched for the one who asked on another thread; the main thread stays busy.
+            Thread.sleep(150)
+            runBlocking(Dispatchers.IO) { s.setBreadcrumbTrail(false) }
+            Thread.sleep(150)
+            answer
+        }
+        assertEquals(StoredTrail(TrailMode.LAYING, settingOn = true), asked.await())
+        assertEquals(StoredTrail(TrailMode.OFF, settingOn = false), s.storedTrail())
+        assertEquals(TrailMode.OFF, s.settings.first().trailMode)
+    }
+
     @Test fun theTrailsModeSurvivesANewStoreOnTheSameFile() = runBlocking {
         val file = "test-settings-${UUID.randomUUID()}"
         try {
