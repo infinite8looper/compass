@@ -14,6 +14,7 @@ import com.infinite8looper.compass.sensors.HeadingSource
 import com.infinite8looper.compass.sensors.LocationSource
 import com.infinite8looper.compass.sensors.declinationAt
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
@@ -37,7 +38,8 @@ data class NavUi(
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class CompassViewModel(app: Application) : AndroidViewModel(app) {
-    private val dao = WaypointDatabase.get(app).waypoints()
+    private val database = WaypointDatabase.get(app)
+    private val dao = database.waypoints()
     private val settingsStore = SettingsStore.get(app)
     private val headingSource = HeadingSource(app)
     val locationSource = LocationSource(app)
@@ -82,6 +84,20 @@ class CompassViewModel(app: Application) : AndroidViewModel(app) {
     }
         .catch { Log.w(TAG, "screen state stopped updating", it) }
         .stateIn(viewModelScope, sharing, NavUi.EMPTY)
+
+    init {
+        // Rebuilds the database file once, off the main thread, so it holds nothing of rows deleted or changed
+        // by an earlier build or on another device. A failure is not fatal: the backup agent tries again.
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                database.sanitize()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: RuntimeException) {
+                Log.w(TAG, "could not check the waypoint database (" + e.javaClass.simpleName + ")")
+            }
+        }
+    }
 
     fun permissionChanged() { permissionTick.value++ }
 

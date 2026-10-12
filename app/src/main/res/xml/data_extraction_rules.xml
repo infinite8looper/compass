@@ -4,8 +4,9 @@
   because an <include> turns off the default of including all app data.
 
   The system also copies the journal and log files that lie next to a listed database (-journal, -wal), listed or
-  not. The app sets its database to keep no write-ahead log and to empty its journal after every change, and the
-  backup agent hands nothing over in a pass where one of those files holds any bytes.
+  not. The app asks for a database without a write-ahead log and with a journal that is emptied after every change;
+  a platform whose default is a write-ahead log keeps one anyway. In either case the backup agent hands nothing over
+  in a pass where one of those files holds any bytes, or where the database file is not on record as rebuilt.
 
   Cloud backup happens only when the device can encrypt the backup end to end (a screen lock is set).
   Device-to-device transfer does not depend on that.
