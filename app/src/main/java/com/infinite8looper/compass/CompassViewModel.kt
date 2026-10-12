@@ -21,6 +21,8 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 data class NavUi(
     val targets: List<TargetUi>, val focused: TargetUi?, val units: Units, val north: NorthRef,
@@ -225,15 +227,28 @@ class CompassViewModel(app: Application, val locationSource: LocationSource) : A
         }
     }
 
-    fun setTarget(id: Long, on: Boolean) = launchQuietly("set target") { dao.setTarget(id, on) }
-    fun setAllTargets(on: Boolean) = launchQuietly("set all targets") { dao.setAllTargets(on) }
-    fun rename(id: Long, name: String?) = launchQuietly("rename") {
+    /**
+     * The changes to waypoints that the screens make are applied one at a time, in the order they were made.
+     * A rename and a color change each read the row and write it back whole, so two of them running at once, or
+     * one of them around a target change, would write back a row that no longer holds the other's change. The
+     * edit screen makes such changes close together: it writes the color several times a second while the wheel
+     * is turned.
+     */
+    private val waypointEdits = Mutex()
+    private fun launchEdit(what: String, block: suspend () -> Unit): Job =
+        launchQuietly(what) { waypointEdits.withLock { block() } }
+
+    fun setTarget(id: Long, on: Boolean) = launchEdit("set target") { dao.setTarget(id, on) }
+    fun setAllTargets(on: Boolean) = launchEdit("set all targets") { dao.setAllTargets(on) }
+    /** Gives the waypoint the cleaned-up [name]. A name that is empty or only spaces keeps the one it has. */
+    fun rename(id: Long, name: String?) = launchEdit("rename") {
         dao.get(id)?.let { dao.update(it.copy(name = cleanName(name, it.name))) }
     }
-    fun setHue(id: Long, hue: Float) = launchQuietly("set hue") {
+    fun setHue(id: Long, hue: Float) = launchEdit("set hue") {
         dao.get(id)?.let { dao.update(it.copy(hue = normalizeDeg(hue))) }
     }
-    fun delete(id: Long) = launchQuietly("delete") { dao.delete(id) }
+    /** Deletes the waypoint through the store's own delete, which is what keeps its content out of backups. */
+    fun delete(id: Long) = launchEdit("delete") { dao.delete(id) }
     fun setNorth(n: NorthRef) = launchQuietly("set north") { settingsStore.setNorth(n) }
     fun setUnits(u: Units) = launchQuietly("set units") { settingsStore.setUnits(u) }
     fun setTickFeedback(on: Boolean) = launchQuietly("set tick feedback") { settingsStore.setTickFeedback(on) }

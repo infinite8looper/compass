@@ -63,15 +63,12 @@ fun CompassApp() {
                     onCalibrate = { nav.navigate("calibrate") { launchSingleTop = true } },
                 )
             }
-            composable("edit/{id}") { entry ->
+            composable(EDIT_ROUTE) { entry ->
+                // Leaving takes the edit screen off the stack and nothing else: asked a second time, when the
+                // screen is already gone, it finds no edit screen and does nothing.
+                val leave = { nav.popBackStack(EDIT_ROUTE, inclusive = true); Unit }
                 val id = entry.arguments?.getString("id")?.toLongOrNull()
-                if (id == null) LeaveOnce { nav.popBackStack() }
-                else EditScreen(vm, id, onPickHue = { nav.navigate("hue/$id") { launchSingleTop = true } }, onDone = { nav.popBackStack() })
-            }
-            composable("hue/{id}") { entry ->
-                val id = entry.arguments?.getString("id")?.toLongOrNull()
-                if (id == null) LeaveOnce { nav.popBackStack() }
-                else HueScreen(vm, id, onDone = { nav.popBackStack() })
+                if (id == null) LeaveOnce(leave) else EditScreen(vm, id, onDone = leave)
             }
             composable("calibrate") { CalibrationScreen(vm) }
         }
@@ -113,11 +110,8 @@ private fun Panes(vm: CompassViewModel, panes: PagerState, onLogHere: () -> Unit
             Pane.COMPASS -> CompassScreen(
                 vm, paneView = view, onOpenList = { show(Pane.WAYPOINTS) }, onLogHere = onLogHere, onCalibrate = onCalibrate,
             )
-            Pane.WAYPOINTS -> Box {
-                // The save runs in the view model and its status shows on the compass, so the list turns to it.
-                WaypointsScreen(vm, onEdit = onEdit, onLog = { onLogHere(); show(Pane.COMPASS) })
-                PanePosition(pane.ordinal)
-            }
+            // The frame of the waypoints screen holds its pane ticks.
+            Pane.WAYPOINTS -> WaypointsScreen(vm, paneView = view, onEdit = onEdit, onLogHere = onLogHere)
         }
     }
 }
@@ -155,6 +149,9 @@ private val EveryTouchPages = object : GestureInclusion {
 
 /** The route of the three side-by-side screens, the navigation host's first destination. */
 private const val PANES_ROUTE = "panes"
+
+/** The route of the screen that edits the waypoint with the given id. */
+private const val EDIT_ROUTE = "edit/{id}"
 
 /** A route reached with an unusable id has nothing to show, so it goes back, once. */
 @Composable

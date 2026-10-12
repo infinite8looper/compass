@@ -179,30 +179,11 @@ fun CompassScreen(
         derivedStateOf {
             val status = logStatusState.value
             if (status == LogStatus.Idle) null
-            else statusText(status, navState.value.units).let { (text, detail) -> StatusLines(text, detail, statusColor(status)) }
+            else statusText(status, navState.value.units).let { (text, detail) -> StatusLines(text, detail, logStatusColor(status)) }
         }
     }
 
-    // A result is shown for its time, counted only while the compass is in view and resumed. A result that arrives
-    // while it is not (another screen is in view, the watch is asleep) waits in the view model, and a showing that
-    // is cut short, by a swipe as much as by sleep, starts again from the beginning. The confirming tap comes once,
-    // when a saved result is first shown. The press number is part of the key, so a new result that reads the same
-    // as the last gets its own time.
-    val logPress by vm.logPress.collectAsStateWithLifecycle()
-    val resultShowMs by remember { derivedStateOf { logStatusShowMs(logStatusState.value) } }
-    LaunchedEffect(vm, view, lifecycle, paneView, logPress, resultShowMs) {
-        val showMs = resultShowMs ?: return@LaunchedEffect
-        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            snapshotFlow { paneView() == PaneView.IN_VIEW }.collectLatest { showing ->
-                if (!showing) return@collectLatest
-                if (vm.logResultFirstSeen(logPress) && vm.logStatus.value is LogStatus.Saved) {
-                    view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
-                }
-                delay(showMs)
-                vm.logResultShown(logPress)
-            }
-        }
-    }
+    LogResultTimer(vm, paneView)
 
     val headingText by remember { derivedStateOf { if (shown.floatValue.isNaN()) "--" else "${shown.floatValue.roundToInt() % 360}°" } }
     val lowAccuracy by remember {
@@ -377,12 +358,6 @@ fun CompassScreen(
 
 /** The logging status as the compass shows it: a line in the distance slot and, for some, a smaller one under it. */
 private data class StatusLines(val text: String, val detail: String?, val color: Color)
-
-private fun statusColor(status: LogStatus): Color = when (status) {
-    is LogStatus.Saved -> ConfirmColor
-    is LogStatus.Failed -> ErrorColor
-    LogStatus.Idle, is LogStatus.Saving -> Ink
-}
 
 /**
  * One line of the logging status. It starts at the size of [style] and, when the words are wider than the slot,

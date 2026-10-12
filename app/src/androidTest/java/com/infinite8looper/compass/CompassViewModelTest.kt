@@ -21,6 +21,7 @@ import com.infinite8looper.compass.sensors.LocationSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -147,6 +148,59 @@ class CompassViewModelTest {
     // One-press logging. The tests that save need the feed running and the app on screen, like the ones above.
 
     /** A view model whose location source answers that the permission is not held, as before the wearer grants it. */
+    @Test fun aColorChangeAndATargetChangeMadeTogetherBothLand() = runBlocking {
+        val vm = viewModel()
+        val w = vm.logWaypoint(hanover)
+        // As the edit screen makes them: on the main thread, one straight after the other, many times over.
+        val jobs = withContext(Dispatchers.Main) {
+            (0 until 20).flatMap { i -> listOf(vm.setHue(w.id, 10f + i), vm.setTarget(w.id, i % 2 == 0)) }
+        }
+        withTimeout(10_000) { jobs.joinAll() }
+        val stored = dao.get(w.id)!!
+        assertEquals(29f, stored.hue, 0f)
+        assertFalse(stored.isTarget)
+    }
+
+    @Test fun aRenameAndAColorChangeMadeTogetherBothLand() = runBlocking {
+        val vm = viewModel()
+        val w = vm.logWaypoint(hanover)
+        val jobs = withContext(Dispatchers.Main) { listOf(vm.rename(w.id, "Camp"), vm.setHue(w.id, 200f), vm.setTarget(w.id, false)) }
+        withTimeout(10_000) { jobs.joinAll() }
+        val stored = dao.get(w.id)!!
+        assertEquals("Camp", stored.name)
+        assertEquals(200f, stored.hue, 0f)
+        assertFalse(stored.isTarget)
+    }
+
+    @Test fun colorChangesInQuickSuccessionEndOnTheLast() = runBlocking {
+        val vm = viewModel()
+        val w = vm.logWaypoint(hanover)
+        val jobs = withContext(Dispatchers.Main) { (1..40).map { vm.setHue(w.id, it * 9f) } }
+        withTimeout(10_000) { jobs.joinAll() }
+        // 360 is the same color as 0, and is stored as 0.
+        assertEquals(0f, dao.get(w.id)!!.hue, 0f)
+    }
+
+    @Test fun aRenameToNothingOrOnlySpacesKeepsTheName() = runBlocking {
+        val vm = viewModel()
+        val w = vm.logWaypoint(hanover)
+        withTimeout(10_000) { vm.rename(w.id, "Camp").join() }
+        assertEquals("Camp", dao.get(w.id)!!.name)
+        for (input in listOf("", "   ", " \n\t ", null)) {
+            withTimeout(10_000) { vm.rename(w.id, input).join() }
+            assertEquals("Camp", dao.get(w.id)!!.name)
+        }
+    }
+
+    @Test fun aColorChangeForAWaypointThatWasDeletedBringsNothingBack() = runBlocking {
+        val vm = viewModel()
+        val w = vm.logWaypoint(hanover)
+        val jobs = withContext(Dispatchers.Main) { listOf(vm.setHue(w.id, 50f), vm.delete(w.id), vm.setHue(w.id, 80f), vm.rename(w.id, "Back")) }
+        withTimeout(10_000) { jobs.joinAll() }
+        assertNull(dao.get(w.id))
+        assertTrue(dao.observeAll().first().isEmpty())
+    }
+
     private suspend fun viewModelWithoutPermission() =
         withContext(Dispatchers.Main) { CompassViewModel(app, LocationSource(app) { false }) }
 

@@ -1,44 +1,93 @@
 package com.infinite8looper.compass.ui
 
 import android.app.RemoteInput
+import android.os.SystemClock
+import android.view.HapticFeedbackConstants
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Canvas
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.layout.*
-import androidx.compose.runtime.*
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.TextAutoSize
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.rotary.onRotaryScrollEvent
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.findRootCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onLongClick
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.requestFocusOnHierarchyActive
-import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
-import androidx.wear.compose.material3.AlertDialog
-import androidx.wear.compose.material3.AlertDialogDefaults
-import androidx.wear.compose.material3.Button
-import androidx.wear.compose.material3.ListHeader
-import androidx.wear.compose.material3.ScreenScaffold
-import androidx.wear.compose.material3.SwitchButton
 import androidx.wear.compose.material3.Text
 import androidx.wear.input.RemoteInputIntentHelper
 import com.infinite8looper.compass.CompassViewModel
+import com.infinite8looper.compass.data.Waypoint
+import com.infinite8looper.compass.nav.HOLD_TO_DELETE_MS
+import com.infinite8looper.compass.nav.WHEEL_BAND_INNER
+import com.infinite8looper.compass.nav.WHEEL_BAND_OUTER
+import com.infinite8looper.compass.nav.colorWriteWaitMs
+import com.infinite8looper.compass.nav.holdProgress
 import com.infinite8looper.compass.nav.normalizeDeg
-import kotlin.math.abs
-import kotlin.math.atan2
-import kotlin.math.cos
-import kotlin.math.sin
+import com.infinite8looper.compass.nav.startsOnWheel
+import com.infinite8looper.compass.nav.wheelHue
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlin.math.roundToInt
 
 /** Opens the system voice or keyboard input and returns what was entered. */
 @Composable
@@ -55,8 +104,8 @@ fun rememberTextInput(onText: (String) -> Unit): () -> Unit {
 }
 
 /**
- * Calls [onDone] at most once. Used by screens that leave both when the wearer finishes and when the waypoint they
- * show has gone, which can happen together (a delete finishes the screen and then the waypoint list updates).
+ * Calls [onDone] at most once. The screen leaves both when the wearer deletes its waypoint and when the waypoint
+ * it shows has gone, which happen together (a delete leaves the screen and then the waypoint list updates).
  */
 @Composable
 private fun rememberLeaveOnce(onDone: () -> Unit): () -> Unit {
@@ -65,112 +114,264 @@ private fun rememberLeaveOnce(onDone: () -> Unit): () -> Unit {
     return { if (!left) { left = true; current() } }
 }
 
+/**
+ * Everything about one waypoint, on one screen, in fractions of the screen's radius:
+ * - the frame is the color wheel. A finger that goes down on it and moves along it, or taps it, picks the color
+ *   under it, and the crown turns the color;
+ * - a row above the middle shows and switches whether the waypoint is a target;
+ * - the name is in the middle, and a tap on it opens the system's text input;
+ * - `Hold to delete` is below it.
+ *
+ * A change is stored as it is made; there is nothing to confirm and no way to leave without it. A right swipe
+ * that starts anywhere but on the wheel goes back, which is the navigation host's doing: the wheel takes the
+ * touches that start on it and leaves the others alone.
+ *
+ * [onDone] leaves the screen. It is called once: when the waypoint has been deleted here, or when the screen finds
+ * that its waypoint does not exist.
+ */
 @Composable
-fun EditScreen(vm: CompassViewModel, id: Long, onPickHue: () -> Unit, onDone: () -> Unit) {
+fun EditScreen(vm: CompassViewModel, id: Long, onDone: () -> Unit) {
     val nav by vm.nav.collectAsStateWithLifecycle()
     val w = nav.waypoints.firstOrNull { it.id == id }
-    var confirmDelete by remember { mutableStateOf(false) }
-    val rename = rememberTextInput { vm.rename(id, it) }
-    val listState = rememberScalingLazyListState()
     val leave = rememberLeaveOnce(onDone)
-
     if (w == null) {
         // Deleted, or not loaded yet. Leave once the stores have answered and the waypoint is still missing.
         LaunchedEffect(nav.loaded) { if (nav.loaded) leave() }
+        Box(Modifier.fillMaxSize().background(Color.Black))
         return
     }
-    ScreenScaffold(scrollState = listState) { padding ->
-        ScalingLazyColumn(state = listState, contentPadding = padding, modifier = Modifier.fillMaxSize()) {
-            item { ListHeader { Text(w.name, maxLines = 2, overflow = TextOverflow.Ellipsis) } }
-            item {
-                SwitchButton(checked = w.isTarget, onCheckedChange = { vm.setTarget(id, it) }, modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Set target") })
-            }
-            item { Button(onClick = rename, modifier = Modifier.fillMaxWidth()) { Text("Rename") } }
-            item {
-                Button(onClick = onPickHue, modifier = Modifier.fillMaxWidth()) {
-                    Box(Modifier.size(12.dp).background(waypointColor(w.hue), androidx.compose.foundation.shape.CircleShape))
-                    Spacer(Modifier.width(8.dp)); Text("Color")
-                }
-            }
-            item { Button(onClick = { confirmDelete = true }, modifier = Modifier.fillMaxWidth()) { Text("Delete") } }
-        }
-    }
-    AlertDialog(
-        visible = confirmDelete,
-        onDismissRequest = { confirmDelete = false },
-        title = { Text("Delete ${w.name}?", maxLines = 3, overflow = TextOverflow.Ellipsis) },
-        confirmButton = { AlertDialogDefaults.ConfirmButton(onClick = { confirmDelete = false; vm.delete(id); leave() }) },
-        dismissButton = { AlertDialogDefaults.DismissButton(onClick = { confirmDelete = false }) },
-    )
+    EditWaypoint(vm, w, leave)
 }
 
 @Composable
-fun HueScreen(vm: CompassViewModel, id: Long, onDone: () -> Unit) {
-    val nav by vm.nav.collectAsStateWithLifecycle()
-    val saved = nav.waypoints.firstOrNull { it.id == id }
-    val leave = rememberLeaveOnce(onDone)
-    if (saved == null) {
-        LaunchedEffect(nav.loaded) { if (nav.loaded) leave() }
-        return
+private fun EditWaypoint(vm: CompassViewModel, w: Waypoint, leave: () -> Unit) {
+    val view = LocalView.current
+    val id = w.id
+    // The color as it is drawn. It starts from the stored one and from then on is the wearer's: what the store
+    // sends back while the wheel is being turned is an earlier value of this, and is not taken.
+    val hue = remember(id) { mutableFloatStateOf(w.hue) }
+    val writes = remember(vm, id) { HueWrites(w.hue) { vm.setHue(id, it) } }
+    // The color is drawn at once and written at most a few times a second: a change waits out what is left of
+    // the gap since the last write, and gives way to a newer change that comes before then.
+    LaunchedEffect(writes) {
+        snapshotFlow { hue.floatValue }.collectLatest { changed ->
+            delay(colorWriteWaitMs(SystemClock.uptimeMillis(), writes.lastWriteMs))
+            writes.write(changed)
+        }
     }
-    var hue by remember(saved.hue) { mutableFloatStateOf(saved.hue) }
-    // Hue 0 is drawn at 12 o'clock and increases clockwise.
-    fun hueAt(p: Offset, center: Offset) =
-        normalizeDeg(Math.toDegrees(atan2((p.x - center.x).toDouble(), (center.y - p.y).toDouble())).toFloat())
+    // Leaving the screen within the gap writes what is drawn. The write is the view model's and outlives the screen.
+    DisposableEffect(writes) { onDispose { writes.write(hue.floatValue) } }
+
+    // How far a hold on `Hold to delete` has come, from 0 to 1. Written every frame of a hold and read only where
+    // the frame is drawn.
+    val held = remember(id) { Animatable(0f) }
+    var holding by remember(id) { mutableStateOf(false) }
+    var holdStartedMs by remember(id) { mutableLongStateOf(0L) }
+    val delete = remember(vm, id, leave) { { vm.delete(id); leave() } }
+    LaunchedEffect(holding) {
+        if (!holding) {
+            // Let go before the end: nothing is deleted and the frame fills again.
+            if (held.value < 1f) held.animateTo(0f, tween(HOLD_REFILL_MS))
+            return@LaunchedEffect
+        }
+        while (true) {
+            val progress = holdProgress(withFrameMillis { SystemClock.uptimeMillis() } - holdStartedMs, HOLD_TO_DELETE_MS)
+            held.snapTo(progress)
+            if (progress >= 1f) {
+                view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                delete()
+                return@LaunchedEffect
+            }
+        }
+    }
+
+    val rename = rememberTextInput { vm.rename(id, it) }
+    val tolerance = with(LocalDensity.current) { WHEEL_TOLERANCE.toPx() }
 
     BoxWithConstraints(
         Modifier.fillMaxSize().background(Color.Black)
-            .onRotaryScrollEvent { e -> hue = normalizeDeg(hue + e.verticalScrollPixels * 0.25f); true }
+            .onRotaryScrollEvent { e ->
+                hue.floatValue = normalizeDeg(hue.floatValue + e.verticalScrollPixels * CROWN_DEG_PER_PIXEL)
+                true
+            }
             .requestFocusOnHierarchyActive().focusable()
-            // Only a touch that starts on the ring and moves along it sets the hue (and is consumed); a tap on the
-            // ring sets it too. Anything else, such as the swipe-right that goes back, is left to the system.
-            .pointerInput(Unit) {
+            // The wheel. It sees a touch before anything inside the screen does and before the swipe that goes
+            // back, and takes it whole if it starts on the wheel; every other touch it leaves untouched.
+            .pointerInput(id, tolerance) {
                 val c = Offset(size.width / 2f, size.height / 2f)
-                val ringInner = size.width * 0.3f
+                val r = minOf(size.width, size.height) / 2f
                 awaitEachGesture {
-                    val down = awaitFirstDown()
-                    if ((down.position - c).getDistance() < ringInner) return@awaitEachGesture
-                    val radial = (down.position - c).let { it / it.getDistance() }
-                    val tangent = Offset(-radial.y, radial.x)
-                    var moved = Offset.Zero
-                    var claimed = false
+                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    if (!startsOnWheel((down.position - c).getDistance(), r, tolerance)) return@awaitEachGesture
+                    down.consume()
+                    var dragging = false
                     while (true) {
-                        val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: return@awaitEachGesture
-                        if (change.isConsumed) return@awaitEachGesture
+                        val change = awaitPointerEvent(PointerEventPass.Initial).changes.firstOrNull { it.id == down.id } ?: break
                         if (!change.pressed) {
-                            if (!claimed) hue = hueAt(down.position, c)
-                            return@awaitEachGesture
-                        }
-                        if (!claimed) {
-                            moved += change.positionChange()
-                            if (moved.getDistance() > viewConfiguration.touchSlop) {
-                                val along = abs(moved.x * tangent.x + moved.y * tangent.y)
-                                val across = abs(moved.x * radial.x + moved.y * radial.y)
-                                if (along < across) return@awaitEachGesture
-                                claimed = true
+                            // A tap picks the color it lands on. A finger that rests on the wheel and is lifted
+                            // again, as one that missed `Hold to delete` would, picks nothing.
+                            if (!dragging && change.uptimeMillis - down.uptimeMillis < viewConfiguration.longPressTimeoutMillis) {
+                                wheelHue(down.position.x - c.x, down.position.y - c.y, r)?.let { hue.floatValue = it }
                             }
+                            change.consume()
+                            break
                         }
-                        if (claimed) { hue = hueAt(change.position, c); change.consume() }
+                        if (!dragging && (change.position - down.position).getDistance() > viewConfiguration.touchSlop) dragging = true
+                        if (dragging) wheelHue(change.position.x - c.x, change.position.y - c.y, r)?.let { hue.floatValue = it }
+                        change.consume()
                     }
+                    // Let go: what is drawn is written now.
+                    writes.write(hue.floatValue)
                 }
             },
         contentAlignment = Alignment.Center,
     ) {
         val r = minOf(maxWidth, maxHeight) / 2
-        Canvas(Modifier.fillMaxSize()) {
-            val r = size.minDimension / 2f
-            val ring = r * 0.16f
-            val colors = (0..360 step 10).map { waypointColor(((it + 90) % 360).toFloat()) }
-            // sweepGradient starts at 3 o'clock, so the list is offset by 90 degrees to put hue 0 at the top.
-            drawCircle(Brush.sweepGradient(colors, center), r - ring / 2f - r * 0.04f, center, style = Stroke(ring))
-            val a = Math.toRadians(hue.toDouble())
-            val at = Offset(center.x + (r - ring / 2f - r * 0.04f) * sin(a).toFloat(), center.y - (r - ring / 2f - r * 0.04f) * cos(a).toFloat())
-            drawCircle(Color.Black, ring * 0.62f, at)
-            drawCircle(waypointColor(hue), ring * 0.5f, at)
-            drawCircle(waypointColor(hue), r * 0.17f, Offset(center.x, center.y - r * 0.30f))
+        val density = LocalDensity.current
+        val labelStyle = remember(r, density) { density.instrumentText(r * 0.105f, align = TextAlign.Center) }
+        val nameStyle = remember(r, density) { density.instrumentText(r * 0.17f, FontWeight.Light, TextAlign.Center) }
+
+        // While `Hold to delete` is held the wheel gives its place to a ring in the color of deleting, which
+        // drains as the hold goes on; the frame's ticks are what is left behind it.
+        FrameRing(fill = { if (held.value > 0f) 1f - held.value else 0f }, fillColor = ErrorColor, fillInner = WHEEL_BAND_INNER)
+        ColorWheel(hue = { hue.floatValue }, shown = { held.value <= 0f }, onHue = { hue.floatValue = it; writes.write(it) })
+
+        // The three rows are each as tall as a touch needs and stand half a radius apart.
+        TargetRow(
+            w.isTarget, { hue.floatValue }, labelStyle,
+            Modifier.offset(y = -r * ROW_Y).width(r * 1.0f).height(HitHeight)
+                .toggleable(w.isTarget, role = Role.Switch) { vm.setTarget(id, it) },
+        )
+        Row(
+            Modifier.width(r * 1.36f).height(HitHeight)
+                .clickable(role = Role.Button, onClickLabel = "Rename", onClick = rename),
+            Arrangement.Center, Alignment.CenterVertically,
+        ) {
+            ColorDot({ hue.floatValue }, Modifier.size(r * 0.075f))
+            Spacer(Modifier.width(r * 0.05f))
+            BasicText(
+                w.name, Modifier.weight(1f, fill = false), nameStyle, maxLines = 2, overflow = TextOverflow.Ellipsis, color = { Ink },
+                autoSize = TextAutoSize.StepBased(minFontSize = nameStyle.fontSize * 0.62f, maxFontSize = nameStyle.fontSize, stepSize = 0.5.sp),
+            )
         }
-        // The preview sits above the middle and the button below it, both scaled to the screen.
-        Button(onClick = { vm.setHue(id, hue); leave() }, modifier = Modifier.offset(y = r * 0.30f)) { Text("Done") }
+        var place by remember { mutableStateOf<LayoutCoordinates?>(null) }
+        Box(
+            Modifier.offset(y = r * ROW_Y).width(r * 1.1f).height(HitHeight)
+                .onGloballyPositioned { place = it }
+                .semantics(mergeDescendants = true) {
+                    role = Role.Button
+                    contentDescription = "Hold to delete ${w.name}"
+                    onLongClick("Delete") { delete(); true }
+                }
+                .pointerInput(id, tolerance) {
+                    awaitEachGesture {
+                        // A touch the wheel has taken does not reach here unconsumed. The same question is asked
+                        // again of where the finger went down on the screen, so the answer does not rest on the
+                        // order the two are asked in.
+                        val down = awaitFirstDown()
+                        val onWheel = place?.takeIf { it.isAttached }?.let { here ->
+                            val screen = here.findRootCoordinates().size
+                            val at = here.localToRoot(down.position) - Offset(screen.width / 2f, screen.height / 2f)
+                            startsOnWheel(at.getDistance(), minOf(screen.width, screen.height) / 2f, tolerance)
+                        } ?: true
+                        if (onWheel) return@awaitEachGesture
+                        holdStartedMs = down.uptimeMillis
+                        holding = true
+                        // Ends when the finger lifts, leaves the row, or becomes the swipe that goes back.
+                        try { waitForUpOrCancellation() } finally { holding = false }
+                    }
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("Hold to delete", color = ErrorColor, style = labelStyle, maxLines = 1)
+        }
     }
 }
+
+/** The color's writes to the store: the last color written and when, so the same color is not written twice. */
+private class HueWrites(initial: Float, private val store: (Float) -> Unit) {
+    private var written = initial
+    var lastWriteMs: Long? = null
+        private set
+
+    fun write(hue: Float) {
+        if (hue == written) return
+        written = hue
+        lastWriteMs = SystemClock.uptimeMillis()
+        store(hue)
+    }
+}
+
+/**
+ * The frame as a color wheel: every hue around the ring, 0 at 12 o'clock and growing clockwise, and a line across
+ * the ring at the waypoint's color, drawn like a focused target's line on the dial. [hue] and [shown] are read
+ * while drawing. An accessibility service sets the color through [onHue].
+ */
+@Composable
+private fun ColorWheel(hue: () -> Float, shown: () -> Boolean, onHue: (Float) -> Unit) {
+    val current = hue()
+    Spacer(
+        Modifier.fillMaxSize()
+            .semantics {
+                contentDescription = "Color"
+                stateDescription = "Hue ${current.roundToInt()} of 360"
+                progressBarRangeInfo = ProgressBarRangeInfo(current, 0f..360f)
+                setProgress("Set color") { value -> onHue(normalizeDeg(value.coerceIn(0f, 359.9f))); true }
+            }
+            .drawWithCache {
+                val r = size.minDimension / 2f
+                val c = Offset(size.width / 2f, size.height / 2f)
+                // A sweep starts at 3 o'clock, so the list is a quarter turn on to put hue 0 at the top.
+                val wheel = Brush.sweepGradient((0..360 step 10).map { waypointColor(((it + 90) % 360).toFloat()) }, c)
+                val mid = r * (WHEEL_BAND_OUTER + WHEEL_BAND_INNER) / 2f
+                val band = Stroke(r * (WHEEL_BAND_OUTER - WHEEL_BAND_INNER))
+                onDrawBehind {
+                    if (!shown()) return@onDrawBehind
+                    drawCircle(wheel, mid, c, style = band)
+                    val h = hue()
+                    rotate(h, c) {
+                        val outer = c.y - r * WHEEL_MARK_OUTER
+                        val inner = c.y - r * WHEEL_MARK_INNER
+                        val casing = r * WHEEL_MARK_CASING
+                        drawLine(Color.Black, Offset(c.x, outer - casing), Offset(c.x, inner + casing), r * WHEEL_MARK_WIDTH + 2f * casing, StrokeCap.Round)
+                        drawLine(Ink, Offset(c.x, outer), Offset(c.x, inner), r * WHEEL_MARK_WIDTH, StrokeCap.Round)
+                        drawLine(waypointColor(h), Offset(c.x, outer), Offset(c.x, inner), r * WHEEL_MARK_WIDTH * 0.56f, StrokeCap.Round)
+                    }
+                }
+            }
+    )
+}
+
+/** The switch for "is a target": the word and a tick in the waypoint's color, as in a row of the list. */
+@Composable
+private fun TargetRow(on: Boolean, hue: () -> Float, style: androidx.compose.ui.text.TextStyle, modifier: Modifier) {
+    Row(modifier, Arrangement.Center, Alignment.CenterVertically) {
+        Text("Target", color = if (on) Ink else Dim, style = style, maxLines = 1)
+        Spacer(Modifier.width(8.dp))
+        TickToggle(on, color = waypointColor(hue()))
+    }
+}
+
+/** A dot in the waypoint's color beside its name, as on the compass. The color is read while drawing. */
+@Composable
+private fun ColorDot(hue: () -> Float, modifier: Modifier) {
+    Spacer(modifier.drawBehind { drawCircle(waypointColor(hue())) })
+}
+
+/** How far inside the wheel's band a touch still starts on it: the room a fingertip aimed at the band needs. */
+private val WHEEL_TOLERANCE = 8.dp
+
+/** One click of the emulator's crown is 128 pixels: 32 degrees of hue, about eleven clicks to the turn. */
+private const val CROWN_DEG_PER_PIXEL = 0.25f
+
+/** Where the target row and `Hold to delete` stand, in radii above and below the name. */
+private const val ROW_Y = 0.5f
+
+/** How long the frame takes to fill again when a hold is let go. */
+private const val HOLD_REFILL_MS = 180
+
+// The line that marks the waypoint's color on the wheel runs past both edges of the band.
+private const val WHEEL_MARK_OUTER = 0.985f
+private const val WHEEL_MARK_INNER = 0.80f
+private const val WHEEL_MARK_WIDTH = 0.05f
+private const val WHEEL_MARK_CASING = 0.014f

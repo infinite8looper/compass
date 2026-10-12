@@ -1,15 +1,51 @@
 package com.infinite8looper.compass.ui
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.findRootCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineHeightStyle
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import com.infinite8looper.compass.nav.Pane
+import com.infinite8looper.compass.nav.ScrollArc
+import com.infinite8looper.compass.nav.rowInset
 
 // The colors the screens share, each named for what it is used for. A screen takes a color from here by its
 // role, so a role's color is changed in this one place.
@@ -58,27 +94,222 @@ private const val PANE_TICK_SPACING = 0.085f
  * The ticks fill the box they are given and are placed by its radius: their outer ends are [radius] of it from the
  * center. [scale] makes the ticks and the gaps between them smaller or larger, for a place with less room than the
  * edge. [alpha] is read while drawing, so fading the ticks recomposes nothing.
+ *
+ * A screen with a [FrameRing] gives the ring its place among the three instead of calling this: the ring leaves
+ * room for the ticks and draws them in its own band.
  */
 @Composable
 fun PanePosition(
     index: Int, modifier: Modifier = Modifier, radius: Float = PANE_TICKS_AT_EDGE, scale: Float = 1f, alpha: () -> Float = { 1f },
 ) {
-    Spacer(modifier.fillMaxSize().drawBehind {
-        val shown = alpha()
-        if (shown <= 0f) return@drawBehind
-        val r = size.minDimension / 2f
-        // The same distance apart wherever on the radius they sit, as an angle about the center.
-        val step = Math.toDegrees((PANE_TICK_SPACING * scale / radius).toDouble()).toFloat()
-        for (i in Pane.entries.indices) {
-            val current = i == index
-            val length = scale * if (current) PANE_TICK_LENGTH_CURRENT else PANE_TICK_LENGTH
-            // A turn clockwise carries the bottom of the screen to the left, where the first screen's tick is.
-            rotate((1 - i) * step, center) {
-                drawLine(
-                    if (current) AccentColor else Faint, Offset(center.x, center.y + r * radius),
-                    Offset(center.x, center.y + r * (radius - length)), r * PANE_TICK_WIDTH * scale, StrokeCap.Round, alpha = shown,
-                )
-            }
+    Spacer(modifier.fillMaxSize().drawBehind { paneTicks(index, radius, scale, alpha()) })
+}
+
+private fun DrawScope.paneTicks(index: Int, radius: Float, scale: Float, shown: Float) {
+    if (shown <= 0f) return
+    val r = size.minDimension / 2f
+    val step = paneTickStepDeg(radius, scale)
+    for (i in Pane.entries.indices) {
+        val current = i == index
+        val length = scale * if (current) PANE_TICK_LENGTH_CURRENT else PANE_TICK_LENGTH
+        // A turn clockwise carries the bottom of the screen to the left, where the first screen's tick is.
+        rotate((1 - i) * step, center) {
+            drawLine(
+                if (current) AccentColor else Faint, Offset(center.x, center.y + r * radius),
+                Offset(center.x, center.y + r * (radius - length)), r * PANE_TICK_WIDTH * scale, StrokeCap.Round, alpha = shown,
+            )
         }
+    }
+}
+
+/** The angle between two pane ticks: the same distance apart wherever on the radius they sit. */
+private fun paneTickStepDeg(radius: Float, scale: Float): Float =
+    Math.toDegrees((PANE_TICK_SPACING * scale / radius).toDouble()).toFloat()
+
+// The frame: a thin ring of ticks at the edge of every screen but the compass.
+
+/** The outer and inner edge of the frame's ticks, in fractions of the screen's radius. */
+internal const val FRAME_OUTER = 0.97f
+internal const val FRAME_INNER = 0.935f
+/** Every thirtieth degree has a tick that is a little longer, as on the dial. */
+private const val FRAME_INNER_HEAVY = 0.92f
+private const val FRAME_TICK_WIDTH = 0.008f
+private const val FRAME_TICK_STEP_DEG = 3
+/** Around 6 o'clock the frame's own ticks leave this much room, each side, beyond the outermost pane tick. */
+private const val FRAME_PANE_MARGIN_DEG = 5f
+/** The scroll arc's track: this many degrees of the frame, centered on 3 o'clock, the top of the list at its upper end. */
+private const val FRAME_SCROLL_TRACK_DEG = 56f
+private const val FRAME_SCROLL_WIDTH = 0.024f
+
+/**
+ * The frame of a screen: a thin, still ring of ticks at the edge of the display, and what the frame says there.
+ * It fills the box it is given and draws nothing in the middle, so it is put over or under a screen's content.
+ *
+ * - [paneIndex], on one of the three side-by-side screens: the screen's place among them (a [Pane]'s place in
+ *   their order). The ring leaves 6 o'clock clear and the three pane ticks stand there, in the ring's own band.
+ * - [scroll]: the part of a list that is on screen, as an arc in the accent color at 3 o'clock; null from the
+ *   function when everything fits.
+ * - [fill]: a part of the whole ring from 0 to 1, drawn in [fillColor] clockwise from 12 o'clock and reaching in
+ *   to [fillInner] of the radius: how far something has come, or how much of it is left.
+ *
+ * [scroll] and [fill] are read while drawing: a list that scrolls or a value that runs redraws the arcs and
+ * recomposes nothing. The ticks are drawn on a layer of their own and are not drawn again for it.
+ */
+@Composable
+fun FrameRing(
+    modifier: Modifier = Modifier,
+    paneIndex: Int? = null,
+    scroll: (() -> ScrollArc?)? = null,
+    fill: (() -> Float)? = null,
+    fillColor: Color = AccentColor,
+    fillInner: Float = FRAME_INNER,
+) {
+    Box(modifier.fillMaxSize()) {
+        Spacer(Modifier.fillMaxSize().graphicsLayer().drawBehind {
+            val r = size.minDimension / 2f
+            // The pane ticks stand a step apart either side of 6 o'clock; the ring's own stay clear of them.
+            val clear = if (paneIndex == null) 0f else paneTickStepDeg(FRAME_OUTER, 1f) + FRAME_PANE_MARGIN_DEG
+            for (d in 0 until 360 step FRAME_TICK_STEP_DEG) {
+                if (kotlin.math.abs(d - 180) < clear) continue
+                val heavy = d % 30 == 0
+                rotate(d.toFloat(), center) {
+                    drawLine(
+                        if (heavy) Dim else Faint, Offset(center.x, center.y - r * FRAME_OUTER),
+                        Offset(center.x, center.y - r * if (heavy) FRAME_INNER_HEAVY else FRAME_INNER),
+                        r * FRAME_TICK_WIDTH * if (heavy) 1.5f else 1f,
+                    )
+                }
+            }
+            if (paneIndex != null) paneTicks(paneIndex, FRAME_OUTER, 1f, 1f)
+        })
+        if (scroll != null || fill != null) {
+            Spacer(Modifier.fillMaxSize().drawBehind {
+                val r = size.minDimension / 2f
+                fill?.invoke()?.let { part ->
+                    if (part > 0f) {
+                        val mid = r * (FRAME_OUTER + fillInner) / 2f
+                        drawArc(
+                            fillColor, -90f, 360f * part.coerceAtMost(1f), false,
+                            Offset(center.x - mid, center.y - mid), Size(2f * mid, 2f * mid), style = Stroke(r * (FRAME_OUTER - fillInner)),
+                        )
+                    }
+                }
+                scroll?.invoke()?.let { arc ->
+                    val mid = r * (FRAME_OUTER + FRAME_INNER) / 2f
+                    // 0 degrees is 3 o'clock for an arc, and the angle grows clockwise, which is down the list.
+                    drawArc(
+                        AccentColor, (arc.start - 0.5f) * FRAME_SCROLL_TRACK_DEG, (arc.end - arc.start) * FRAME_SCROLL_TRACK_DEG, false,
+                        Offset(center.x - mid, center.y - mid), Size(2f * mid, 2f * mid),
+                        style = Stroke(r * FRAME_SCROLL_WIDTH, cap = StrokeCap.Round),
+                    )
+                }
+            })
+        }
+    }
+}
+
+// Rows and switches: text on black, with a tick at the right of a row for a switch.
+
+/** The least height of anything that can be tapped, however small the mark drawn for it. */
+internal val HitHeight = 48.dp
+
+/** A list's rows are clipped to a circle of this fraction of the radius, inside the frame and the pane ticks. */
+internal const val LIST_RADIUS = 0.875f
+/** The ends of a row follow a ring of this fraction of the radius. */
+internal const val ROW_RING = 0.80f
+
+/** How much of a list's height, at its top and again at its bottom, the rows fade out over. */
+private const val LIST_FADE = 0.2f
+
+/** Fades what it is put on out toward its top and bottom edges: for a list whose rows scroll in and out of the frame. */
+internal fun Modifier.fadeTopAndBottom(): Modifier =
+    graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }.drawWithContent {
+        drawContent()
+        drawRect(
+            Brush.verticalGradient(0f to Color.Transparent, LIST_FADE to Color.Black, 1f - LIST_FADE to Color.Black, 1f to Color.Transparent),
+            blendMode = BlendMode.DstIn,
+        )
+    }
+
+private val TickLength = 22.dp
+private val TickStub = 7.dp
+private val TickWidth = 3.dp
+
+/**
+ * A switch, drawn as a tick: long and in [color] when [on], a short gray stub when off. It is a mark only; the
+ * row it stands in is what is tapped, and says what it switches.
+ */
+@Composable
+fun TickToggle(on: Boolean, modifier: Modifier = Modifier, color: Color = AccentColor) {
+    val length by animateFloatAsState(if (on) 1f else TickStub / TickLength, tween(120), label = "tick")
+    val tint by animateColorAsState(if (on) color else Faint, tween(120), label = "tick color")
+    Spacer(modifier.size(TickLength + TickWidth, HitHeight / 2).drawBehind {
+        // The tick grows inward from its right end, the way a tick stands on the edge of a dial.
+        val right = size.width - TickWidth.toPx() / 2f
+        drawLine(tint, Offset(right, center.y), Offset(right - TickLength.toPx() * length, center.y), TickWidth.toPx(), StrokeCap.Round)
     })
+}
+
+/**
+ * A row of a list on the round screen: at least [HitHeight] tall and as wide as the list, with [content] at the
+ * left and [trailing] (a [TickToggle], or nothing) at the right. What a tap or a long press on the row does comes
+ * in with [modifier], so the whole row is the touch target.
+ *
+ * The two ends follow the round edge: a row at the middle of the screen reaches out to [ROW_RING] of the radius on
+ * both sides, and a row above or below it is drawn as much shorter as the ring is narrower there. The row's place
+ * is read after layout and applied while drawing, so scrolling moves the ends and neither measures nor recomposes
+ * anything. [content] has the width that is free at about half the radius above or below the middle; nearer the
+ * top and bottom its end can run under the tick.
+ *
+ * With [centered], [content] sits in the middle of the row instead and nothing moves: for a header, or a row that
+ * is one word.
+ */
+@Composable
+fun InstrumentRow(
+    modifier: Modifier = Modifier,
+    centered: Boolean = false,
+    trailing: (@Composable () -> Unit)? = null,
+    content: @Composable () -> Unit,
+) {
+    val radius = screenRadius()
+    val inset = remember { mutableFloatStateOf(0f) }
+    Row(
+        modifier.fillMaxWidth().heightIn(min = HitHeight)
+            .onGloballyPositioned { row ->
+                val screen = row.findRootCoordinates().size
+                val y = row.boundsInRoot().center.y - screen.height / 2f
+                inset.floatValue = rowInset(y, ROW_RING * minOf(screen.width, screen.height) / 2f)
+            }
+            .padding(horizontal = radius * (LIST_RADIUS - ROW_RING)),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (centered) Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { content() }
+        else {
+            Box(
+                Modifier.weight(1f).graphicsLayer { translationX = inset.floatValue }.padding(end = radius * ROW_TEXT_ROOM),
+                contentAlignment = Alignment.CenterStart,
+            ) { content() }
+            if (trailing != null) Box(Modifier.graphicsLayer { translationX = -inset.floatValue }) { trailing() }
+        }
+    }
+}
+
+/** What the two ends of a row at half the radius from the middle have come in by, together: kept free of text. */
+private const val ROW_TEXT_ROOM = 0.35f
+
+/** Half the shorter side of the app's window, which on a watch is the radius of the screen. */
+@Composable
+internal fun screenRadius(): Dp {
+    val window = LocalWindowInfo.current.containerSize
+    return with(LocalDensity.current) { (minOf(window.width, window.height) / 2f).toDp() }
+}
+
+/** Text of the given height, set the way the compass sets its readout: no font padding, so lines sit where they are put. */
+internal fun Density.instrumentText(size: Dp, weight: FontWeight = FontWeight.Normal, align: TextAlign = TextAlign.Start): TextStyle {
+    val sp = size.toSp()
+    return TextStyle(
+        fontSize = sp, lineHeight = sp * 1.15f, fontWeight = weight, textAlign = align,
+        platformStyle = PlatformTextStyle(includeFontPadding = false),
+        lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None),
+    )
 }
