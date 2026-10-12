@@ -3,6 +3,7 @@ package com.infinite8looper.compass.ui
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -24,20 +25,28 @@ fun CompassApp() {
             }
             composable("log") { LogScreen(vm, onDone = { nav.popBackStack() }) }
             composable("waypoints") {
-                WaypointsScreen(vm, onEdit = { nav.navigate("edit/$it") }, onSettings = { nav.navigate("settings") }, onLog = { nav.navigate("log") })
+                WaypointsScreen(vm, onEdit = { nav.navigate("edit/$it") { launchSingleTop = true } }, onSettings = { nav.navigate("settings") }, onLog = { nav.navigate("log") })
             }
             composable("edit/{id}") { entry ->
-                val id = entry.arguments?.getString("id")?.toLongOrNull() ?: return@composable
-                EditScreen(vm, id, onPickHue = { nav.navigate("hue/$id") }, onDone = { nav.popBackStack() })
+                val id = entry.arguments?.getString("id")?.toLongOrNull()
+                if (id == null) LeaveOnce { nav.popBackStack() }
+                else EditScreen(vm, id, onPickHue = { nav.navigate("hue/$id") { launchSingleTop = true } }, onDone = { nav.popBackStack() })
             }
             composable("hue/{id}") { entry ->
-                val id = entry.arguments?.getString("id")?.toLongOrNull() ?: return@composable
-                HueScreen(vm, id, onDone = { nav.popBackStack() })
+                val id = entry.arguments?.getString("id")?.toLongOrNull()
+                if (id == null) LeaveOnce { nav.popBackStack() }
+                else HueScreen(vm, id, onDone = { nav.popBackStack() })
             }
             composable("settings") { Pending("settings") }
             composable("calibrate") { Pending("calibrate") }
         }
     }
+}
+
+/** A route reached with an unusable id has nothing to show, so it goes back, once. */
+@Composable
+private fun LeaveOnce(leave: () -> Unit) {
+    LaunchedEffect(Unit) { leave() }
 }
 
 @Composable

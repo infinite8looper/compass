@@ -4,21 +4,18 @@ import android.hardware.SensorManager
 import android.os.SystemClock
 import android.view.KeyEvent
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.rotary.onRotaryScrollEvent
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.PlatformTextStyle
@@ -29,8 +26,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.wear.compose.foundation.requestFocusOnHierarchyActive
 import androidx.wear.compose.material3.Text
-import androidx.wear.input.WearableButtons
 import com.infinite8looper.compass.CompassViewModel
 import com.infinite8looper.compass.nav.*
 import kotlinx.coroutines.delay
@@ -79,17 +76,8 @@ fun CompassScreen(vm: CompassViewModel, onOpenList: () -> Unit, onLog: () -> Uni
         onDispose { view.keepScreenOn = false }
     }
 
-    // A watch may have no side button that apps can use; then logging is reached from the waypoints list.
-    val context = LocalContext.current
-    val hasSideButton = remember(context) {
-        // The lookup throws IllegalStateException on a watch without the wearable system library.
-        try { WearableButtons.getButtonInfo(context, KeyEvent.KEYCODE_STEM_1) != null } catch (e: IllegalStateException) { false }
-    }
-
-    val focus = remember { FocusRequester() }
     var crown by remember { mutableFloatStateOf(0f) }
     var armedStem by remember { mutableIntStateOf(KeyEvent.KEYCODE_UNKNOWN) }
-    LaunchedEffect(Unit) { focus.requestFocus() }
 
     BoxWithConstraints(
         Modifier.fillMaxSize().background(Color.Black)
@@ -113,7 +101,7 @@ fun CompassScreen(vm: CompassViewModel, onOpenList: () -> Unit, onLog: () -> Uni
                 }
                 true
             }
-            .focusRequester(focus).focusable()
+            .requestFocusOnHierarchyActive().focusable()
             .pointerInput(Unit) {
                 var total = 0f
                 detectVerticalDragGestures(
@@ -187,14 +175,10 @@ fun CompassScreen(vm: CompassViewModel, onOpenList: () -> Unit, onLog: () -> Uni
                     modifier = Modifier.slot(0.195f, 0.78f),
                 )
             }
-            nav.waypoints.isNotEmpty() ->
+            // With no waypoints saved, or before the first real state arrives, nothing is shown here: the screen
+            // is a plain compass, and a tap on the middle still opens the waypoints list.
+            nav.loaded && nav.waypoints.isNotEmpty() ->
                 Text("No target", color = Dim, style = bodyStyle, maxLines = 1, modifier = Modifier.slot(0.195f, 0.78f))
-            // The hint needs the warning's slot as well, so it waits while a warning is showing.
-            !vm.supported || holdFlat || lowAccuracy -> Unit
-            hasSideButton ->
-                Text("Press the side\nbutton to save\na waypoint", color = Dim, style = style(0.085f), modifier = Modifier.slot(0.285f, 0.8f))
-            else ->
-                Text("Open the list to\nsave a waypoint", color = Dim, style = style(0.085f), modifier = Modifier.slot(0.25f, 0.8f))
         }
     }
 }

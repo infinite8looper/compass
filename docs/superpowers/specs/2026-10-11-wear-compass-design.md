@@ -55,7 +55,7 @@ Fullscreen on a black background, following the mockup:
 Gestures on this screen:
 
 - Turning the crown, or swiping up or down, moves the focus through the targets, newest first. It changes which target's name and distance are shown, not which waypoints are targets.
-- Tapping the name area opens the waypoints list. With no targets it reads "No target"; with no waypoints saved it shows a hint to press the side button, or, on a watch that has no side button available to apps, to open the list.
+- Tapping the name area opens the waypoints list. With no targets it reads "No target"; with no waypoints saved the compass shows no waypoint text and works as a plain compass. Tapping the center still opens the waypoints list, which holds the item that logs a waypoint and the settings item.
 - The system's swipe-right gesture leaves the app, as usual.
 
 The heading is the direction of the watch's 12 o'clock edge projected onto the horizontal plane.

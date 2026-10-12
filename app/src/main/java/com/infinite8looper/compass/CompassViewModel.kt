@@ -21,9 +21,13 @@ import kotlinx.coroutines.launch
 data class NavUi(
     val targets: List<TargetUi>, val focused: TargetUi?, val units: Units, val north: NorthRef,
     val declination: Float?, val fixElapsedMs: Long?, val waypoints: List<Waypoint>,
+    /** Meters from the live fix to every waypoint, targets or not. Empty while no fix is live. */
+    val distances: Map<Long, Double> = emptyMap(),
+    /** False only for [EMPTY], the state before the stores have answered. */
+    val loaded: Boolean = true,
 ) {
     companion object {
-        val EMPTY = NavUi(emptyList(), null, Units.METRIC, NorthRef.TRUE, null, null, emptyList())
+        val EMPTY = NavUi(emptyList(), null, Units.METRIC, NorthRef.TRUE, null, null, emptyList(), emptyMap(), loaded = false)
     }
 }
 
@@ -58,7 +62,9 @@ class CompassViewModel(app: Application) : AndroidViewModel(app) {
         val known = f?.point ?: s.lastPosition
         val declination = known?.let { declinationAt(it, f?.altitudeM ?: s.lastAltitudeM ?: 0f, System.currentTimeMillis()) }
         val targets = buildTargets(ws.map { it.toInfo() }, s.focusedId, f?.point, declination, s.north)
-        NavUi(targets, targets.firstOrNull { it.focused }, s.units, s.north, declination, f?.elapsedMs, ws)
+        // Only a live fix gives distances; the saved last position is not presented as where the wearer is now.
+        val distances = f?.let { live -> ws.associate { it.id to distanceMeters(live.point, GeoPoint(it.lat, it.lon)) } }.orEmpty()
+        NavUi(targets, targets.firstOrNull { it.focused }, s.units, s.north, declination, f?.elapsedMs, ws, distances)
     }
         .catch { Log.w(TAG, "screen state stopped updating", it) }
         .stateIn(viewModelScope, sharing, NavUi.EMPTY)

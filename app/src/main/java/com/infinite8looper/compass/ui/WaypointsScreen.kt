@@ -24,7 +24,6 @@ import com.infinite8looper.compass.nav.formatDistance
 @Composable
 fun WaypointsScreen(vm: CompassViewModel, onEdit: (Long) -> Unit, onSettings: () -> Unit, onLog: () -> Unit) {
     val nav by vm.nav.collectAsStateWithLifecycle()
-    val distances = nav.targets.associate { it.id to it.distanceM }
     val listState = rememberScalingLazyListState()
     ScreenScaffold(scrollState = listState) { padding ->
         ScalingLazyColumn(state = listState, contentPadding = padding, modifier = Modifier.fillMaxSize()) {
@@ -46,7 +45,7 @@ fun WaypointsScreen(vm: CompassViewModel, onEdit: (Long) -> Unit, onSettings: ()
                         toggleContentDescription = "Set target",
                         onContainerClick = { onEdit(w.id) },
                         modifier = Modifier.fillMaxWidth(),
-                        secondaryLabel = distances[w.id]?.let { d -> { Text(formatDistance(d, nav.units)) } },
+                        secondaryLabel = nav.distances[w.id]?.let { d -> { Text(formatDistance(d, nav.units)) } },
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Box(Modifier.size(9.dp).background(waypointColor(w.hue), CircleShape))
