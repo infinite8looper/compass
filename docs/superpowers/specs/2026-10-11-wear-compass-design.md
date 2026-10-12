@@ -96,7 +96,7 @@ The compass screen also shows a small prompt that leads here when the reported a
 - Units: metric or imperial, defaulting from the watch's locale.
 - Tick feedback (default on): a faint vibration as the heading crosses the dial's minor tick marks.
 - Show coordinates (default off): shows the current GPS position on the compass screen. Turning it on asks for location access with the system dialog if it has not been granted; if the wearer denies it, the switch stays off and a line under it says "Needs location access". If access is already granted it turns on without asking, and turning it off never asks for anything.
-- Back up waypoints (default on): includes the saved waypoints and settings in the watch's system backup and in device-to-device transfer. See "Backup and transfer" under Behavior for what turning it off does and does not do.
+- Back up waypoints (default on): includes the saved waypoints and settings in the watch's system backup (when the watch can encrypt it) and in device-to-device transfer. See "Backup and transfer" under Behavior for what turning it off does and does not do.
 - Calibrate.
 - About: version and the MIT license.
 
@@ -135,11 +135,13 @@ If the permission is denied, the compass still works, and pressing the side butt
 
 ### Backup and transfer
 
-The saved waypoints (the `waypoints.db` database) and the settings (the DataStore file `settings.preferences_pb`) are included in the system's cloud backup and in device-to-device transfer, so they come back on a replacement or reset watch. Nothing else is included. The system does the backup and the transfer; the app has no network permission and makes no network requests of its own.
+The saved waypoints (the `waypoints.db` database) and the settings (the DataStore file `settings.preferences_pb`) are included in the system's cloud backup and in device-to-device transfer, so they come back on a replacement or reset watch. Nothing else is included; in particular the last known position is kept in a separate file that is not part of the backup. The system does the backup and the transfer; the app has no network permission and makes no network requests of its own.
 
-- The "Back up waypoints" switch in Settings controls both, and is on by default. The app's backup agent checks the switch each time the system asks for a backup, and with the switch off it hands over nothing.
-- If the app cannot read the switch at that moment, it hands over nothing.
-- Turning the switch off does not remove a backup that already exists in the system's backup storage by itself. On the emulator's local backup transport, a backup pass made with the switch off was rejected and the earlier backup was no longer restorable afterward (a restore brought back nothing); how the Google backup transport treats that case was not tested.
+- The "Back up waypoints" switch in Settings controls both, and is on by default. The app's backup agent checks the switch each time the system asks for a backup, and with the switch off it hands over nothing. A fresh install with no settings file yet counts as on.
+- The agent hands data over only when it reads that the switch is on. If the settings file cannot be read, or the read does not finish in 5 seconds, it hands over nothing. If the settings file is found damaged it is reset to defaults with the backup switch off, so the switch shows off until the wearer turns it on again.
+- Cloud backup of the app's data happens only when the watch can encrypt the backup end to end (a screen lock is set). Direct device-to-device transfer does not depend on that.
+- Device-to-device transfer goes through the same agent code as cloud backup, by design; it could not be exercised on the emulator.
+- What turning the switch off does to data already backed up was observed only on the emulator's local backup transport: a backup pass made with the switch off was rejected, and afterward a restore brought back nothing. Google's backup service was not tested, so what it does with an earlier backup in that case is not known.
 - Changing the switch tells the system the app's data has changed; with the switch back on, the data is included from the next backup pass.
 - A restore brings back the waypoints with their names, positions, colors and target flags, and the settings; the next waypoint logged continues the numbering instead of reusing a number.
 

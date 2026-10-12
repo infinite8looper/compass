@@ -5,9 +5,12 @@
   an index of the write-ahead log and SQLite rebuilds it. The backup agent writes the log into the database
   file just before a backup, so waypoints.db is complete by itself; the -wal file is listed in case a write lands
   between that step and the copy.
+
+  Cloud backup happens only when the device can encrypt the backup end to end (a screen lock is set).
+  Device-to-device transfer does not depend on that.
 -->
 <data-extraction-rules>
-    <cloud-backup>
+    <cloud-backup disableIfNoEncryptionCapabilities="true">
         <include domain="database" path="waypoints.db" />
         <include domain="database" path="waypoints.db-wal" />
         <include domain="file" path="datastore/settings.preferences_pb" />

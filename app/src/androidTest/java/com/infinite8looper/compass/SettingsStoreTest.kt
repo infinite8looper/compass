@@ -28,7 +28,7 @@ class SettingsStoreTest {
         val file = "test-settings-${UUID.randomUUID()}"
         val job = SupervisorJob()
         try { block(SettingsStore(ctx, file, CoroutineScope(Dispatchers.IO + job)), file) }
-        finally { job.cancelAndJoin(); ctx.preferencesDataStoreFile(file).delete() }
+        finally { job.cancelAndJoin(); ctx.preferencesDataStoreFile(file).delete(); ctx.preferencesDataStoreFile("$file-position").delete() }
     }
 
     @Test fun defaultsWhenNoFileExists() = withStore { s, _ ->
@@ -80,7 +80,8 @@ class SettingsStoreTest {
             val v = s.settings.first()
             assertEquals(NorthRef.TRUE, v.north); assertEquals(defaultUnits(Locale.getDefault()), v.units)
             assertNull(v.focusedId); assertNull(v.lastPosition); assertNull(v.lastAltitudeM)
-            assertTrue(v.tickFeedback); assertFalse(v.showCoordinates); assertTrue(v.backupEnabled)
+            // A damaged file leaves the privacy switch OFF, not at its fresh-install default of on.
+            assertTrue(v.tickFeedback); assertFalse(v.showCoordinates); assertFalse(v.backupEnabled)
             s.setNorth(NorthRef.MAGNETIC)
             assertEquals(NorthRef.MAGNETIC, s.settings.first().north)
         } finally { job.cancelAndJoin(); f.delete() }
@@ -103,5 +104,49 @@ class SettingsStoreTest {
             assertFalse(v.tickFeedback); assertTrue(v.showCoordinates); assertFalse(v.backupEnabled)
             assertEquals(3, second.nextWaypointNumber())
         } finally { job1.cancelAndJoin(); job2.cancelAndJoin(); ctx.preferencesDataStoreFile(file).delete() }
+    }
+
+    // What the backup agent asks: true only when the switch is positively on; false or null never allows a backup.
+    @Test fun agentReadIsEnabledWhenNoFileExists() = withStore { s, _ -> assertEquals(true, s.readBackupEnabled()) }
+    @Test fun agentReadFollowsTheStoredValue() = withStore { s, _ ->
+        s.setBackupEnabled(false); assertEquals(false, s.readBackupEnabled())
+        s.setBackupEnabled(true); assertEquals(true, s.readBackupEnabled())
+    }
+    @Test fun agentReadIsNotEnabledForACorruptFileAndTheSwitchStaysOff() = runBlocking {
+        val file = "test-settings-${UUID.randomUUID()}"
+        val f = ctx.preferencesDataStoreFile(file)
+        f.parentFile!!.mkdirs()
+        f.writeBytes(byteArrayOf(0x7f, 0x00, 0x13, -1, -2, 0x55, 0x01, 0x02, 0x03))
+        val job = SupervisorJob()
+        try {
+            val s = SettingsStore(ctx, file, CoroutineScope(Dispatchers.IO + job))
+            assertNotEquals(true, s.readBackupEnabled())
+            assertFalse(s.settings.first().backupEnabled)
+            s.setBackupEnabled(true)
+            assertEquals(true, s.readBackupEnabled())
+        } finally { job.cancelAndJoin(); f.delete() }
+    }
+    @Test fun agentReadIsNullWhenTheFileCannotBeRead() = runBlocking {
+        val file = "test-settings-${UUID.randomUUID()}"
+        val f = ctx.preferencesDataStoreFile(file)
+        val job1 = SupervisorJob(); val job2 = SupervisorJob()
+        try {
+            val first = SettingsStore(ctx, file, CoroutineScope(Dispatchers.IO + job1))
+            first.setBackupEnabled(true)
+            job1.cancelAndJoin()
+            assertTrue("could not make the file unreadable", f.setReadable(false, false))
+            assertFalse("the test setup did not make the file unreadable", f.canRead())
+            val second = SettingsStore(ctx, file, CoroutineScope(Dispatchers.IO + job2))
+            assertNull(second.readBackupEnabled())
+            // The settings flow does not claim the switch is on either.
+            assertFalse(second.settings.first().backupEnabled)
+        } finally { f.setReadable(true, false); job1.cancelAndJoin(); job2.cancelAndJoin(); f.delete() }
+    }
+    @Test fun lastPositionIsKeptOutOfTheSettingsFileThatIsBackedUp() = withStore { s, file ->
+        s.setLastPosition(GeoPoint(43.7022, -72.2896), 160f); s.setNorth(NorthRef.MAGNETIC)
+        assertEquals(43.7022, s.settings.first().lastPosition!!.lat, 1e-9)
+        val main = ctx.preferencesDataStoreFile(file).readBytes().toString(Charsets.ISO_8859_1)
+        assertTrue(main.contains("magnetic_north")); assertFalse(main.contains("last_lat")); assertFalse(main.contains("last_lon"))
+        assertTrue(ctx.preferencesDataStoreFile("$file-position").readBytes().toString(Charsets.ISO_8859_1).contains("last_lat"))
     }
 }

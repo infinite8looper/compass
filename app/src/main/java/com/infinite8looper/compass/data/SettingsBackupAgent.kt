@@ -6,7 +6,6 @@ import android.app.backup.BackupDataOutput
 import android.app.backup.FullBackupDataOutput
 import android.os.ParcelFileDescriptor
 import android.util.Log
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 
@@ -31,11 +30,14 @@ class SettingsBackupAgent : BackupAgent() {
         super.onFullBackup(data)
     }
 
-    /** Reads the stored setting through the app's own store (DataStore allows one instance per file). */
+    /**
+     * Reads the stored setting through the app's own store (DataStore allows one instance per file). Only a positive
+     * "on" allows a backup: an unreadable file, a damaged file (reset with the switch off) or a timeout all mean no.
+     */
     private fun backupEnabled(): Boolean = try {
-        runBlocking { withTimeout(5_000) { SettingsStore.get(applicationContext).settings.first().backupEnabled } }
+        runBlocking { withTimeout(5_000) { SettingsStore.get(applicationContext).readBackupEnabled() } } == true
     } catch (e: Exception) {
-        // If the wearer's choice cannot be read, assume they turned it off: backing up nothing is the safe error.
+        // The wearer's choice could not be read: backing up nothing is the safe error.
         Log.w(TAG, "could not read the backup setting; backing up nothing", e)
         false
     }
