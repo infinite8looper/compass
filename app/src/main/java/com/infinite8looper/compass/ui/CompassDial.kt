@@ -43,8 +43,8 @@ private const val FACING_WIDTH = 2f * MARKER_WIDTH
 private const val FACING_EXTRA_LENGTH = 0.012f
 // A crumb's tick: short, between the letters and the ring.
 private const val CRUMB_TICK_OUTER = 0.70f
-private const val CRUMB_TICK_INNER = 0.655f
-private const val CRUMB_TICK_WIDTH = 0.016f
+private const val CRUMB_TICK_INNER = 0.648f
+private const val CRUMB_TICK_WIDTH = 0.02f
 // The heading pointer's triangle. The focused target's arrow is the same triangle, turned to the target's bearing.
 private const val ARROW_TIP = 0.71f
 private const val ARROW_BASE = 0.625f
