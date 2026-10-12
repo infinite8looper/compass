@@ -63,12 +63,11 @@ data class RoleColors(val accent: Int, val north: Int, val error: Int)
  * never stands beside a north from the watch. A tertiary or an error color that is not used gives only its own
  * role the app's red.
  *
- * Then north is kept apart from the accent. If their hues are less than [MIN_HUE_APART] apart, north's hue is
- * turned to exactly that far from the accent's, the way round it already leans (clockwise when the two are the
- * same). North alone is also deepened: with less than [NORTH_MIN_SATURATION] it is given that much, at its own
- * hue. If turning or deepening left it too dark to read on black it is made brighter at the saturation it has,
- * and only a north that is still too dark at full brightness is mixed with white, which stops above
- * [NORTH_MIN_SATURATION] at every hue. So north always reads, is always that deep and is always that far round.
+ * Then north is kept apart from the accent and deep enough to find among the ticks: on the color that is
+ * returned, its hue is at least [MIN_HUE_APART] from the accent's, its saturation at least
+ * [NORTH_MIN_SATURATION], and it reads on black. A tertiary that already is all three is used as it is. Otherwise
+ * its hue is turned to that far from the accent's, the way round it already leans (clockwise when the two are the
+ * same), it is given that much saturation, and it is made brighter until it reads.
  *
  * Last, an error color that looks like the accent (less than [ERROR_MIN_HUE_APART] of hue and less than
  * [ERROR_MIN_SATURATION_APART] of saturation from it) gives its place to the app's red, so that deleting is not
@@ -78,7 +77,7 @@ data class RoleColors(val accent: Int, val north: Int, val error: Int)
 fun roleColors(scheme: WatchScheme?): RoleColors {
     val own = RoleColors(FALLBACK_ACCENT, FALLBACK_NORTH, FALLBACK_ERROR)
     val accent = scheme?.let { usable(it.primary) } ?: return own
-    val north = brightEnough(deepened(apartFrom(accent, usable(scheme.tertiary) ?: FALLBACK_NORTH)))
+    val north = northFor(accent, usable(scheme.tertiary) ?: FALLBACK_NORTH)
     val error = usable(scheme.error)?.takeUnless { looksLike(it, accent) } ?: FALLBACK_ERROR
     return RoleColors(accent, north, error)
 }
@@ -89,26 +88,6 @@ private fun usable(rgb: Int): Int? = readable(rgb and 0xFFFFFF).takeUnless { sat
 /** Whether [error] is too near [accent] in both hue and saturation to be told from it. */
 private fun looksLike(error: Int, accent: Int): Boolean =
     hueApart(error, accent) < ERROR_MIN_HUE_APART && abs(saturationOf(error) - saturationOf(accent)) < ERROR_MIN_SATURATION_APART
-
-/**
- * [north] if it has [MIN_CONTRAST] on black; otherwise the same hue and saturation at the least brightness that
- * has it; and if full brightness is not enough, that color mixed with white as far as needed.
- */
-private fun brightEnough(north: Int): Int {
-    if (contrastOnBlack(north) >= MIN_CONTRAST) return north
-    val hue = hueOf(north)
-    val saturation = saturationOf(north)
-    val full = fromHsv(hue, saturation, 1f)
-    if (contrastOnBlack(full) < MIN_CONTRAST) return readable(full)
-    // Brighter is always lighter, so the least brightness that is enough is found by halving.
-    var low = valueOf(north)
-    var high = 1f
-    repeat(16) {
-        val mid = (low + high) / 2f
-        if (contrastOnBlack(fromHsv(hue, saturation, mid)) >= MIN_CONTRAST) high = mid else low = mid
-    }
-    return fromHsv(hue, saturation, high)
-}
 
 /** [rgb] if it has [MIN_CONTRAST] on black, and otherwise the least mix of it with white that has. */
 private fun readable(rgb: Int): Int {
@@ -128,18 +107,47 @@ private fun towardWhite(rgb: Int, share: Double): Int {
     return (mix(rgb shr 16 and 0xFF) shl 16) or (mix(rgb shr 8 and 0xFF) shl 8) or mix(rgb and 0xFF)
 }
 
-/** [north], with its hue turned away from [accent]'s if the two are less than [MIN_HUE_APART] apart. */
-private fun apartFrom(accent: Int, north: Int): Int {
-    if (hueApart(accent, north) >= MIN_HUE_APART) return north
-    // Which way round north already is from the accent, as an angle from -180 to 180.
-    val lean = ((hueOf(north) - hueOf(accent) + 540f) % 360f) - 180f
-    val hue = (hueOf(accent) + (if (lean < 0f) -MIN_HUE_APART else MIN_HUE_APART) + 360f) % 360f
-    return fromHsv(hue, saturationOf(north), valueOf(north))
+/**
+ * North for a watch whose accent is [accent], made from [from]: [from] itself when it is at least [MIN_HUE_APART]
+ * from the accent, has at least [NORTH_MIN_SATURATION] and reads on black. Otherwise its hue is turned to
+ * [MIN_HUE_APART] from the accent's, the way round it already leans (clockwise when the two are the same), its
+ * saturation is raised to [NORTH_MIN_SATURATION], and it is made as much brighter as reading on black needs; a
+ * color that is too dark even at full brightness is made paler instead, which stops above [NORTH_MIN_SATURATION]
+ * at every hue.
+ *
+ * The three bounds are checked on the color that is returned, in whole red, green and blue: the hue, saturation
+ * and brightness aimed at are kept as fractions and never read back from a rounded color on the way, and where
+ * rounding leaves the result a hair under a bound, the aim is moved a little further and the color made again.
+ */
+private fun northFor(accent: Int, from: Int): Int {
+    fun holds(rgb: Int) =
+        hueApart(accent, rgb) >= MIN_HUE_APART && saturationOf(rgb) >= NORTH_MIN_SATURATION && contrastOnBlack(rgb) >= MIN_CONTRAST
+    if (holds(from)) return from
+    // Which way round north is from the accent, as an angle from -180 to 180, and how far.
+    val lean = ((hueOf(from) - hueOf(accent) + 540f) % 360f) - 180f
+    val way = if (lean < 0f) -1f else 1f
+    var apart = maxOf(abs(lean), MIN_HUE_APART)
+    var saturation = maxOf(saturationOf(from), NORTH_MIN_SATURATION)
+    var value = valueOf(from)
+    // Each pass moves one aim by less than a step of a color channel, so the color returned is close to the first that holds.
+    repeat(NORTH_PASSES) {
+        val rgb = fromHsv((hueOf(accent) + way * apart + 360f) % 360f, saturation, value)
+        when {
+            holds(rgb) -> return rgb
+            contrastOnBlack(rgb) < MIN_CONTRAST -> if (value < 1f) value = minOf(1f, value + NORTH_STEP) else saturation -= NORTH_STEP
+            saturationOf(rgb) < NORTH_MIN_SATURATION -> saturation = minOf(1f, saturation + NORTH_STEP)
+            else -> apart = minOf(180f, apart + NORTH_HUE_STEP)
+        }
+    }
+    // Not reached for any color: full brightness at the least saturation reads at every hue. The app's own red
+    // stands in, turned away from the accent if it has to be, should it ever be.
+    return if (hueApart(accent, FALLBACK_NORTH) >= MIN_HUE_APART) FALLBACK_NORTH else fromHsv((hueOf(accent) + 180f) % 360f, 1f, 1f).let(::readable)
 }
 
-/** [north] with at least [NORTH_MIN_SATURATION], at the same hue and brightness. */
-private fun deepened(north: Int): Int =
-    if (saturationOf(north) >= NORTH_MIN_SATURATION) north else fromHsv(hueOf(north), NORTH_MIN_SATURATION, valueOf(north))
+/** How far one pass moves the saturation or the brightness aimed at, and the hue: under one step of a color channel. */
+private const val NORTH_STEP = 1f / 512f
+private const val NORTH_HUE_STEP = 0.1f
+private const val NORTH_PASSES = 4_000
 
 /**
  * The contrast ratio of [rgb] with black, from 1 (black) to 21 (white), as the Web Content Accessibility

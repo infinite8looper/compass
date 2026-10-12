@@ -466,4 +466,28 @@ class CompassViewModelTest {
         assertFalse(headingSensorRegistered())
         assertEquals(accuracy, vm.lastAccuracy.value)
     }
+
+    @Test fun aRestartedSensorsReadingsKeepTheLastAccuracyAndField() = runBlocking {
+        val vm = viewModel()
+        withContext(Dispatchers.Main) { vm.setHeadingWanted(true) }
+        withTimeout(15_000) { vm.heading.first { it?.accuracy != null && it.fieldMicroTesla != null } }
+        withContext(Dispatchers.Main) { vm.setHeadingWanted(false) }
+        delay(3_500)
+        assertFalse(headingSensorRegistered())
+
+        // Every reading from the restart on: the first headings come before the magnetometer's first event, and
+        // without the carry-over they would have neither value.
+        val seen = CopyOnWriteArrayList<com.infinite8looper.compass.sensors.HeadingReading?>()
+        val collecting = launch { vm.heading.collect { seen += it } }
+        withContext(Dispatchers.Main) { vm.setHeadingWanted(true) }
+        delay(2_000)
+        collecting.cancel()
+        assertTrue(headingSensorRegistered())
+        assertTrue(seen.isNotEmpty())
+        for (reading in seen) {
+            assertNotNull("a reading without an accuracy among ${seen.size}", reading?.accuracy)
+            assertNotNull("a reading without a field strength among ${seen.size}", reading?.fieldMicroTesla)
+        }
+        withContext(Dispatchers.Main) { vm.setHeadingWanted(false) }
+    }
 }

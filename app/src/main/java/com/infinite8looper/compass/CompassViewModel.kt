@@ -65,11 +65,21 @@ class CompassViewModel(app: Application, val locationSource: LocationSource) : A
      */
     fun setHeadingWanted(wanted: Boolean) { headingOn.value = wanted }
 
-    /** The latest reading. While the sensor is not running this stays the last one it gave; null before the first. */
+    /**
+     * The latest reading. While the sensor is not running this stays the last one it gave; null before the first.
+     * The magnetometer's accuracy and field strength in a reading are the last it reported, across a stop and a
+     * start too ([carriedOver]): a restarted sensor's first readings do not say unknown.
+     */
     val heading: StateFlow<HeadingReading?> = headingOn
         .mapLatest { wanted -> if (!wanted) delay(HEADING_STOP_DELAY_MS); wanted }
         .distinctUntilChanged()
         .flatMapLatest { running -> if (running) headingSource.readings() else emptyFlow() }
+        .scan<HeadingReading, HeadingReading?>(null) { last, reading ->
+            val magnet = carriedOver(
+                last?.let { MagnetReport(it.accuracy, it.fieldMicroTesla) }, MagnetReport(reading.accuracy, reading.fieldMicroTesla),
+            )
+            reading.copy(accuracy = magnet.accuracy, fieldMicroTesla = magnet.fieldMicroTesla)
+        }
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     /**

@@ -178,7 +178,9 @@ fun CompassScreen(
         derivedStateOf {
             val status = logStatusState.value
             if (status == LogStatus.Idle) null
-            else statusText(status, navState.value.units).let { (text, detail) -> StatusLines(text, detail, logStatusColor(status)) }
+            else statusText(status, navState.value.units).let { (text, detail) ->
+                StatusLines(text, detail, logStatusColor(status), if (statusDetailContinues(status)) logStatusColor(status) else Dim)
+            }
         }
     }
 
@@ -351,7 +353,7 @@ fun CompassScreen(
 
         if (status != null) {
             StatusLine(status.text, status.color, bodyStyle, Modifier.slot(0.195f, 0.78f))
-            status.detail?.let { StatusLine(it, Dim, style(0.079f), Modifier.slot(STATUS_DETAIL_Y, 0.62f)) }
+            status.detail?.let { StatusLine(it, status.detailColor, style(0.079f), Modifier.slot(STATUS_DETAIL_Y, 0.62f)) }
         }
 
         // At the bottom of the readout's own circle, under the lowest line of text: the one place at 6 o'clock
@@ -360,8 +362,11 @@ fun CompassScreen(
     }
 }
 
-/** The logging status as the compass shows it: a line in the distance slot and, for some, a smaller one under it. */
-private data class StatusLines(val text: String, val detail: String?, val color: Color)
+/**
+ * The logging status as the compass shows it: a line in the distance slot and, for some, a smaller one under it,
+ * which is dim when it is a note and in the first line's color when it carries the first line's words on.
+ */
+private data class StatusLines(val text: String, val detail: String?, val color: Color, val detailColor: Color)
 
 /**
  * One line of the logging status, on the compass and on the waypoints screen. It starts at the size of [style] and, when the words are wider than the slot,

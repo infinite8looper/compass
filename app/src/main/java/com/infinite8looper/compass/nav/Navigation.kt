@@ -266,7 +266,8 @@ fun statusText(status: LogStatus, units: Units): Pair<String, String?> = when (s
     is LogStatus.Failed -> when (status.reason) {
         LogFailure.NO_FIX -> "No GPS fix" to "Try again outdoors"
         LogFailure.LOCATION_OFF -> "Location is off" to null
-        LogFailure.NO_PERMISSION -> "Needs access to precise location" to null
+        // One message, too long for a line of the status: the second line carries it on ([statusDetailContinues]).
+        LogFailure.NO_PERMISSION -> "Needs access to" to "precise location"
         LogFailure.SAVE_FAILED -> "Couldn't save" to null
     }
 }
@@ -279,3 +280,36 @@ fun logStatusShowMs(status: LogStatus): Long? = when (status) {
     is LogStatus.Failed -> LOG_FAILED_SHOW_MS
     LogStatus.Idle, is LogStatus.Saving -> null
 }
+
+/**
+ * Whether the second line of [statusText] carries on the words of the first, and so is drawn in the first line's
+ * color, rather than being a note under it, which is dim. That is so for the one message too long for a line.
+ */
+fun statusDetailContinues(status: LogStatus): Boolean = status is LogStatus.Failed && status.reason == LogFailure.NO_PERMISSION
+
+/** Which of the shared colors the calibration screen's ring is drawn in. */
+enum class RingRole { CONFIRM, ERROR }
+
+/** The calibration screen's ring: how much of the frame is filled, from 0 to 1, and in which color. */
+data class CalibrationRing(val fraction: Float, val role: RingRole)
+
+/**
+ * The calibration screen's ring for the magnetometer's reported [accuracy] and whether there is [interference].
+ * During interference the whole ring is in the error color, whatever the accuracy, known or not. Otherwise it is
+ * in the confirming color and as full as the accuracy makes it ([accuracyQuarters]).
+ */
+fun calibrationRing(accuracy: Int?, interference: Boolean): CalibrationRing =
+    if (interference) CalibrationRing(1f, RingRole.ERROR) else CalibrationRing(accuracyQuarters(accuracy) / 4f, RingRole.CONFIRM)
+
+/** What the magnetometer has said: its accuracy level and its field strength, each null while it has not said. */
+data class MagnetReport(val accuracy: Int?, val fieldMicroTesla: Float?)
+
+/**
+ * What to show of the magnetometer when a reading carries [now] and the reading before it showed [last]. The
+ * heading sensor is stopped and started as the screens change, and after a start its first headings come before
+ * the magnetometer's first event, with nothing in them. Each of the two values is therefore kept as it last was
+ * until the sensor reports it anew, and replaced by the first new report, so nothing blinks to unknown at a start
+ * and nothing from before the stop outlasts the first report after it.
+ */
+fun carriedOver(last: MagnetReport?, now: MagnetReport): MagnetReport =
+    MagnetReport(now.accuracy ?: last?.accuracy, now.fieldMicroTesla ?: last?.fieldMicroTesla)

@@ -162,6 +162,66 @@ class NavigationTest {
         assertTrue(isInterference(0f)); assertTrue(isInterference(400f))
         assertFalse(isInterference(Float.NaN))
     }
+    @Test fun theSecondLineCarriesOnTheFirstOnlyForTheMessageThatIsBrokenInTwo() {
+        // The owner's words, whole, on two lines.
+        val (first, second) = statusText(LogStatus.Failed(LogFailure.NO_PERMISSION), Units.METRIC)
+        assertEquals("Needs access to precise location", "$first $second")
+        assertTrue(statusDetailContinues(LogStatus.Failed(LogFailure.NO_PERMISSION)))
+        // Everywhere else the second line is a note under the status, or there is none.
+        assertFalse(statusDetailContinues(LogStatus.Failed(LogFailure.NO_FIX)))
+        assertFalse(statusDetailContinues(LogStatus.Failed(LogFailure.LOCATION_OFF)))
+        assertFalse(statusDetailContinues(LogStatus.Failed(LogFailure.SAVE_FAILED)))
+        assertFalse(statusDetailContinues(LogStatus.Saving(12f)))
+        assertFalse(statusDetailContinues(LogStatus.Saving(null)))
+        assertFalse(statusDetailContinues(LogStatus.Saved("Waypoint 5", 5f, 100_000)))
+        assertFalse(statusDetailContinues(LogStatus.Idle))
+    }
+    @Test fun withoutInterferenceTheRingIsGreenAndAsFullAsTheAccuracy() {
+        assertEquals(CalibrationRing(0f, RingRole.CONFIRM), calibrationRing(null, interference = false))
+        assertEquals(CalibrationRing(0f, RingRole.CONFIRM), calibrationRing(0, interference = false))
+        assertEquals(CalibrationRing(0.25f, RingRole.CONFIRM), calibrationRing(1, interference = false))
+        assertEquals(CalibrationRing(0.75f, RingRole.CONFIRM), calibrationRing(2, interference = false))
+        assertEquals(CalibrationRing(1f, RingRole.CONFIRM), calibrationRing(3, interference = false))
+        // A level that is not one of the four the sensor defines fills nothing.
+        assertEquals(CalibrationRing(0f, RingRole.CONFIRM), calibrationRing(7, interference = false))
+        assertEquals(CalibrationRing(0f, RingRole.CONFIRM), calibrationRing(-1, interference = false))
+    }
+    @Test fun duringInterferenceTheWholeRingIsInTheErrorColorAtEveryAccuracy() {
+        for (accuracy in listOf(null, 0, 1, 2, 3, 7, -1)) {
+            assertEquals("accuracy $accuracy", CalibrationRing(1f, RingRole.ERROR), calibrationRing(accuracy, interference = true))
+        }
+    }
+    @Test fun whenInterferenceEndsTheRingIsWhatTheAccuracyAloneGives() {
+        for (accuracy in listOf(null, 0, 1, 2, 3)) {
+            assertEquals(accuracyQuarters(accuracy) / 4f, calibrationRing(accuracy, interference = false).fraction, 0f)
+            assertEquals(RingRole.CONFIRM, calibrationRing(accuracy, interference = false).role)
+        }
+    }
+    @Test fun aSensorThatHasJustStartedKeepsWhatTheMagnetometerLastSaidUntilItSaysSomethingNew() {
+        val before = MagnetReport(accuracy = 3, fieldMicroTesla = 49f)
+        // The first headings after a start come before the magnetometer's first event.
+        assertEquals(before, carriedOver(before, MagnetReport(null, null)))
+        // Each of the two is replaced when it is reported, and not before.
+        assertEquals(MagnetReport(1, 49f), carriedOver(before, MagnetReport(1, null)))
+        assertEquals(MagnetReport(3, 52f), carriedOver(before, MagnetReport(null, 52f)))
+        assertEquals(MagnetReport(2, 31f), carriedOver(before, MagnetReport(2, 31f)))
+        // Unreliable is a report like any other.
+        assertEquals(MagnetReport(0, 49f), carriedOver(before, MagnetReport(0, null)))
+    }
+    @Test fun beforeAnyReportThereIsNothingToKeep() {
+        assertEquals(MagnetReport(null, null), carriedOver(null, MagnetReport(null, null)))
+        assertEquals(MagnetReport(2, null), carriedOver(null, MagnetReport(2, null)))
+        assertEquals(MagnetReport(2, 40f), carriedOver(MagnetReport(null, null), MagnetReport(2, 40f)))
+    }
+    @Test fun interferenceFromBeforeAStopLastsOnlyUntilTheFirstNewFieldStrength() {
+        val before = MagnetReport(accuracy = 3, fieldMicroTesla = 148f)
+        val held = carriedOver(before, MagnetReport(null, null))
+        assertTrue(isInterference(held.fieldMicroTesla))
+        val first = carriedOver(held, MagnetReport(3, 49f))
+        assertFalse(isInterference(first.fieldMicroTesla))
+        // And the other way: a strong field is shown from its first report.
+        assertTrue(isInterference(carriedOver(MagnetReport(3, 49f), MagnetReport(null, 148f)).fieldMicroTesla))
+    }
     @Test fun statusTextGivesTheTwoLinesForEveryState() {
         assertEquals("" to null, statusText(LogStatus.Idle, Units.METRIC))
         assertEquals("Saving…" to null, statusText(LogStatus.Saving(null), Units.METRIC))
@@ -169,7 +229,7 @@ class NavigationTest {
         assertEquals("Saved Waypoint 5" to "±5 m", statusText(LogStatus.Saved("Waypoint 5", 5f, 100_000), Units.METRIC))
         assertEquals("No GPS fix" to "Try again outdoors", statusText(LogStatus.Failed(LogFailure.NO_FIX), Units.METRIC))
         assertEquals("Location is off" to null, statusText(LogStatus.Failed(LogFailure.LOCATION_OFF), Units.METRIC))
-        assertEquals("Needs access to precise location" to null, statusText(LogStatus.Failed(LogFailure.NO_PERMISSION), Units.METRIC))
+        assertEquals("Needs access to" to "precise location", statusText(LogStatus.Failed(LogFailure.NO_PERMISSION), Units.METRIC))
         assertEquals("Couldn't save" to null, statusText(LogStatus.Failed(LogFailure.SAVE_FAILED), Units.METRIC))
     }
     @Test fun statusTextGivesTheAccuracyInTheChosenUnits() {

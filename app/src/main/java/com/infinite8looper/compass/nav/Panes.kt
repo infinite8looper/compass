@@ -117,3 +117,11 @@ fun topScreen(route: String?): TopScreen = when (route) {
  */
 fun headingWanted(top: TopScreen, compassOnScreen: Boolean, appOnScreen: Boolean): Boolean =
     appOnScreen && (top == TopScreen.CALIBRATION || (top == TopScreen.PANES && compassOnScreen))
+
+/**
+ * What the wearer has of a page whose place in the row gives it [view], when [top] is the screen on top. Under a
+ * screen opened from a row a page is hidden, however it stands in the row: the navigation host can draw the
+ * three screens behind such a screen while it is swiped aside, and a page that is only a picture there takes no
+ * button, runs no frame loop and gives no tap.
+ */
+fun pageViewUnder(top: TopScreen, view: PaneView): PaneView = if (top == TopScreen.PANES) view else PaneView.HIDDEN

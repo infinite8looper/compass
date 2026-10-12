@@ -34,7 +34,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.wear.compose.material3.Text
 import com.infinite8looper.compass.CompassViewModel
 import com.infinite8looper.compass.nav.accuracyLabel
-import com.infinite8looper.compass.nav.accuracyQuarters
+import com.infinite8looper.compass.nav.RingRole
+import com.infinite8looper.compass.nav.calibrationRing
 import com.infinite8looper.compass.nav.isInterference
 import com.infinite8looper.compass.sensors.HeadingReading
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -54,22 +55,25 @@ private fun HeadingReading?.toView() = CalibrationView(
 /**
  * Calibration, opened from the settings or from the compass's prompt, in fractions of the screen's radius from the
  * top: what to do, the figure 8 to follow, the accuracy the magnetometer reports as the large word, and the field
- * strength small under it. The frame fills in the confirming green by quarters as the accuracy improves
- * ([accuracyQuarters]). A field outside what the earth's can be ([isInterference]) is reported under the rest, in
- * the error color, and for as long as it lasts the frame's fill is in the error color too.
+ * strength small under it. The frame fills in the confirming green by quarters as the accuracy improves. A field
+ * outside what the earth's can be ([isInterference]) is reported under the rest, in the error color, and for as
+ * long as it lasts the whole frame is filled in the error color, whatever the accuracy ([calibrationRing]).
  *
  * Everything stands where it is whatever is shown: the warning has its own place and comes and goes there.
- * A right swipe and Back leave, which is the navigation host's doing. The crown and a side button do nothing here.
+ * A right swipe and Back leave, which is done where the screen is put into the navigation host (ui/CompassApp.kt).
+ * The crown and a side button do nothing here.
  */
 @Composable
 fun CalibrationScreen(vm: CompassViewModel) {
     // Collect only the displayed values, so the screen recomposes when one of them changes, not on every reading.
+    // It opens on what the sensor last said, which the view model keeps while the sensor is stopped.
     val shown by remember(vm) { vm.heading.map { it.toView() }.distinctUntilChanged() }
-        .collectAsStateWithLifecycle(CalibrationView(null, null, false))
+        .collectAsStateWithLifecycle(remember(vm) { vm.heading.value.toView() })
     // The two that move are read only where they are drawn.
     val phase = rememberInfiniteTransition(label = "figure8")
         .animateFloat(0f, (2 * PI).toFloat(), infiniteRepeatable(tween(2600, easing = LinearEasing)), label = "t")
-    val filled = animateFloatAsState(accuracyQuarters(shown.accuracy) / 4f, tween(FILL_MS), label = "accuracy")
+    val ring = calibrationRing(shown.accuracy, shown.interference)
+    val filled = animateFloatAsState(ring.fraction, tween(FILL_MS), label = "ring")
 
     BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
         val r = minOf(maxWidth, maxHeight) / 2
@@ -78,8 +82,8 @@ fun CalibrationScreen(vm: CompassViewModel) {
         val wordStyle = remember(r, density) { density.instrumentText(r * 0.24f, FontWeight.Light, TextAlign.Center) }
         val warningStyle = remember(r, density) { density.instrumentText(r * 0.085f, align = TextAlign.Center) }
 
-        // The level and the interference change about once a second at most, and the color with them.
-        FrameRing(fill = { filled.value }, fillColor = if (shown.interference) ErrorColor else ConfirmColor, fillInner = FILL_INNER)
+        // The level and the interference change about once a second at most, and the ring with them.
+        FrameRing(fill = { filled.value }, fillColor = if (ring.role == RingRole.ERROR) ErrorColor else ConfirmColor, fillInner = FILL_INNER)
 
         Text(
             "Move your wrist in a figure 8", color = Dim, style = smallStyle, maxLines = 2,

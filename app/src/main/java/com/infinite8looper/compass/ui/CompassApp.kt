@@ -40,10 +40,12 @@ import com.infinite8looper.compass.nav.PANES_ROUTE
 import com.infinite8looper.compass.nav.PANE_START_PAGE
 import com.infinite8looper.compass.nav.Pane
 import com.infinite8looper.compass.nav.PaneView
+import com.infinite8looper.compass.nav.TopScreen
 import com.infinite8looper.compass.nav.backPage
 import com.infinite8looper.compass.nav.headingWanted
 import com.infinite8looper.compass.nav.pageToward
 import com.infinite8looper.compass.nav.pageView
+import com.infinite8looper.compass.nav.pageViewUnder
 import com.infinite8looper.compass.nav.paneOnScreen
 import com.infinite8looper.compass.nav.paneOf
 import com.infinite8looper.compass.nav.topScreen
@@ -92,7 +94,7 @@ fun CompassApp() {
         SwipeDismissableNavHost(navController = nav, startDestination = PANES_ROUTE) {
             composable(PANES_ROUTE) {
                 Panes(
-                    vm, panes, onLogHere = logHere, onEdit = { nav.navigate("edit/$it") { launchSingleTop = true } },
+                    vm, panes, top = { topScreen(route?.destination?.route) }, onLogHere = logHere, onEdit = { nav.navigate("edit/$it") { launchSingleTop = true } },
                     onCalibrate = { nav.navigate(CALIBRATE_ROUTE) { launchSingleTop = true } },
                 )
             }
@@ -119,7 +121,9 @@ fun CompassApp() {
  * that screen and no other gets the focus, and with it the crown and the side buttons.
  */
 @Composable
-private fun Panes(vm: CompassViewModel, panes: PagerState, onLogHere: () -> Unit, onEdit: (Long) -> Unit, onCalibrate: () -> Unit) {
+private fun Panes(
+    vm: CompassViewModel, panes: PagerState, top: () -> TopScreen, onLogHere: () -> Unit, onEdit: (Long) -> Unit, onCalibrate: () -> Unit,
+) {
     val scope = rememberCoroutineScope()
     // A move the app makes itself goes to the nearest page that shows the screen, and slides there.
     val show: (Pane) -> Unit = remember(panes, scope) {
@@ -151,9 +155,13 @@ private fun Panes(vm: CompassViewModel, panes: PagerState, onLogHere: () -> Unit
 
     HorizontalPager(state = panes, beyondViewportPageCount = 1, gestureInclusion = EveryTouchPages) { page ->
         // How much of this page the wearer has. The pager can have two pages of one pane built at a time (the one
-        // on screen and one it has prepared further along the row), so each page is told about itself.
-        val view: () -> PaneView = remember(panes, page) {
-            val state = derivedStateOf { pageView(page, panes.currentPage, panes.currentPageOffsetFraction, panes.targetPage, panes.isScrollInProgress) }
+        // on screen and one it has prepared further along the row), so each page is told about itself. The
+        // navigation host can also draw the three screens behind a screen opened from a row, while that screen is
+        // swiped aside: there every page is hidden, a picture that does nothing ([pageViewUnder]).
+        val view: () -> PaneView = remember(panes, page, top) {
+            val state = derivedStateOf {
+                pageViewUnder(top(), pageView(page, panes.currentPage, panes.currentPageOffsetFraction, panes.targetPage, panes.isScrollInProgress))
+            }
             return@remember { state.value }
         }
         when (paneOf(page)) {

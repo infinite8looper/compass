@@ -280,4 +280,19 @@ class PanesTest {
         // Before the navigation host has a destination the three screens are what it starts on.
         assertEquals(TopScreen.PANES, topScreen(null))
     }
+
+    // A page under a screen opened from a row
+
+    @Test fun aPageIsWhatItsPlaceInTheRowSaysWhileTheThreeScreensAreOnTop() {
+        for (view in PaneView.entries) assertEquals(view, pageViewUnder(TopScreen.PANES, view))
+    }
+    @Test fun aPageUnderEditOrCalibrationIsHiddenHoweverItStandsInTheRow() {
+        for (top in listOf(TopScreen.EDIT, TopScreen.CALIBRATION)) {
+            for (view in PaneView.entries) assertEquals("$top $view", PaneView.HIDDEN, pageViewUnder(top, view))
+        }
+        // The page the row rests on, which alone would be in view.
+        assertEquals(PaneView.IN_VIEW, pageView(start, start, 0f, start, false))
+        assertEquals(PaneView.HIDDEN, pageViewUnder(TopScreen.EDIT, pageView(start, start, 0f, start, false)))
+        assertEquals(PaneView.HIDDEN, pageViewUnder(TopScreen.CALIBRATION, pageView(start, start, 0f, start, false)))
+    }
 }

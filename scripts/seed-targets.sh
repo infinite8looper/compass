@@ -57,7 +57,13 @@ fi
 $ADB shell am force-stop $PKG
 sleep 1
 if $ADB shell "command -v sqlite3" 2>/dev/null | grep -q sqlite3; then
-  count=$($ADB shell "run-as $PKG sqlite3 databases/waypoints.db \"$sql SELECT count(*) FROM waypoints;\"" | tr -d '\r')
+  # One transaction, stopped at the first error: a statement that fails leaves the device's rows as they were.
+  out=$($ADB shell "run-as $PKG sqlite3 -bail databases/waypoints.db \"BEGIN; $sql SELECT count(*) FROM waypoints; COMMIT;\"; echo status=\$?" 2>&1 | tr -d '\r')
+  if [[ "$out" != *$'\n'status=0 && "$out" != status=0 ]] || [[ "$(echo "$out" | sed '$d' | tail -1)" != <-> ]]; then
+    echo "the device's sqlite3 could not change the waypoints; they are as they were: $(echo "$out" | head -2 | tr '\n' ' ')" >&2
+    exit 1
+  fi
+  count=$(echo "$out" | sed '$d' | tail -1)
 else
   # An image without sqlite3 (the signed Wear OS 6 and 7 images): the database file, with its write-ahead log if
   # it has one, is copied to this machine, changed here, and copied back whole.
@@ -71,10 +77,12 @@ else
   if [ -s "$work/waypoints.db" ]; then
     # The device's database is replaced only by a copy this machine's sqlite3 changed without an error and can
     # count the rows of. Anything else stops here and leaves the device's files as they were.
-    if ! count=$(sqlite3 -bail "$work/waypoints.db" "PRAGMA wal_checkpoint(TRUNCATE); $sql PRAGMA journal_mode=DELETE; SELECT count(*) FROM waypoints;" 2>&1 | tail -1) || [[ "$count" != <-> ]]; then
-      echo "this machine's sqlite3 could not change the copy; the device's database is untouched: $count" >&2
+    # The status tested is sqlite3's own: its output goes to a file, not through a pipe.
+    if ! sqlite3 -bail "$work/waypoints.db" "PRAGMA wal_checkpoint(TRUNCATE); $sql PRAGMA journal_mode=DELETE; SELECT count(*) FROM waypoints;" > "$work/out" 2>&1 || [[ "$(tail -1 "$work/out")" != <-> ]]; then
+      echo "this machine's sqlite3 could not change the copy; the device's database is untouched: $(grep -m1 -i error "$work/out" || tail -1 "$work/out")" >&2
       exit 1
     fi
+    count=$(tail -1 "$work/out")
     $ADB push "$work/waypoints.db" /data/local/tmp/seed-waypoints.db > /dev/null 2>&1 &&
       $ADB shell "run-as $PKG sh -c 'cp /data/local/tmp/seed-waypoints.db databases/waypoints.db && rm -f databases/waypoints.db-wal databases/waypoints.db-shm'" || count="could not copy the database back"
   fi

@@ -57,6 +57,7 @@ import com.infinite8looper.compass.nav.headerTapSetsAll
 import com.infinite8looper.compass.nav.headerText
 import com.infinite8looper.compass.nav.isStale
 import com.infinite8looper.compass.nav.scrollArc
+import com.infinite8looper.compass.nav.statusDetailContinues
 import com.infinite8looper.compass.nav.statusText
 import kotlinx.coroutines.delay
 
@@ -194,7 +195,11 @@ fun WaypointsScreen(vm: CompassViewModel, paneView: () -> PaneView, onEdit: (Lon
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 StatusLine(words, logStatusColor(current), headerStyle, Modifier.width(r * STATUS_WIDTH))
-                if (detail != null) Text(detail, color = Dim, style = detailStyle, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                // A note under the status is dim; a second line that carries the status's words on has its color.
+                if (detail != null) Text(
+                    detail, color = if (statusDetailContinues(current)) logStatusColor(current) else Dim, style = detailStyle,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
             }
         }
       }

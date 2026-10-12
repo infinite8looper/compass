@@ -198,7 +198,9 @@ class WatchColorsTest {
     @Test fun aNorthThatIsDeepEnoughIsNotTouched() {
         assertEquals(red, roles(paleBlue, red).north)
         assertEquals(0xFF7AA8, roles(paleBlue, 0xFF7AA8).north)
-        assertEquals(0xFF8080, roles(paleBlue, 0xFF8080).north)   // exactly the least
+        assertEquals(0xFF7F7F, roles(paleBlue, 0xFF7F7F).north)   // 128 of 255: the first whole value at or over the least
+        // 127 of 255 is 0.498, a hair under, and is moved the one step.
+        assertEquals(0xFF7F7F, roles(paleBlue, 0xFF8080).north)
     }
     @Test fun theAccentAndTheErrorColorAreNotDeepened() {
         val roles = roles(paleBlue, paleRed, error = paleRed)
@@ -299,12 +301,11 @@ class WatchColorsTest {
         // A green pointer and a tertiary that is nearly black: lightened, turned and deepened it was too dark, and
         // mixing it with white once more left it at 0.33.
         val north = roles(0x35BF99, 0x18072E).north
-        assertTrue("%06X".format(north), saturationOf(north) >= NORTH_MIN_SATURATION - 0.01f)
+        assertTrue("%06X".format(north), saturationOf(north) >= NORTH_MIN_SATURATION)
         assertTrue(contrastOnBlack(north) >= MIN_CONTRAST)
-        assertTrue(hueApart(roles(0x35BF99, 0x18072E).accent, north) >= MIN_HUE_APART - 1.5f)
+        assertTrue(hueApart(roles(0x35BF99, 0x18072E).accent, north) >= MIN_HUE_APART)
     }
     @Test fun everySchemeGivesANorthThatReadsIsDeepAndIsApartFromThePointer() {
-        // The least saturation is met to within 0.01, which is what whole channel values can hold at low brightness.
         val channel = listOf(0x00, 0x18, 0x35, 0x6A, 0x99, 0xBF, 0xFF)
         val colors = channel.flatMap { r -> channel.flatMap { g -> channel.map { b -> (r shl 16) or (g shl 8) or b } } }
         for (primary in listOf(0x35BF99, paleBlue, 0xFFBEC7, 0x000080, 0xFFD000, blue, 0x808080)) {
@@ -313,10 +314,36 @@ class WatchColorsTest {
                 val what = "%06X %06X -> %s".format(primary, tertiary, roles)
                 assertTrue(what, contrastOnBlack(roles.north) >= MIN_CONTRAST)
                 assertTrue(what, contrastOnBlack(roles.accent) >= MIN_CONTRAST)
-                assertTrue(what, saturationOf(roles.north) >= NORTH_MIN_SATURATION - 0.01f)
-                // Whole channel values move a dark color's hue by up to about two degrees.
-                assertTrue(what, hueApart(roles.accent, roles.north) >= MIN_HUE_APART - 3f)
+                assertTrue(what, saturationOf(roles.north) >= NORTH_MIN_SATURATION)
+                assertTrue(what, hueApart(roles.accent, roles.north) >= MIN_HUE_APART)
             }
         }
+    }
+    @Test fun theBoundsHoldOnTheColorThatIsReturnedForTheReviewersWorstCase() {
+        // Found by the reviewer: the saturation and hue were read from a rounded dark color on the way, and the
+        // color returned was 657C3F at 0.4919.
+        val roles = roles(0xD51589, 0x717964)
+        val what = "%06X".format(roles.north)
+        assertTrue(what, saturationOf(roles.north) >= NORTH_MIN_SATURATION)
+        assertTrue(what, hueApart(roles.accent, roles.north) >= MIN_HUE_APART)
+        assertTrue(what, contrastOnBlack(roles.north) >= MIN_CONTRAST)
+    }
+    @Test fun theBoundsHoldExactlyOnTheReturnedColorsOfManyRandomSchemes() {
+        val random = java.util.Random(20261012L)
+        var used = 0
+        repeat(150_000) {
+            val scheme = WatchScheme(random.nextInt(0x1000000), random.nextInt(0x1000000), random.nextInt(0x1000000))
+            val roles = roleColors(scheme)
+            val what = "%06X %06X %06X -> %06X %06X %06X".format(scheme.primary, scheme.tertiary, scheme.error, roles.accent, roles.north, roles.error)
+            assertTrue(what, contrastOnBlack(roles.accent) >= MIN_CONTRAST)
+            assertTrue(what, contrastOnBlack(roles.north) >= MIN_CONTRAST)
+            assertTrue(what, contrastOnBlack(roles.error) >= MIN_CONTRAST)
+            assertTrue(what, saturationOf(roles.accent) >= MIN_SATURATION)
+            assertTrue(what, saturationOf(roles.north) >= NORTH_MIN_SATURATION)
+            assertTrue(what, hueApart(roles.accent, roles.north) >= MIN_HUE_APART)
+            if (roles != roleColors(null)) used++
+        }
+        // Most random schemes are used, so the bounds were tried on colors from schemes and not only on the app's own.
+        assertTrue("$used", used > 100_000)
     }
 }
