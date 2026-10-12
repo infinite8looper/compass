@@ -1,9 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Only the waypoint database and the settings file are backed up or transferred; everything else is left out
-  because an <include> turns off the default of including all app data. The write-ahead log (-wal) is not listed, but on the
-  emulator the system copied it next to the database anyway; the backup agent writes the log into waypoints.db
-  and empties it just before a backup, so the copy is an empty file and the main file is complete by itself.
+  because an <include> turns off the default of including all app data.
+
+  The system also copies the journal and log files that lie next to a listed database (-journal, -wal), listed or
+  not. The app sets its database to keep no write-ahead log and to empty its journal after every change, and the
+  backup agent hands nothing over in a pass where one of those files holds any bytes.
 
   Cloud backup happens only when the device can encrypt the backup end to end (a screen lock is set).
   Device-to-device transfer does not depend on that.
