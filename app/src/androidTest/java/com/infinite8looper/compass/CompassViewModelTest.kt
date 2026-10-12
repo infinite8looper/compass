@@ -580,7 +580,8 @@ class CompassViewModelTest {
         withTimeout(10_000) { vm.trailDoublePress().join() }
         assertEquals(4, trailOf(vm) { it.mode == TrailMode.LAYING && it.count == 4 }.count)
         withTimeout(10_000) { vm.clearTrail().join() }
-        assertEquals(TrailUi(), trailOf(vm) { it.count == 0 })
+        // The screen state follows the two stores, the crumbs first.
+        assertEquals(TrailUi(), trailOf(vm) { it.count == 0 && it.mode == TrailMode.OFF })
         assertTrue(crumbDao.all().isEmpty())
         assertEquals(TrailMode.OFF, settings.settings.first().trailMode)
         assertEquals(listOf(w.id), dao.observeAll().first().map { it.id })
@@ -750,6 +751,7 @@ class CompassViewModelTest {
             // `Trail complete` is shown by the compass, which is in view, for about two seconds, and then cleared.
             withTimeout(10_000) { while (LogStatus.TrailComplete !in statuses) delay(10) }
             val shownFor = msUntilIdle(vm)
+            withTimeout(10_000) { while (statuses.last() != LogStatus.Idle) delay(10) }
             watching.cancel()
             assertTrue("shown for $shownFor ms", shownFor in 1_000..4_500)
             assertEquals(listOf(LogStatus.Idle, LogStatus.TrailComplete, LogStatus.Idle), statuses.toList())
@@ -776,6 +778,7 @@ class CompassViewModelTest {
             withTimeout(10_000) { while (settings.settings.first().trailMode != TrailMode.OFF) delay(10) }
             withTimeout(10_000) { while (LogStatus.TrailComplete !in statuses) delay(10) }
             val shownFor = msUntilIdle(vm)
+            withTimeout(10_000) { while (statuses.last() != LogStatus.Idle) delay(10) }
             watching.cancel()
             assertTrue("shown for $shownFor ms", shownFor in 1_000..4_500)
             assertEquals(listOf(LogStatus.Idle, LogStatus.TrailComplete, LogStatus.Idle), statuses.toList())
