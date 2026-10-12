@@ -320,8 +320,9 @@ class DeletedWaypointTest {
     }
 
     /**
-     * What follows from the test above: with such a file there, the backup agent opens the database instead of
-     * copying blindly. The left-behind bytes must then be gone before the copy is allowed to run.
+     * Guards what happens once a database is opened where a journal or log was left without a database file: the
+     * left-behind bytes must be gone by the time a copy is allowed to run. This holds with or without the check in
+     * the test above; it is the path a backup takes now that such a file no longer allows a copy without opening.
      */
     @Test fun journalOrLogLeftWithoutADatabaseFileDoesNotReachACopy() = runBlocking {
         val file = ctx.getDatabasePath(name)

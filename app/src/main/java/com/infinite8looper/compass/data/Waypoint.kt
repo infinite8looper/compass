@@ -155,8 +155,11 @@ abstract class WaypointDatabase : RoomDatabase() {
                         // The platform runs this on every connection it has for the database and on every one it
                         // opens later, so a replaced or added connection overwrites deleted content too. Android 13,
                         // 14 and 15 all accept a pragma that answers with a row here. A statement that failed would
-                        // not be reported by this call (the platform logs it and closes the connection), so there
-                        // is nothing to catch: [copyIfSettled] reads the setting back before any copy.
+                        // not be reported by this call: the platform logs it, closes the connection and keeps the
+                        // statement, so every later use of the database would throw. There is nothing to catch
+                        // here, and the database would not work at all; a backup pass would then hand over nothing,
+                        // through the backup agent's handling of that exception. Separately, [copyIfSettled] reads
+                        // the setting back before any copy.
                         db.execPerConnectionSQL("PRAGMA secure_delete = ON", null)
                     }
                 })
@@ -178,7 +181,8 @@ abstract class WaypointDatabase : RoomDatabase() {
 
         /**
          * True when anything of a database that a backup would copy is at [databaseFile]: the file itself, or a
-         * journal or log with bytes in it that was left behind without one.
+         * journal or log with bytes in it that was left behind without one. An empty journal or log and a "-shm"
+         * file do not count, since neither holds rows.
          */
         fun hasFiles(databaseFile: File): Boolean = databaseFile.exists() || hasJournalData(databaseFile)
 

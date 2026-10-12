@@ -33,7 +33,7 @@ Success means:
 
 ### Supported versions
 
-Min SDK 33, target SDK 35. The whole test suite (26 unit tests, 51 instrumented tests) was run on 2026-10-11 on three Wear OS emulators, all arm64 with a large round 454 px screen; none of it has been run on a physical watch.
+Min SDK 33, target SDK 35. The whole test suite (26 unit tests, 51 instrumented tests) was run on 2026-10-11 on three Wear OS emulators, all arm64 with a large round 454 px screen. None of it has been run on a physical watch.
 
 | API level | System image | AVD | Result |
 |-|-|-|-|
@@ -41,11 +41,28 @@ Min SDK 33, target SDK 35. The whole test suite (26 unit tests, 51 instrumented 
 | 34 (Android 14, Wear OS 5) | `system-images;android-34;android-wear;arm64-v8a` | `Wear_OS_API34` | All pass, none skipped |
 | 35 (Android 15, Wear OS 5.1) | `system-images;android-35-ext15;android-wear;arm64-v8a` | `Wear_OS_Large_Round` | All pass, none skipped |
 
-What was found to differ by level:
+Each emulator reported its level through `ro.build.version.sdk` (33, 34, 35). The build fingerprints recorded were `google/sdk_gwear_arm64/emu64a:13/TWR7.230913.001.E7/11551413:userdebug/dev-keys` for API 33 and `google/sdk_gwear_arm64/emu64a:14/AW2A.240422.007.E8/12230326:userdebug/dev-keys` for API 34; the API 35 fingerprint was not recorded.
 
-- Nothing in the app's own behavior. The database settings that keep deleted waypoints out of backups (`PRAGMA secure_delete = ON` through `execPerConnectionSQL`, a truncated rollback journal) take effect on all three levels, and the compass, logging, list, rename, delete, settings and calibration screens were checked by hand on API 33 and 34 and look the same as on API 35.
-- Emulator tooling only: `adb shell input rotaryencoder` does not exist on the API 33 image, so the crown is turned there by writing to the rotary input device as root (`adb root`, then `sendevent` with `EV_REL`/`REL_WHEEL` on the device named `virtio_input_rotary`).
-- The API 33 image twice put the watch into ambient mode within a second of the app being started through `adb` after more than a minute without any input (the system log says "Going to sleep due to timeout"); a key press woke it and the app carried on. This was not seen on the API 34 or 35 images.
+Checked by hand on API 33 and on API 34, each step with a screenshot: the compass laid flat at magnetic heading 90, logging a waypoint with the side button, the waypoints list, the edit screen, renaming through the system keyboard, the color ring turned with the crown, deleting with confirmation, the settings screen and the calibration screen. After the delete, the app's own database files on each level held neither the waypoint's name nor its earlier name.
+
+What the tests and these checks showed about the database: `PRAGMA secure_delete = ON` set through `execPerConnectionSQL` reads back as 1, and the rollback journal is truncated, on all three levels.
+
+What differed by level:
+
+- No difference in what the app did was found in the steps checked. Layout, colors and shapes matched the API 35 screenshots.
+- Text is drawn a few pixels narrower on API 33 and 34 than on API 35 (on the settings screen, "Off: magnetic north" ends at x=296 on 33 and 34 and at about x=300 on 35). The cause was not looked into.
+- The API 33 image twice put the watch into ambient mode about 0.2 s after the app was started through `adb`, both times after more than a minute without any input (the system log says "Going to sleep due to timeout"). The first side-button press then only woke the watch; the second logged a waypoint. This was not seen on the API 34 or 35 images. The image's rule for this was not established.
+- On API 33 the system keyboard first showed its own prompt asking for access to contacts, which was declined.
+- Emulator tooling only: `adb shell input rotaryencoder` does not exist on the API 33 image, so the crown was turned there by writing to the rotary input device as root (`adb root`, then `sendevent` with `EV_REL`/`REL_WHEEL` on the device named `virtio_input_rotary`).
+
+Not checked:
+
+- Saving a color on API 34: the ring was turned with the crown there, but the screen was left with Back instead of Done. On API 33 it was left with Done, and the saved color was not looked at afterwards on either level.
+- A backup pass through the backup agent on API 33 and 34. The agent's conditions are covered there by the instrumented tests of the database, not by a run of the system's backup.
+- Swiping to move the focus, the "All" and "None" items, the target switch, the settings switches, and the hold-flat hint beyond its showing at first launch, by hand on API 33 and 34.
+- A before-and-after comparison on API 35, where the suite was run only after the changes of this round.
+- The error lines that system processes of the API 33 image write to the log.
+- Anything on a physical watch, on any level.
 
 ## Out of scope
 
