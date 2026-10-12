@@ -52,8 +52,8 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.mapNotNull
 
 /**
- * The settings, one of the three screens that sit side by side: a row for each switch, in the order the wearer is
- * likely to want them, then `Calibrate` and the version, inside the frame, which shows how far the list is scrolled.
+ * The settings, one of the three screens that sit side by side: a row for each switch, in the spec's order,
+ * then `Calibrate` and the version, inside the frame, which shows how far the list is scrolled.
  * A switch is its row: one tap anywhere on the row turns it, and the tick at the right shows which way it stands.
  *
  * [paneView] says how much of the screen the wearer has in front of them. The pager may build this screen while it

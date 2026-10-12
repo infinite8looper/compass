@@ -225,7 +225,7 @@ The saved waypoints (the `waypoints.db` database) and the settings (the DataStor
 | `LocationSource` | One-shot fresh fix; periodic updates while navigating | Play services location |
 | `Navigation` | Pure functions: bearing, distance, declination correction, angle smoothing, distance formatting, hue assignment | Nothing from Android except the declination lookup, which sits behind one function |
 | `WaypointStore` | Create, read, update, delete waypoints | Room |
-| `SettingsStore` | North reference, units, tick feedback, show coordinates, backup switch, focused target, last known position | DataStore |
+| `SettingsStore` | North reference, units, tick feedback, show coordinates, backup switch, blind navigation, breadcrumb trail, focused target, last known position | DataStore |
 | `CompassViewModel` | Combines the above into one screen state | The units above |
 | One file per screen | Drawing and gestures | Compose for Wear OS |
 
