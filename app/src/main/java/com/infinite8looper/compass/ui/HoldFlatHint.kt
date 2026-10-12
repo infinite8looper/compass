@@ -8,7 +8,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -61,10 +63,12 @@ fun HoldFlatHint(
     // frame on; otherwise it starts at 0, where the watch has not yet faded in.
     val loopMs = remember { mutableFloatStateOf(if (motion?.scaleFactor == 0f) HOLD_FLAT_STILL_MS else 0f) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
+    // The loop below outlives a recomposition, so it asks whichever [running] was passed last.
+    val isRunning by rememberUpdatedState(running)
     LaunchedEffect(lifecycle, motion) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             // No scale stands for "not running": the loop below is left, and no frame is asked for.
-            snapshotFlow { if (running()) motion?.scaleFactor ?: 1f else null }.collectLatest { scale ->
+            snapshotFlow { if (isRunning()) motion?.scaleFactor ?: 1f else null }.collectLatest { scale ->
                 if (scale == null) return@collectLatest
                 if (scale <= 0f) {
                     loopMs.floatValue = HOLD_FLAT_STILL_MS

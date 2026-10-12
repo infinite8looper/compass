@@ -20,6 +20,7 @@ import androidx.wear.compose.foundation.pager.PagerState
 import androidx.wear.compose.material3.AppScaffold
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
+import androidx.wear.compose.navigation.currentBackStackEntryAsState
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import com.infinite8looper.compass.CompassViewModel
 import com.infinite8looper.compass.nav.LogStatus
@@ -41,11 +42,22 @@ fun CompassApp() {
     // a row comes back to the screen it was opened from. It is not saved with the activity: an app that is
     // started again opens on the compass.
     val panes = remember { PagerState(currentPage = PANE_START_PAGE, pageCount = { PANE_PAGES }) }
+    // Whether the compass is the screen in view: the three screens are the route on top, and the row rests on a
+    // compass page.
+    val route by nav.currentBackStackEntryAsState()
+    val compassInView = remember(panes) {
+        derivedStateOf {
+            val page = panes.currentPage
+            route?.destination?.route == PANES_ROUTE && paneOf(page) == Pane.COMPASS &&
+                pageView(page, page, panes.currentPageOffsetFraction, panes.targetPage) == PaneView.IN_VIEW
+        }
+    }
+    KeepAwake(vm, compassInView = { compassInView.value })
     AppScaffold(timeText = {}) {
         // The three screens are the host's first destination, which has nothing behind it to swipe back to, so a
         // right swipe there is only ever the pager's. The screens opened from a row keep the usual swipe back.
-        SwipeDismissableNavHost(navController = nav, startDestination = "panes") {
-            composable("panes") {
+        SwipeDismissableNavHost(navController = nav, startDestination = PANES_ROUTE) {
+            composable(PANES_ROUTE) {
                 Panes(
                     vm, panes, onLogHere = logHere, onEdit = { nav.navigate("edit/$it") { launchSingleTop = true } },
                     onCalibrate = { nav.navigate("calibrate") { launchSingleTop = true } },
@@ -81,15 +93,6 @@ private fun Panes(vm: CompassViewModel, panes: PagerState, onLogHere: () -> Unit
     val show: (Pane) -> Unit = remember(panes, scope) {
         { pane -> scope.launch { panes.animateScrollToPage(pageToward(panes.currentPage, pane)) } }
     }
-    // The pane the wearer has in view, at rest, or none while the row moves.
-    val inView = remember(panes) {
-        derivedStateOf {
-            val page = panes.currentPage
-            if (pageView(page, page, panes.currentPageOffsetFraction) == PaneView.IN_VIEW) paneOf(page) else null
-        }
-    }
-    KeepAwake(vm, compassInView = { inView.value == Pane.COMPASS })
-
     // Back, where a watch has it, returns to the compass from the other two screens. On the compass it is left to
     // the system, which closes the app.
     val awayFromCompass by remember(panes) { derivedStateOf { paneOf(panes.currentPage) != Pane.COMPASS } }
@@ -99,7 +102,7 @@ private fun Panes(vm: CompassViewModel, panes: PagerState, onLogHere: () -> Unit
         // How much of this page the wearer has. The pager can have two pages of one pane built at a time (the one
         // on screen and one it has prepared further along the row), so each page is told about itself.
         val view: () -> PaneView = remember(panes, page) {
-            val state = derivedStateOf { pageView(page, panes.currentPage, panes.currentPageOffsetFraction) }
+            val state = derivedStateOf { pageView(page, panes.currentPage, panes.currentPageOffsetFraction, panes.targetPage) }
             return@remember { state.value }
         }
         when (val pane = paneOf(page)) {
@@ -121,10 +124,12 @@ private fun Panes(vm: CompassViewModel, panes: PagerState, onLogHere: () -> Unit
 
 /**
  * Keeps the screen on while the compass is in view with targets to walk to. It also keeps it on while a save is in
- * progress, with or without targets and on whichever of the three screens the wearer is: the system gives an app
- * that is not on screen no location, so a watch that went to sleep during a save would end it in "No GPS fix".
+ * progress, with or without targets and on whichever screen the wearer is, the ones opened from a row included:
+ * the system gives an app that is not on screen no location, so a watch that went to sleep during a save would end
+ * it in "No GPS fix".
  *
- * This is here, once for the three screens, and not on the compass, because the screen has one such switch.
+ * This is called once, above the navigation host, and not on the compass: the screen has one such switch, and it
+ * has to hold whatever route is on top.
  */
 @Composable
 private fun KeepAwake(vm: CompassViewModel, compassInView: () -> Boolean) {
@@ -147,6 +152,9 @@ private fun KeepAwake(vm: CompassViewModel, compassInView: () -> Boolean) {
 private val EveryTouchPages = object : GestureInclusion {
     override fun ignoreGestureStart(offset: Offset, layoutCoordinates: LayoutCoordinates): Boolean = false
 }
+
+/** The route of the three side-by-side screens, the navigation host's first destination. */
+private const val PANES_ROUTE = "panes"
 
 /** A route reached with an unusable id has nothing to show, so it goes back, once. */
 @Composable

@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Usage: scripts/crown.sh <clicks> [times]
+# Usage: scripts/crown.sh <clicks> [times]     (times: 1 or more)
 # Turns the attached emulator's crown by <clicks> (a whole number; negative turns it the other way), once or
 # the given number of times, a fifth of a second apart.
 # On API 34 and later this is `input rotaryencoder`, where one click scrolls by the system's scroll step (128 px on
@@ -7,7 +7,7 @@
 # crown's input device, in that device's own units, 72 of which scroll as far as one click. That needs adbd
 # running as root: the script switches it to root and says so. Run `adb unroot` when done.
 ADB=~/Library/Android/sdk/platform-tools/adb
-if [[ "$1" != (|-)<-> ]] || [[ -n "$2" && "$2" != <-> ]]; then
+if [[ "$1" != (|-)<-> ]] || [[ -n "$2" && "$2" != <-> ]] || [[ -n "$2" && "$2" -lt 1 ]]; then
   echo "usage: scripts/crown.sh <clicks> [times]" >&2
   exit 1
 fi

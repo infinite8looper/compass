@@ -10,7 +10,9 @@ ADB=~/Library/Android/sdk/platform-tools/adb
 usage() { echo "usage: scripts/swipe.sh left|right|up|down|diagonal [milliseconds] [fraction] | hold [milliseconds]" >&2; exit 1; }
 [[ "$1" == (left|right|up|down|diagonal|hold) ]] || usage
 [[ -z "$2" || "$2" == <-> ]] || usage
-[[ -z "$3" || "$3" == (0|1)(|.<->) ]] || usage
+# A fraction is a number from 0 to 1.
+[[ -z "$3" || "$3" == <->(|.<->) ]] || usage
+[[ -z "$3" ]] || (( $3 <= 1 )) || usage
 size=$($ADB shell wm size 2>/dev/null | tr -d '\r' | sed -n 's/^Physical size: //p')
 if [[ "$size" != <->x<-> ]]; then echo "no device, or it did not say its screen size" >&2; exit 1; fi
 w=${size%x*}; h=${size#*x}

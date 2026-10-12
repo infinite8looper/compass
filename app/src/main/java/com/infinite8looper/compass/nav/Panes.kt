@@ -54,15 +54,20 @@ private const val PANE_ON_SCREEN = 0.001f
 
 /**
  * What the wearer has of the row's page number [page] when the row is at [nearestPage], the page nearest its
- * resting place, and has moved [offsetFraction] of a page from there (-0.5 to 0.5, positive toward the next page).
+ * resting place, has moved [offsetFraction] of a page from there (-0.5 to 0.5, positive toward the next page), and
+ * is headed for [targetPage], which is the page it rests on when it is not moving.
+ *
+ * A page is in view only when it is in its place and the row is staying there. A page that a long swipe carries
+ * across the middle of the screen on the way to another is in its place for a frame and is still only passing.
  *
  * This is the one definition of "in view" for the three screens: everything a screen does only while it is the
  * one in view asks this. It is asked about a page, not about a pane, because the same pane is on every third page
  * and the pager may have built two pages of one pane at once, the one the wearer sees and one further along the
  * row; only the first of them is anywhere near the screen.
  */
-fun pageView(page: Int, nearestPage: Int, offsetFraction: Float): PaneView = when {
-    page == nearestPage -> if (abs(offsetFraction) <= PANE_SETTLED_WITHIN) PaneView.IN_VIEW else PaneView.PASSING
+fun pageView(page: Int, nearestPage: Int, offsetFraction: Float, targetPage: Int): PaneView = when {
+    page == nearestPage ->
+        if (targetPage == page && abs(offsetFraction) <= PANE_SETTLED_WITHIN) PaneView.IN_VIEW else PaneView.PASSING
     page == nearestPage + 1 && offsetFraction > PANE_ON_SCREEN -> PaneView.PASSING
     page == nearestPage - 1 && offsetFraction < -PANE_ON_SCREEN -> PaneView.PASSING
     else -> PaneView.HIDDEN

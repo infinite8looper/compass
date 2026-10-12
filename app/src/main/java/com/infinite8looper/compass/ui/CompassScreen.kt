@@ -250,7 +250,7 @@ fun CompassScreen(
             // among the targets, and a long press opens the waypoints. Whichever of the pager and the vertical
             // swipe first sees the finger travel its own way takes the touch, and the other then sees it as taken
             // and lets go, so a swipe that wanders is one or the other. Either ends the wait for a long press.
-            .pointerInput(Unit) {
+            .pointerInput(vm, paneView) {
                 var total = 0f
                 detectVerticalDragGestures(
                     onDragStart = { total = 0f },
@@ -262,7 +262,7 @@ fun CompassScreen(
             // The long press is this one's, after the system's own long-press time, and a tap does nothing. It is
             // the later of the two modifiers, so it sees a touch first: once a long press has opened the waypoints
             // it takes the rest of the touch, and a finger that then moves swipes nothing.
-            .pointerInput(Unit) {
+            .pointerInput(view, paneView) {
                 detectTapGestures(onLongPress = {
                     if (paneView() == PaneView.IN_VIEW) {
                         view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)

@@ -188,11 +188,11 @@ The logging screen; the separate color screen; the delete confirmation dialog; t
 - The three screens: an app that is started afresh opens on the compass. An app that was left with the crown and is still running comes back on the screen it was left on.
 - Back, on a watch that has it, returns to the compass from waypoints and from settings, and leaves the app from the compass.
 - A screen opened from a row comes back to the screen it was opened from. If the system has stopped the app in the meantime and restores that screen, going back from it shows the compass.
-- A swipe ends on a whole screen. A long, fast swipe across the full width of the display can pass two screens.
+- A swipe ends on a whole screen and turns one screen. A second swipe made before the first has come to rest carries on to the next screen; a screen crossed that way counts as passing, not as in view, so it takes no input and shows no waiting result on the way.
 - A touch on the compass becomes one gesture: a sideways swipe turns to the next screen, a vertical swipe moves the focus, and a long press (the system's long-press time) opens waypoints with a light tap. A swipe at an angle goes whichever way the finger first travels far enough. A long press that starts on the calibrate prompt's tap area opens nothing.
 - The compass acts on the crown and the side button only while it is at rest in view. While the screens are moving, a turn or press that reaches the compass is dropped. The crown scrolls the list on the other two screens.
 - While another screen is in view the compass does not listen to the sensor, draws no frames, gives no tick, and does not count the time of a logging result. When it comes back the dial catches up and the ticks stay quiet until it has.
-- The screen is kept on for targets only while the compass is in view. It is kept on during a save on any of the three screens.
+- The screen is kept on for targets only while the compass is in view. It is kept on during a save on any screen, the ones opened from a row included.
 - Location for targets runs on all three screens while the app is on screen, as it did on the separate screens before: the waypoints screen shows distances from it.
 - The three ticks that show which screen is in view are at the bottom edge on the waypoints and settings screens. On the compass they appear only around a swipe, from the moment the compass starts to move until about a second after it has come to rest, at the bottom of the readout (under the lowest line of text, inside the circle the letters sweep), where nothing on the turning dial passes.
 - The window's own swipe-to-dismiss is switched off for the app, so no right swipe on the three screens can close it.
