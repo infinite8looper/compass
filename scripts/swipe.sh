@@ -6,6 +6,14 @@
 # "left" moves the finger to the left, which brings in the screen on the right.
 #   diagonal   down and to the left, the same distance each way.
 #   hold       a finger held still on the middle of the screen for the given time (800 ms if left out).
+# A scripted swipe back from a screen opened from a row (edit, calibration) can leave the screen open, about once
+# in forty: `input swipe` waits for the app to handle each touch sample and places the next one by the clock. When
+# the app takes more than about 40 ms over one sample (seen on the first swipe back after a start, when the screen
+# underneath is being built) the samples it would have sent meanwhile are never sent, and the lift follows a
+# sample that is short of half the screen and reads as a finger at rest. The screen goes back for a swipe that has
+# passed half the width or is faster than about 2000 px a second, and this one is neither. A check that depends on
+# going back should look, and swipe again. On the edit screen a swipe of more than about 0.7 of the width starts
+# on the color wheel, which takes it.
 ADB=~/Library/Android/sdk/platform-tools/adb
 usage() { echo "usage: scripts/swipe.sh left|right|up|down|diagonal [milliseconds] [fraction] | hold [milliseconds]" >&2; exit 1; }
 [[ "$1" == (left|right|up|down|diagonal|hold) ]] || usage
