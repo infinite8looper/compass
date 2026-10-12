@@ -52,6 +52,16 @@ android {
         // an emulator's default pose is upright), so the tests run with the system's animations switched off.
         animationsDisabled = true
     }
+    // The migration test reads the exported schemas as assets.
+    sourceSets {
+        getByName("androidTest").assets.srcDir("$projectDir/schemas")
+    }
+}
+
+// Room writes the database's schema here, one file per version. They are kept in the repository: the migration test
+// builds a database of an earlier version from them and checks the migrated one against the current one.
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 dependencies {
@@ -71,6 +81,13 @@ dependencies {
     implementation("androidx.datastore:datastore-preferences:1.2.1")
     implementation("com.google.android.gms:play-services-location:21.4.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.11.0")
+    constraints {
+        // The navigation library brings kotlinx.serialization 1.7.3 into the app, and an instrumented test runs
+        // on the app's own copies of the libraries they share. Room's migration test support (room-testing 2.8.5)
+        // is built against 1.8.1 and fails on 1.7.3 with an AbstractMethodError, so the app takes 1.8.1.
+        implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.8.1")
+        implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
+    }
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
@@ -78,5 +95,6 @@ dependencies {
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test:runner:1.7.0")
     androidTestImplementation("androidx.test:rules:1.7.0")
+    androidTestImplementation("androidx.room:room-testing:2.8.5")
     androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
 }

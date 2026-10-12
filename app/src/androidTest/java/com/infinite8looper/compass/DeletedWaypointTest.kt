@@ -11,6 +11,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.infinite8looper.compass.data.Crumb
 import com.infinite8looper.compass.data.Waypoint
 import com.infinite8looper.compass.data.WaypointDatabase
 import kotlinx.coroutines.flow.first
@@ -576,5 +577,126 @@ class DeletedWaypointTest {
         d.close()
         assertDeletedNameGoneAndKeptNamesPresent(name, "closed")
         assertEquals(emptyMap<String, Int>(), found(name, "Ibisfenmoorland").filterValues { it > 0 })
+    }
+
+    // Crumbs. A crumb has no name, so what is searched for is its position as SQLite stores it: a REAL column is
+    // the eight bytes of the IEEE 754 double, most significant byte first. The same eight bytes least significant
+    // first are searched for as well, so the answer does not rest on that. The coordinates below are not whole
+    // numbers (SQLite stores a whole REAL as an integer) and no two share their eight bytes.
+
+    private val keptCrumbs = listOf(43.70224466881357 to -72.28961133557799, 43.70491977313551 to -72.28709871143365)
+    private val deletedCrumb = 43.69983355177269 to -72.29309944226688
+
+    private fun crumb(at: Pair<Double, Double>, t: Long) = Crumb(lat = at.first, lon = at.second, accuracyM = 5f, createdAt = t)
+
+    /** How often the stored form of [value] occurs in [bytes], in either byte order. */
+    private fun occurrences(bytes: ByteArray, value: Double): Int =
+        listOf(java.nio.ByteOrder.BIG_ENDIAN, java.nio.ByteOrder.LITTLE_ENDIAN).sumOf { order ->
+            val needle = java.nio.ByteBuffer.allocate(8).order(order).putDouble(value).array()
+            (0..bytes.size - needle.size).count { i -> needle.indices.all { j -> bytes[i + j] == needle[j] } }
+        }
+
+    /** Occurrences of [value] in each file that exists for [dbName], keyed by the file name's ending. */
+    private fun found(dbName: String, value: Double): Map<String, Int> =
+        companions(dbName).filterValues { it.exists() }.mapValues { occurrences(it.value.readBytes(), value) }
+
+    /** The files of [dbName] that hold either coordinate of [at], with how often. */
+    private fun foundCrumb(dbName: String, at: Pair<Double, Double>): Map<String, Int> =
+        (found(dbName, at.first).toList() + found(dbName, at.second).toList()).groupBy({ it.first }, { it.second })
+            .mapValues { it.value.sum() }.filterValues { it > 0 }
+
+    private fun assertDeletedCrumbGoneAndKeptCrumbsPresent(dbName: String, moment: String) {
+        assertEquals("$moment: the deleted crumb's coordinates", emptyMap<String, Int>(), foundCrumb(dbName, deletedCrumb))
+        // Positive control: the search finds coordinates that are stored, each once, in the database file.
+        for (k in keptCrumbs) assertEquals("$moment: a kept crumb's coordinates", mapOf("" to 2), foundCrumb(dbName, k))
+    }
+
+    private suspend fun dropThreeCrumbsDeleteOne(d: WaypointDatabase) {
+        d.crumbs().insert(crumb(keptCrumbs[0], 1))
+        val gone = d.crumbs().insert(crumb(deletedCrumb, 2))
+        d.crumbs().insert(crumb(keptCrumbs[1], 3))
+        assertEquals(3, d.crumbs().all().size)
+        d.crumbs().delete(gone)
+    }
+
+    @Test fun deletedCrumbsCoordinatesAreInNoFileWhileOpenOrAfterClosing() = runBlocking {
+        val d = WaypointDatabase.open(ctx, name).also { db = it }
+        d.waypoints().insert(wp(kept[0], 1))
+        d.crumbs().insert(crumb(keptCrumbs[0], 1))
+        val gone = d.crumbs().insert(crumb(deletedCrumb, 2))
+        d.crumbs().insert(crumb(keptCrumbs[1], 3))
+        // Control: before the delete the same search finds both of its coordinates, in the database file.
+        assertEquals(mapOf("" to 2), foundCrumb(name, deletedCrumb))
+        // The delete the app makes when a crumb is arrived at.
+        d.crumbs().delete(gone)
+        assertEquals(keptCrumbs.reversed(), d.crumbs().all().map { it.lat to it.lon })
+        assertDeletedCrumbGoneAndKeptCrumbsPresent(name, "open")
+        assertEquals(1, found(name, kept[0])[""])
+        d.close()
+        assertDeletedCrumbGoneAndKeptCrumbsPresent(name, "closed")
+    }
+
+    /** Clearing the trail deletes every row at once, which SQLite does by freeing the table's pages whole. */
+    @Test fun aClearedTrailsCoordinatesAreInNoFile() = runBlocking {
+        val d = WaypointDatabase.open(ctx, name).also { db = it }
+        d.waypoints().insert(wp(kept[0], 1))
+        // Enough crumbs to fill several pages, each at its own position.
+        val trail = (0 until 600).map { i -> (43.5 + i * 0.000731 + 1e-9) to (-72.5 - i * 0.000517 - 1e-9) }
+        for ((i, at) in trail.withIndex()) d.crumbs().insert(crumb(at, i.toLong()))
+        val sample = listOf(trail.first(), trail[1], trail[299], trail[598], trail.last())
+        for (at in sample) assertEquals(mapOf("" to 2), foundCrumb(name, at))
+        val sizeWithTrail = companions(name).getValue("").length()
+        assertTrue("$sizeWithTrail bytes", sizeWithTrail > 5 * 4096)
+
+        d.crumbs().clear()
+        assertTrue(d.crumbs().all().isEmpty())
+        for (at in trail) assertEquals(emptyMap<String, Int>(), foundCrumb(name, at))
+        assertEquals(1, found(name, kept[0])[""])
+        assertEquals(0L, companions(name).getValue("-journal").length())
+        d.close()
+        for (at in trail) assertEquals(emptyMap<String, Int>(), foundCrumb(name, at))
+        assertEquals(1, found(name, kept[0])[""])
+    }
+
+    /** As for a waypoint: where the platform keeps a write-ahead log, what a backup would copy holds no deleted crumb. */
+    @Test fun copyHoldsNoDeletedCrumbWhereThePlatformDefaultIsAWriteAheadLog() = withPlatformJournalDefault("WAL") {
+        val file = ctx.getDatabasePath(name)
+        val d = WaypointDatabase.open(ctx, name).also { db = it }
+        dropThreeCrumbsDeleteOne(d)
+        // Control: here the log does hold the deleted crumb.
+        assertEquals("wal", pragma(d, "PRAGMA journal_mode"))
+        assertTrue(foundCrumb(name, deletedCrumb).toString(), foundCrumb(name, deletedCrumb).getValue("-wal") > 0)
+
+        assertTrue(d.sanitize())
+        var seen: Map<String, Int>? = null
+        assertTrue(d.copyIfSettled(file) { seen = foundCrumb(name, deletedCrumb) })
+        assertEquals(emptyMap<String, Int>(), seen)
+        assertEquals(0L, companions(name).getValue("-wal").length())
+        assertDeletedCrumbGoneAndKeptCrumbsPresent(name, "copied")
+        assertEquals(keptCrumbs.reversed(), d.crumbs().all().map { it.lat to it.lon })
+    }
+
+    /**
+     * A file in which a crumb was deleted without being overwritten, as a file from elsewhere can be: it is not
+     * copied as it is, and is clean once rebuilt.
+     */
+    @Test fun aFileWithADeletedCrumbLeftReadableIsRebuiltBeforeItCanBeCopied() = runBlocking {
+        val file = ctx.getDatabasePath(name)
+        val old = unprotected(name, writeAheadLog = false).also { source = it }
+        dropThreeCrumbsDeleteOne(old)
+        old.close()
+        // Control: its coordinates are still in the main file.
+        assertEquals(mapOf("" to 2), foundCrumb(name, deletedCrumb))
+
+        val d = WaypointDatabase.open(ctx, name).also { db = it }
+        assertEquals(keptCrumbs.reversed(), d.crumbs().all().map { it.lat to it.lon })
+        assertFalse(copied(d, name) { fail("copied before the rebuild") })
+        assertTrue(d.sanitize())
+        assertDeletedCrumbGoneAndKeptCrumbsPresent(name, "rebuilt")
+        var seen: Map<String, Int>? = null
+        assertTrue(d.copyIfSettled(file) { seen = foundCrumb(name, deletedCrumb) })
+        assertEquals(emptyMap<String, Int>(), seen)
+        d.close()
+        assertDeletedCrumbGoneAndKeptCrumbsPresent(name, "closed")
     }
 }

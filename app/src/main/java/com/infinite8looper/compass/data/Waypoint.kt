@@ -6,6 +6,7 @@ import android.util.Log
 import androidx.room.*
 import com.infinite8looper.compass.nav.GeoPoint
 import com.infinite8looper.compass.nav.WaypointInfo
+import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 import java.io.File
@@ -47,9 +48,14 @@ interface WaypointDao {
     suspend fun setAllTargets(isTarget: Boolean)
 }
 
-@Database(entities = [Waypoint::class], version = 1, exportSchema = false)
+/**
+ * Version 1 held the waypoints. Version 2 adds the crumbs of the breadcrumb trail ([MIGRATION_1_2]). The schema of
+ * each version is exported to app/schemas.
+ */
+@Database(entities = [Waypoint::class, Crumb::class], version = 2, exportSchema = true)
 abstract class WaypointDatabase : RoomDatabase() {
     abstract fun waypoints(): WaypointDao
+    abstract fun crumbs(): CrumbDao
 
     /** The file a rebuild is recorded in; set by [open]. It lies in the folder the system never backs up. */
     private var record: File? = null
@@ -130,6 +136,19 @@ abstract class WaypointDatabase : RoomDatabase() {
         const val FILE_NAME = "waypoints.db"
         private const val TAG = "WaypointDatabase"
 
+        /**
+         * From version 1 to 2: adds the empty table of crumbs and touches nothing else, so every waypoint is as it
+         * was. The statement is the one Room itself creates the table with (app/schemas, version 2).
+         */
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `crumbs` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`lat` REAL NOT NULL, `lon` REAL NOT NULL, `accuracyM` REAL NOT NULL, `createdAt` INTEGER NOT NULL)",
+                )
+            }
+        }
+
         @Volatile private var instance: WaypointDatabase? = null
 
         /**
@@ -142,6 +161,9 @@ abstract class WaypointDatabase : RoomDatabase() {
                 // Room, used without a driver, only turns the write-ahead log off here; the journal mode is then
                 // the platform's default for databases without one, so the callback below sets it as well.
                 .setJournalMode(JournalMode.TRUNCATE)
+                // A file of an earlier version is migrated. There is no fallback that would empty it: a file this
+                // build has no migration for is refused, and stays as it is.
+                .addMigrations(MIGRATION_1_2)
                 .addCallback(object : Callback() {
                     override fun onOpen(db: SupportSQLiteDatabase) {
                         try {

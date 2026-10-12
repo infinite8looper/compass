@@ -3,6 +3,7 @@ package com.infinite8looper.compass
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.infinite8looper.compass.data.Crumb
 import com.infinite8looper.compass.data.Waypoint
 import com.infinite8looper.compass.data.WaypointDatabase
 import kotlinx.coroutines.flow.first
@@ -67,5 +68,49 @@ class WaypointDatabaseTest {
         val id = db.waypoints().insert(wp("Keep", 1)); db.close()
         db = WaypointDatabase.open(ctx, name)
         assertEquals("Keep", db.waypoints().get(id)!!.name)
+    }
+
+    // The crumbs of the breadcrumb trail, which are a second table of the same database.
+
+    private fun crumb(lat: Double, t: Long) = Crumb(lat = lat, lon = -72.2896, accuracyM = 6f, createdAt = t)
+
+    @Test fun freshDatabaseHasNoCrumbs() = runBlocking {
+        assertTrue(db.crumbs().all().isEmpty())
+        assertTrue(db.crumbs().observeAll().first().isEmpty())
+    }
+    @Test fun crumbsReadBackExactValuesNewestFirstWhateverTheirClockTimes() = runBlocking {
+        // The second is stamped earlier than the first, as after the watch's clock was set back.
+        val a = db.crumbs().insert(crumb(43.7022, 5000)); val b = db.crumbs().insert(crumb(43.7031, 1000)); val c = db.crumbs().insert(crumb(43.7040, 9000))
+        val all = db.crumbs().all()
+        assertEquals(listOf(c, b, a), all.map { it.id })
+        assertEquals(all, db.crumbs().observeAll().first())
+        assertEquals(Crumb(b, 43.7031, -72.2896, 6f, 1000), all[1])
+        assertEquals(b, all[1].toPoint().id); assertEquals(43.7031, all[1].toPoint().point.lat, 0.0); assertEquals(-72.2896, all[1].toPoint().point.lon, 0.0)
+    }
+    @Test fun deletingACrumbRemovesThatOneAndItsIdIsNotReused() = runBlocking {
+        val a = db.crumbs().insert(crumb(43.7022, 1)); val b = db.crumbs().insert(crumb(43.7031, 2))
+        db.crumbs().delete(b)
+        assertEquals(listOf(a), db.crumbs().all().map { it.id })
+        // Deleting it again, or one that never was, is harmless.
+        db.crumbs().delete(b); db.crumbs().delete(12345)
+        assertEquals(listOf(a), db.crumbs().all().map { it.id })
+        assertTrue(db.crumbs().insert(crumb(43.7040, 3)) > b)
+    }
+    @Test fun clearingTheCrumbsLeavesTheWaypoints() = runBlocking {
+        val w = db.waypoints().insert(wp("Keep", 1))
+        repeat(5) { db.crumbs().insert(crumb(43.70 + it / 1000.0, it.toLong())) }
+        assertEquals(5, db.crumbs().all().size)
+        db.crumbs().clear()
+        assertTrue(db.crumbs().all().isEmpty())
+        assertEquals(listOf(w), db.waypoints().observeAll().first().map { it.id })
+        // And deleting every waypoint leaves the crumbs.
+        val c = db.crumbs().insert(crumb(43.7022, 9))
+        db.waypoints().delete(w)
+        assertEquals(listOf(c), db.crumbs().all().map { it.id })
+    }
+    @Test fun crumbsSurviveReopen() = runBlocking {
+        val id = db.crumbs().insert(crumb(43.7022, 1)); db.close()
+        db = WaypointDatabase.open(ctx, name)
+        assertEquals(listOf(Crumb(id, 43.7022, -72.2896, 6f, 1)), db.crumbs().all())
     }
 }
