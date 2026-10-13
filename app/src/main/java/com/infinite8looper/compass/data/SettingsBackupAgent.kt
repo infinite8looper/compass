@@ -30,7 +30,7 @@ import kotlinx.coroutines.withTimeout
  * pass made with the switch off (seen with the local transport's backup and transfer passes on one emulator at a
  * time; no second watch was used). If the app is uninstalled before the system has made a backup with the switch
  * off, the backup that is restored is the earlier one, with its waypoints and the switch on. A restore of any
- * other backup changes nothing about the switch, and no restore turns it on.
+ * other backup changes nothing about the switch, and nothing in the app turns it on at a restore.
  */
 class SettingsBackupAgent : BackupAgent() {
     // The manifest says fullBackupOnly, so the system never calls the key/value pair of methods.
@@ -86,6 +86,8 @@ class SettingsBackupAgent : BackupAgent() {
         // One wait of at most 5 seconds for both: the settling of what a restore owes, and the read. The second
         // decision of a pass is made with the database's transaction held, so this is also the longest that is held
         // for it. A wait that runs out leaves what was owed owed and the switch unread, which hands over nothing.
+        // The one exception to the 5 seconds: a settings write of the settling that is already under way is not
+        // cut short ([RestoredOptOut.settle]), so the wait lasts until that write ends.
         var owed = restoredOptOut.owed()
         val switch = read("the backup setting") { store ->
             if (owed) owed = !restoredOptOut.settle(store)

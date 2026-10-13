@@ -71,6 +71,8 @@ class RestoredOptOut(folder: File, second: File) {
         if (!owedHere) return@withLock true
         try {
             // The write and the removing of the records are one step that a cancellation of the caller does not divide.
+            // So a caller's time limit does not end it either: it ends when the settings write ends, and until then
+            // the lock is held. A pass that waits on it hands over no waypoint meanwhile.
             withContext(NonCancellable) {
                 store.setBackupEnabled(false)
                 clear()

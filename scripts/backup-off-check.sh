@@ -31,7 +31,7 @@
 # Exit status 0 if every requirement holds, 1 otherwise.
 # It wipes the app's data (it installs the app afresh several times), puts a waypoint in its database with the
 # device's sqlite3, switches the Backup Manager on with the local transport and empties that transport, and reads
-# the transport's files as root. All of that is put back when it ends, and when it is stopped by INT, TERM or HUP: the transport and the Backup
+# the transport's files as root. All of that is put back when it ends, and a trap does the same for INT, TERM or HUP (an interrupted run was not tried): the transport and the Backup
 # Manager as they were, the transport's parameter removed, adbd not rooted, the app installed with its data cleared.
 # Emulators only (scripts/emulator-only.sh), and only images with `adb root` and sqlite3: API 33, 34 and 35.
 source "$(dirname "$0")/emulator-only.sh" || exit 1
