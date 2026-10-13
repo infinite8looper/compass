@@ -2,7 +2,7 @@
 
 Every picture here is a capture from an emulator, taken on 2026-10-13 from the debug build. Nothing was drawn or edited. A picture marked "frames" is several captures joined side by side, first on the left.
 
-- `<state>-large.png` is from `Wear_OS_Large_Round` (API 35, 454 x 454) and `<state>-small.png` from `Wear_OS_Small_Round` (API 35, 384 x 384). Both were made by `scripts/screenshot-matrix.sh large` and `scripts/screenshot-matrix.sh small`; the section named in each row is the argument that makes that row's pictures again (`scripts/screenshot-matrix.sh large trail`).
+- `<state>-large.png` is from `Wear_OS_Large_Round` (API 35, 454 x 454) and `<state>-small.png` from `Wear_OS_Small_Round` (API 35, 384 x 384). They were made with `scripts/screenshot-matrix.sh`, a section at a time (`scripts/screenshot-matrix.sh large trail`); the section named in each row is the argument that makes that row's pictures again. The `coords` and `settings` pictures are from a later build than the rest, in which the rows under the heading stand a little differently with `Show coordinates` on.
 - The position fed is 43.7022, -72.2896 (`scripts/geo-feed.sh`). Waypoints are put in the app's database with `scripts/seed-targets.sh <bearing>:<place on the color ring>:<meters>`. "Three targets" is `60:137.5:400 200:275:1500 300:52.5:5000`. A heading is set with the emulator's magnetic-field sensor and corrected until the compass shows it.
 - The emulators give no color scheme, so the accent is blue and north and the error color are red, except in the `accent-` pictures.
 - The emulators report only high magnetometer accuracy and a position accuracy of 5 m; what that leaves unseen is listed at the end.
@@ -49,8 +49,10 @@ Every picture here is a capture from an emulator, taken on 2026-10-13 from the d
 |-|-|-|
 | No target | `coords-clean` | `coords`: `Show coordinates` on, no waypoints, heading 127 |
 | Old: `(old)` after the latitude | `coords-clean-old` | `coords`: location off, 25 s |
+| Before the first fix, nothing focused: `Locating…` in the longitude's place | `coords-locating` | `coords`: location on again, the app started, 1.2 s |
 | With a focused target | `coords-target` | `coords`: three targets |
-| Before the first fix | `coords-locating` | `coords`: location off and on, the app started, 1.2 s |
+| Hold-flat with coordinates on: the two lines left out, `Arrived at target` over `Hold flat` | `coords-holdflat-arrived` | `coords`: `seed-targets.sh 0:0:4`, `adb emu sensor set acceleration 0:9.81:0` |
+| The same with `No target` | `coords-holdflat-no-target` | `coords`: three waypoints, the waypoints header tapped to clear all, the same pose |
 
 ## Breadcrumb trail
 
@@ -83,7 +85,7 @@ Every picture here is a capture from an emulator, taken on 2026-10-13 from the d
 |-|-|-|
 | A short name | `edit-short` | `edit`: a long press on the row `Camp` |
 | The color being dragged, finger down | `edit-recolor` | `edit`: `input motionevent DOWN` on the ring near 4 o'clock, `MOVE` in steps to past 1 o'clock |
-| `Hold to delete` half way | `edit-hold` | `edit`: a touch held for 0.8 s, taken at 0.75 s, let go before it deletes |
+| `Hold to delete` late in the hold, about a quarter of the ring left | `edit-hold` | `edit`: a touch held for 0.8 s of the one second, taken about 0.75 s in, let go before it deletes |
 | A long name sliding (3 frames) | `name-sliding-edit` | `moving` |
 
 ## Settings and calibration
@@ -93,6 +95,7 @@ Every picture here is a capture from an emulator, taken on 2026-10-13 from the d
 | Top of the list | `settings-top` | `settings`: after `pm clear` (the defaults in the United States locale) |
 | Middle | `settings-middle` | `settings`: scrolled to `Blind navigation` |
 | End | `settings-end` | `settings`: scrolled to `Calibrate` |
+| `Breadcrumb trail` and `Show coordinates` on | `settings-trail-coords-on` | `settings`: both rows tapped (location already granted), scrolled to `Breadcrumb trail` |
 | Every switch off (3 frames: top, middle, end) | `settings-all-off` | `settings`: each row tapped |
 | Calibration | `calibrate` | `calibration`: `Calibrate` tapped |
 | Interference | `calibrate-interference` | `calibration`: `adb emu sensor set magnetic-field 0:80:-45` (92 microtesla) |
@@ -129,3 +132,7 @@ The app follows when it next comes back on screen (Home, then open it again). `s
 - The accuracy note after a crumb's distance (`9 m ±20 m`) and `Saving…` with an accuracy that is not yet good enough: the emulator's position accuracy is always 5 m.
 - A color scheme that follows the watch face.
 - Anything felt: the tick tap, the two blind navigation pulses, the confirming tap.
+- The side button: whether a single press reaches the app, whether a double press arrives as two presses, and what a press does from a dimmed screen. The emulators deliver `KEYCODE_STEM_1` to the app.
+- Real GPS: the emulators give the fed position with no jitter, so arrival at the 10 m and 12 m distances and positions logged while moving were not seen as a watch gives them.
+- The encryption requirement on Google's backup: only the emulator's local backup transport was used, with a build made without that requirement.
+- Device-to-device transfer: not run.

@@ -10,16 +10,16 @@
 #   moving       hold-flat without and with a target (four frames each); a name sliding on the compass, in the list
 #                and on the edit screen (several frames each)
 #   log          `Saving…`, `Saved Waypoint N`, `No GPS fix`, `Location is off`, `Couldn't save`
-#   coords       coordinates with no target, with a target, old, and before the first fix
+#   coords       coordinates with no target, old, before the first fix, with a target; hold-flat with them on
 #   trail        a crumb saved, laying, the trail's row, retracing, facing the crumb, `Hold to clear`, `Trail complete`
 #   waypoints    empty, a few, thirty (top and end), old distances, the status band after `Log here`
 #   edit         a short name, the color being dragged (finger down), `Hold to delete` half way
-#   settings     top, middle, end; every switch off
+#   settings     top, middle, end; `Breadcrumb trail` and `Show coordinates` on; every switch off
 #   calibration  normal; interference
 #   panes        the three screens side by side; the row half way through a swipe; the compass's three ticks
 # It wipes the app's data (pm clear), puts rows in its database with the device's sqlite3, feeds positions
 # (scripts/geo-feed.sh), sets the virtual sensors, switches the emulator's location setting off and on again, and
-# for `Couldn't save` makes the database file read-only for one press. Emulators only; it refuses anything else.
+# for `Couldn't save` makes the database file read-only for one press (it is put back also if the script is stopped). Emulators only; it refuses anything else.
 # The image must have sqlite3 and `input motionevent` (the API 34 and 35 images do).
 # Pictures of something that moves are several frames side by side, first on the left.
 # A status that shows for two or three seconds is caught by taking pictures until its color is in the readout; if
@@ -44,7 +44,8 @@ W=${size%x*}; H=${size#*x}; C=$((W / 2))
 HERE_LAT=43.7022; HERE_LON=-72.2896
 GREEN='#7FD99A'; RED='#FF3B30'      # the confirming green and the error color where the watch gives no scheme
 tmp=$(mktemp -d) || exit 1
-trap 'pkill -f geo-feed.sh; rm -rf "$tmp"' EXIT
+readonly_db=0      # 1 while the `log` section has the app's database file read-only
+trap 'pkill -f geo-feed.sh; [ $readonly_db = 1 ] && $ADB shell run-as $PKG chmod 660 databases/waypoints.db; rm -rf "$tmp"' EXIT
 
 # ---- small tools -------------------------------------------------------------------------------------------
 shot() {   # shot <state>: one picture
@@ -97,8 +98,10 @@ for n in root.iter("node"):
 ' "$1"
 }
 shown() { dump | python3 -c 'import re,sys; m=re.findall(r"text=\"(-?\d+)°\"", sys.stdin.read()); print(m[0] if m else "?")'; }
-tap() { local r=($(row "$1")); [ -n "$r" ] || { echo "no '$1' on screen" >&2; return 1; }; $ADB shell input tap $r[1] $r[2]; }
-hold() { local r=($(row "$1")); [ -n "$r" ] || { echo "no '$1' on screen" >&2; return 1; }; $ADB shell input swipe $r[1] $r[2] $r[1] $r[2] $2; }
+tap() { local r; r=($(row "$1")); [ -n "$r" ] || { echo "no '$1' on screen" >&2; return 1; }; $ADB shell input tap $r[1] $r[2]; }
+tap_row() { local r; r=($(find_row "$1")) || return 1; $ADB shell input tap $r[1] $r[2]; }      # scrolls to the row first
+hold_row() { local r; r=($(find_row "$1")) || return 1; $ADB shell input swipe $r[1] $r[2] $r[1] $r[2] $2; }
+hold() { local r; r=($(row "$1")); [ -n "$r" ] || { echo "no '$1' on screen" >&2; return 1; }; $ADB shell input swipe $r[1] $r[2] $r[1] $r[2] $2; }
 find_row() { # scrolls the list from its top until the row with that text is near the middle
   for k in 1 2 3; do $ADB shell input swipe $C $((H * 35 / 100)) $C $((H * 85 / 100)) 150; done; sleep 1
   for i in $(seq 1 14); do
@@ -109,7 +112,7 @@ find_row() { # scrolls the list from its top until the row with that text is nea
   echo "no row '$1'" >&2; return 1
 }
 setting() { # setting <label> on|off, on the settings screen
-  local r=($(find_row "$1")) || return 1
+  local r; r=($(find_row "$1")) || return 1      # not `local r=(...) || ...`: `local` succeeds whatever the search did
   local want=true; [ "$2" = off ] && want=false
   if [ "$r[3]" != "$want" ]; then $ADB shell input tap $r[1] $r[2]; sleep 1; fi
 }
@@ -172,7 +175,7 @@ sec_permission() {
   dialog_choice "Keep approximate location"
   shot_when waypoints-needs-access $RED 8 32
   sleep 3; from_waypoints; to_settings
-  local r=($(find_row "Show coordinates")); $ADB shell input tap $r[1] $r[2]; sleep 2.5
+  tap_row "Show coordinates" || return 1; sleep 2.5
   dialog_choice "Keep approximate location" 2> /dev/null      # asked once more on some images
   sleep 1.5; find_row "Show coordinates" > /dev/null; shot settings-needs-access
   from_settings
@@ -199,7 +202,8 @@ sec_moving() {
   seed $THREE; upright; sleep 3; frames holdflat-target-frames 4 0.45; flat; sleep 5
   long_names; sleep 1; frames name-sliding-compass 4 1.7
   to_waypoints; sleep 1; frames name-sliding-list 3 2.2
-  hold "$LONG" 900 || hold "Log here" 1; sleep 2; frames name-sliding-edit 3 2.2
+  hold "$LONG" 900 || { echo "moving: the long name's row was not found, so name-sliding-edit was not taken" >&2; from_waypoints; return 1; }
+  sleep 2; frames name-sliding-edit 3 2.2
   leave_route; from_waypoints
 }
 sec_log() {
@@ -214,17 +218,21 @@ sec_log() {
     [ $try = 4 ] && echo "  log-no-gps-fix-$SUF.png  NOT CAUGHT in four tries (a fix reached the app before it left the screen each time)" >&2
   done
   sleep 4; location off; home; app_start; sleep 2; press; shot_when log-location-off $RED 50 72
-  location on; sleep 4; app_stop; $ADB shell run-as $PKG chmod 440 databases/waypoints.db; app_start; sleep 8
+  location on; sleep 4; app_stop; readonly_db=1; $ADB shell run-as $PKG chmod 440 databases/waypoints.db; app_start; sleep 8
   press; shot_when log-couldnt-save $RED 50 72 60
-  app_stop; $ADB shell run-as $PKG chmod 660 databases/waypoints.db; app_start; sleep 3
+  app_stop; $ADB shell run-as $PKG chmod 660 databases/waypoints.db; readonly_db=0; app_start; sleep 3
 }
 sec_coords() {
   fresh granted; feed $HERE_LAT $HERE_LON; sleep 6
   to_settings; setting "Show coordinates" on; from_settings
   seed none; face 127; shot coords-clean
-  location off; sleep 25; shot coords-clean-old; location on; home; app_start; sleep 6
+  location off; sleep 25; shot coords-clean-old
+  location on; home; app_stop; app_start; sleep 1.2; shot coords-locating; sleep 6      # nothing focused: the longitude's row says it
   seed $THREE; shot coords-target
-  location off; sleep 2; location on; home; app_stop; app_start; sleep 1.2; shot coords-locating; sleep 5
+  # Hold-flat with the coordinates on: the two lines are left out, and a row with a descender stands over the words.
+  seed 0:0:4; upright; sleep 3.5; shot coords-holdflat-arrived; flat; sleep 5
+  seed $THREE; to_waypoints; tap "3 of 3 targets"; sleep 1; from_waypoints; sleep 1
+  upright; sleep 3.5; shot coords-holdflat-no-target; flat; sleep 4
 }
 sec_trail() {
   fresh granted; feed $HERE_LAT $HERE_LON; sleep 6
@@ -238,7 +246,8 @@ sec_trail() {
   double_press; sleep 2.5; shot trail-retracing
   face 180; sleep 1; shot trail-facing
   to_waypoints; shot trail-row-retracing
-  local r=($(row "Trail")); ($ADB shell input swipe $r[1] $r[2] $r[1] $r[2] 1300 &); sleep 1.25; shot trail-hold-to-clear; sleep 1.5
+  local r; r=($(row "Trail")); [ -n "$r" ] || { echo "trail: no 'Trail' row on screen" >&2; return 1; }
+  ($ADB shell input swipe $r[1] $r[2] $r[1] $r[2] 1300 &); sleep 1.25; shot trail-hold-to-clear; sleep 1.5
   from_waypoints
   feed 43.70328 $HERE_LON; sleep 10; feed 43.70274 $HERE_LON; sleep 10; shot trail-crumb-1
   feed $HERE_LAT $HERE_LON; shot_when trail-complete $GREEN 50 72 60
@@ -259,7 +268,7 @@ sec_waypoints() {
 sec_edit() {
   fresh granted; feed $HERE_LAT $HERE_LON; sleep 6
   seed $THREE; long_names; to_waypoints
-  local r=($(find_row "Camp")); $ADB shell input swipe $r[1] $r[2] $r[1] $r[2] 900; sleep 2; shot edit-short
+  hold_row "Camp" 900 || return 1; sleep 2; shot edit-short
   # a finger put down on the ring near 4 o'clock and dragged back to past 1 o'clock, still down when the picture is taken
   local pts=($(python3 -c "
 import math
@@ -268,7 +277,8 @@ c = $C; print(' '.join(f'{c + 0.93 * c * math.sin(math.radians(a)):.0f},{c - 0.9
   for p in ${pts[2,-1]}; do $ADB shell input motionevent MOVE ${p/,/ }; done
   shot edit-recolor
   $ADB shell input motionevent UP ${pts[-1]/,/ }; sleep 1
-  r=($(row "Hold to delete")); ($ADB shell input swipe $r[1] $r[2] $r[1] $r[2] 800 &); sleep 0.75; shot edit-hold; sleep 1.5
+  local r; r=($(row "Hold to delete")); [ -n "$r" ] || { echo "edit: no 'Hold to delete' on screen" >&2; return 1; }
+  ($ADB shell input swipe $r[1] $r[2] $r[1] $r[2] 800 &); sleep 0.75; shot edit-hold; sleep 1.5
   leave_route; from_waypoints
 }
 sec_settings() {
@@ -276,6 +286,7 @@ sec_settings() {
   for k in 1 2 3; do $ADB shell input swipe $C $((H * 35 / 100)) $C $((H * 85 / 100)) 150; done; sleep 1; shot settings-top
   find_row "Blind navigation" > /dev/null; shot settings-middle
   find_row "Calibrate" > /dev/null; shot settings-end
+  setting "Breadcrumb trail" on; setting "Show coordinates" on; find_row "Breadcrumb trail" > /dev/null; shot settings-trail-coords-on
   for s in "True north" "Feet and miles" "Tick feedback" "Blind navigation" "Breadcrumb trail" "Show coordinates" "Back up waypoints"; do setting "$s" off; done
   for k in 1 2 3; do $ADB shell input swipe $C $((H * 35 / 100)) $C $((H * 85 / 100)) 150; done; sleep 1
   $ADB exec-out "screencap -p 2>/dev/null" > "$tmp/o1.png"
@@ -286,7 +297,7 @@ sec_settings() {
 }
 sec_calibration() {
   fresh granted; magnetic 40; sleep 8; to_settings
-  local r=($(find_row "Calibrate")); $ADB shell input tap $r[1] $r[2]; sleep 3; shot calibrate
+  tap_row "Calibrate" || return 1; sleep 3; shot calibrate
   $ADB emu sensor set magnetic-field 0:80:-45 > /dev/null; sleep 3; shot calibrate-interference
   magnetic 40; sleep 2; leave_route; from_settings
 }
