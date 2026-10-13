@@ -30,6 +30,8 @@ class SettingsBackupAgent : BackupAgent() {
     override fun onRestore(data: BackupDataInput?, appVersionCode: Int, newState: ParcelFileDescriptor?) = Unit
 
     override fun onFullBackup(data: FullBackupDataOutput) {
+        // A marker left by a pass whose process ended before it could delete it.
+        File(filesDir, MARKER_FILE).delete()
         when (pass(data)) {
             BackupPass.NOTHING -> return
             BackupPass.MARKER -> { handOverMarker(data); return }
@@ -61,11 +63,9 @@ class SettingsBackupAgent : BackupAgent() {
         }
     }
 
-    /** What this pass hands over ([backupPass]), from the stored switch and who turned it off. */
+    /** What this pass hands over ([backupPass]), from the stored switch and who turned it off, taken in one read. */
     private fun pass(data: FullBackupDataOutput): BackupPass {
-        val enabled = read("the backup setting") { it.readBackupEnabled() }
-        // Asked only for a switch that is off: with it on, the answer changes nothing.
-        val offByWearer = if (enabled == false) read("who turned the backup setting off") { it.readBackupOffByWearer() } else null
+        val (enabled, offByWearer) = read("the backup setting") { it.readBackupSwitch() } ?: (null to null)
         return backupPass(enabled, offByWearer, deviceTransfer = data.transportFlags and FLAG_DEVICE_TO_DEVICE_TRANSFER != 0)
     }
 
@@ -86,9 +86,16 @@ class SettingsBackupAgent : BackupAgent() {
         }
     }
 
-    /** A marker that a restore brought back says nothing to the app and is removed. */
+    /**
+     * After a restore the switch is on ([SettingsStore.backupOnAfterRestore]): no settings file that a restore
+     * brings turns backups off. The system restores only the files the backup rules name, so no marker comes back.
+     */
     override fun onRestoreFinished() {
-        try { File(filesDir, MARKER_FILE).delete() } catch (e: Exception) { Log.w(TAG, "could not remove a restored marker (" + e.javaClass.simpleName + ")") }
+        try {
+            runBlocking { withTimeout(5_000) { SettingsStore.get(applicationContext).backupOnAfterRestore() } }
+        } catch (e: Exception) {
+            Log.w(TAG, "could not look at the backup setting after a restore (" + e.javaClass.simpleName + ")")
+        }
     }
 
     private fun <T> read(what: String, ask: suspend (SettingsStore) -> T?): T? = try {

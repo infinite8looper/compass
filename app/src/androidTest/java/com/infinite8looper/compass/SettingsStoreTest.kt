@@ -260,6 +260,26 @@ class SettingsStoreTest {
             assertNull(second.readBackupOffByWearer())
         } finally { f.setReadable(true, false); job1.cancelAndJoin(); job2.cancelAndJoin(); f.delete(); ctx.preferencesDataStoreFile("$file-position").delete() }
     }
+    // One read gives the agent the switch and who turned it off, as they stood together.
+    @Test fun theSwitchAndWhoTurnedItOffAreReadTogether() = withStore { s, _ ->
+        assertEquals(true to false, s.readBackupSwitch())
+        s.setBackupEnabled(false)
+        assertEquals(false to true, s.readBackupSwitch())
+        s.setBackupEnabled(true)
+        assertEquals(true to false, s.readBackupSwitch())
+    }
+    // After a restore the switch is on: a settings file that a restore brings never turns backups off.
+    @Test fun afterARestoreASwitchThatCameBackOffIsOnAndNotOnRecordAsTurnedOff() = withStore { s, _ ->
+        s.setBackupEnabled(false); s.setTickFeedback(false)
+        s.backupOnAfterRestore()
+        assertEquals(true to false, s.readBackupSwitch())
+        assertTrue(s.settings.first().backupEnabled)
+        // Nothing else of the restored settings is touched.
+        assertFalse(s.settings.first().tickFeedback)
+        // A switch that is on stays on.
+        s.backupOnAfterRestore()
+        assertEquals(true to false, s.readBackupSwitch())
+    }
     @Test fun lastPositionIsKeptOutOfTheSettingsFileThatIsBackedUp() = withStore { s, file ->
         s.setLastPosition(GeoPoint(43.7022, -72.2896), 160f); s.setNorth(NorthRef.MAGNETIC)
         assertEquals(43.7022, s.settings.first().lastPosition!!.lat, 1e-9)

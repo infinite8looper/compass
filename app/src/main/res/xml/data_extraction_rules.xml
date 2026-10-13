@@ -8,8 +8,13 @@
   a platform whose default is a write-ahead log keeps one anyway. In either case the backup agent hands nothing over
   in a pass where one of those files holds any bytes, or where the database file is not on record as rebuilt.
 
-  Cloud backup happens only when the device can encrypt the backup end to end (a screen lock is set).
-  Device-to-device transfer does not depend on that.
+  The two files are handed to a cloud backup only when the transport says it encrypts the backup end to end (on a
+  watch: a screen lock is set). Device-to-device transfer does not depend on that.
+
+  These rules are applied by the system's own copy (BackupAgent.onFullBackup). The marker file that the app's backup
+  agent hands over by itself while "Back up waypoints" is off by the wearer's doing does not pass through them: it is
+  handed over whether or not the transport encrypts. It holds no data of the wearer's. The system restores only the
+  files named here, so a marker is never restored.
 -->
 <data-extraction-rules>
     <cloud-backup disableIfNoEncryptionCapabilities="true">

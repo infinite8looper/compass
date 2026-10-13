@@ -43,10 +43,10 @@ pkill -f geo-feed.sh
 ```
 
 - The position feed is needed by `LocationSourceTest`, by the `CompassViewModelTest` tests whose comments say so, and by the `SideButtonTest` tests that save a position. Android delivers location only to an app that is on screen, so those tests bring the real activity to the front themselves. `scripts/geo-feed.sh <lon> <lat> [seconds]` sends `adb emu geo fix` once a second for that many seconds (120 if left out); the tests expect 43.7022, -72.2896.
-- `./gradlew connectedDebugAndroidTest` with no `ANDROID_SERIAL` runs on every device adb lists, a watch included, and wipes the app's data on each. With `ANDROID_SERIAL` set it runs on that device alone. `scripts/all-suites.sh` sets it and refuses to run while a device that is not an emulator is attached.
+- The build refuses to run the instrumented tests anywhere but on an emulator (`app/build.gradle.kts`): every `connected...AndroidTest`, `connectedCheck`, `deviceCheck` and `uninstall...` task fails before it does anything unless `ANDROID_SERIAL` is an emulator's serial (`emulator-NNNN`) and `adb devices` lists no device that is not an emulator. Without that, Gradle would run the tests on every device adb lists and wipe the app's data on each. Seen on 2026-10-13: with no `ANDROID_SERIAL`, with `ANDROID_SERIAL=localhost:5555`, and with `ANDROID_SERIAL=emulator-5554` while the emulator was also attached as `localhost:5555`, `connectedDebugAndroidTest` ended in `refusing: ...` and `BUILD FAILED` in under a second, and so did `uninstallDebug` with no `ANDROID_SERIAL`; with one emulator and its serial the tests ran. `installDebug` is not held back. `scripts/all-suites.sh` sets the serial and makes its own check as well.
 - While the instrumented tests run, the screen is all white for about half a second each time a test closes the activity. That is `InstrumentationActivityInvoker$EmptyActivity`, a helper activity of the test library in the test package (`com.infinite8looper.compass.test`), which has a light theme; the app's own window was not in front in those frames (screen recording and `dumpsys window`, API 35, 2026-10-13). No white frame was recorded on a cold launch, a font size change, sleep and wake, Home and back, or a change of pose.
 - The run applies `animationsDisabled = true` (set in `app/build.gradle.kts`): a screen that keeps animating, such as the hold-flat hint that loops while an emulator is upright, never lets the main thread go idle. If a run is cut short the animation scales can stay at 0; `scripts/emulator.sh` puts any scale at 0 back to 1 the next time it runs.
-- One class: `./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.infinite8looper.compass.SideButtonTest`.
+- One class: `ANDROID_SERIAL=emulator-5554 ./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.infinite8looper.compass.SideButtonTest`.
 - `scripts/test-counts.sh device [folder]` reads `app/build/outputs/androidTest-results/connected/`, or the given folder, such as a copy kept from an earlier run.
 
 ## Instrumented tests, every emulator
@@ -57,6 +57,14 @@ scripts/all-suites.sh Wear_OS_API34        # only the named emulators
 ```
 
 For each emulator it switches to it, lays the virtual watch flat at a magnetic heading of 40 (`scripts/set-heading.sh`), wakes the screen and checks that it is awake, starts the position feed, runs `connectedDebugAndroidTest` with a 40-minute deadline, stops the feed, keeps a copy of the results, and prints per-class counts and totals, then the sum over all. Output is in `app/build/all-suites/` (`suite-<avd>.log`, `results-<avd>/`). Before the suite it reads the pose back from the emulator (`adb emu sensor get acceleration`) and does not run the suite on an emulator that is not flat. The last emulator is left running with the debug app installed again, and each emulator the suite ran on is left lying flat at the heading of 40, not upright. The exit status is 1 if a run failed, a test failed, or a test was skipped.
+
+## The backup agent, by the system's own backup
+
+```
+scripts/backup-off-check.sh        # API 33, 34 or 35: it needs adb root and sqlite3 on the device
+```
+
+The instrumented tests cannot run the system's backup of the app: a backup ends the app's process, which is the test's. This script runs it from the host against the debug app as built, with the system's local transport, and reads what the transport then holds: with `Back up waypoints` on and the transport not saying it encrypts (printed, not judged); on with the transport saying it encrypts (`is_encrypted=true`, the local transport's own parameter): the database with the waypoint's name; on with a pass that says it is a device transfer (`is_device_transfer=true`): the same; the switch turned off through the app's question: a successful backup holding the manifest and the marker `backup-switched-off` only, the name not in it, no marker left in the app's files; and then a pass that says it is a transfer: nothing. It wipes the app's data, and puts the Backup Manager, the transport and the transport's parameter back as they were. Exit status 0 if every requirement held.
 
 ## Emulator-only behavior
 
@@ -102,4 +110,4 @@ scripts/frame-times.sh <label>                # frame times while the heading sw
 
 ## Counts at the time of writing
 
-371 unit tests. 146 instrumented tests, run on each of `Wear_OS_API33`, `Wear_OS_API34`, `Wear_OS_Newest` and `Wear_OS_Large_Round` by `scripts/all-suites.sh` on 2026-10-13: 146 passed, 0 failed and 0 skipped on each, 584 in all. Lint (`./gradlew lintDebug`) reports 0 errors and one warning, `StaticFieldLeak` on the settings store's singleton.
+372 unit tests. 148 instrumented tests, run on each of `Wear_OS_API33`, `Wear_OS_API34`, `Wear_OS_Newest` and `Wear_OS_Large_Round` by `scripts/all-suites.sh` on 2026-10-13: 148 passed, 0 failed and 0 skipped on each, 592 in all. Lint (`./gradlew lintDebug`) reports 0 errors and one warning, `StaticFieldLeak` on the settings store's singleton.
