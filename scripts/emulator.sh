@@ -33,3 +33,12 @@ for scale in window_animation_scale transition_animation_scale animator_duration
     echo "$scale: $value"
   fi
 done
+# FontScaleTest sets the system's font scale and puts it back when it ends. A run that is cut short can leave it at
+# 1.24 or 0.94, and every later picture and manual check is then at that size. Reported, and put back to 1.0.
+font=$($ADB shell settings get system font_scale | tr -d '\r')
+if [ "$font" = "1.0" ] || [ "$font" = "null" ] || [ -z "$font" ]; then
+  echo "font_scale: $font"
+else
+  $ADB shell settings put system font_scale 1.0
+  echo "font_scale was $font: restored to 1.0"
+fi

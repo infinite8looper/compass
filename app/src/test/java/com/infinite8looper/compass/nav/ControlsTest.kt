@@ -421,4 +421,14 @@ class ControlsTest {
         assertEquals(CrownTurn(0, 40f), crownTurn(40f, Float.NaN, 80f))
         assertEquals(CrownTurn(0, 10f), crownTurn(Float.NaN, 10f, 80f))
     }
+
+    @Test fun theTwoPartsOfACrownTurnAreWhatTheTurnIs() {
+        for (carried in listOf(0f, 30f, 79f, 80f, -60f, -79f, Float.NaN)) for (scrolled in listOf(0f, 1f, 51f, 128f, -30f, -81f, -500f, Float.NaN)) {
+            val turn = crownTurn(carried, scrolled, 80f)
+            assertEquals("$carried, $scrolled", turn.steps, crownSteps(carried, scrolled, 80f))
+            assertEquals("$carried, $scrolled", turn.carried, crownCarried(carried, scrolled, 80f), 0f)
+        }
+        // A scroll of exactly a step is not further than a step.
+        assertEquals(0, crownSteps(0f, 80f, 80f)); assertEquals(80f, crownCarried(0f, 80f, 80f), 0f)
+    }
 }

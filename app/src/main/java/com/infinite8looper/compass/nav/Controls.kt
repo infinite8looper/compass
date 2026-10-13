@@ -217,11 +217,26 @@ data class CrownTurn(val steps: Int, val carried: Float)
  * carried and starts from itself: a crown that is turned back answers after one step's turn, not after first undoing
  * the turn before. A scroll that is not a number is dropped, and so is a carried value that is not one.
  */
-fun crownTurn(carried: Float, scrolled: Float, step: Float): CrownTurn {
+fun crownTurn(carried: Float, scrolled: Float, step: Float): CrownTurn =
+    CrownTurn(crownSteps(carried, scrolled, step), crownCarried(carried, scrolled, step))
+
+/** The steps of [crownTurn] alone. The compass asks this and [crownCarried] for each scroll of the crown, so a scroll makes no object. */
+fun crownSteps(carried: Float, scrolled: Float, step: Float): Int {
+    val sum = crownSum(carried, scrolled)
+    return if (abs(sum) > step) (if (sum > 0f) 1 else -1) else 0
+}
+
+/** What [crownTurn] carries to the next scroll, alone. */
+fun crownCarried(carried: Float, scrolled: Float, step: Float): Float {
+    val sum = crownSum(carried, scrolled)
+    return if (abs(sum) > step) 0f else sum
+}
+
+/** What has been gathered once [scrolled] is taken: it added to what was carried, or it alone after a turn back. */
+private fun crownSum(carried: Float, scrolled: Float): Float {
     val held = if (carried.isNaN()) 0f else carried
-    if (scrolled.isNaN() || scrolled == 0f) return CrownTurn(0, held)
-    val sum = if (held != 0f && (held > 0f) != (scrolled > 0f)) scrolled else held + scrolled
-    return if (abs(sum) > step) CrownTurn(if (sum > 0f) 1 else -1, 0f) else CrownTurn(0, sum)
+    if (scrolled.isNaN() || scrolled == 0f) return held
+    return if (held != 0f && (held > 0f) != (scrolled > 0f)) scrolled else held + scrolled
 }
 
 /** How far the crown scrolls for the compass to move the focus by one target. One click of the emulators' crown is 64 dp. */

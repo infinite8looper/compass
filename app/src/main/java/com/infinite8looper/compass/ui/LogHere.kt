@@ -9,7 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -51,7 +51,7 @@ import kotlinx.coroutines.flow.collectLatest
 @Composable
 internal fun rememberLogHere(vm: CompassViewModel): LogActions {
     // Which of the three asked, kept across the dialog, which can outlive this activity.
-    var askedBy by rememberSaveable { mutableStateOf(LOG_HERE) }
+    var askedBy by rememberSaveable { mutableIntStateOf(LOG_HERE) }
     fun save(by: Int) { when (by) { SIDE_PRESS -> vm.sidePress(); DROP_CRUMB_ROW -> vm.dropCrumb(); else -> vm.logHere() } }
     val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         vm.permissionChanged()

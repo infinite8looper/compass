@@ -99,6 +99,35 @@ dependencies {
 // remaking those files at that moment, and the analysis then fails on a file that is not there
 // (`./gradlew lintDebug assembleRelease` with debug already built; seen with AGP 9.4.1 and KSP 2.3.12).
 // So where both are to run, lint's analysis runs after the generated sources are made.
-tasks.matching { it.name.startsWith("lintAnalyze") || it.name.startsWith("lintVitalAnalyze") }.configureEach {
-    mustRunAfter(tasks.matching { it.name.startsWith("ksp") })
+// The tasks are picked by name, which makes none of them that the build does not need.
+tasks.named { it.startsWith("lintAnalyze") || it.startsWith("lintVitalAnalyze") }.configureEach {
+    mustRunAfter(tasks.named { it.startsWith("ksp") })
+}
+
+// The instrumented tests delete the app's waypoints and settings on the device they run on, Gradle uninstalls the
+// app when they end, and without ANDROID_SERIAL Gradle runs them on every device adb lists. They are for emulators.
+// So every task that runs them, and every task that uninstalls, fails before it does anything unless ANDROID_SERIAL
+// names an emulator (emulator-NNNN) and adb lists no device that is not one. Installing is not held back.
+val adbForDeviceCheck = androidComponents.sdkComponents.adb
+tasks.named { (it.startsWith("connected") && (it.endsWith("AndroidTest") || it.endsWith("Check"))) || it == "deviceCheck" || it.startsWith("uninstall") }.configureEach {
+    val adb = adbForDeviceCheck
+    val serial = providers.environmentVariable("ANDROID_SERIAL")
+    doFirst {
+        val named = serial.orNull
+        if (named == null || !Regex("^emulator-\\d+$").matches(named)) {
+            throw GradleException(
+                "refusing: this task wipes the app's data on the device it runs on and is for emulators only. " +
+                    "Set ANDROID_SERIAL to the emulator's serial (for example ANDROID_SERIAL=emulator-5554); it is ${named ?: "not set"}."
+            )
+        }
+        val listed = ProcessBuilder(adb.get().asFile.absolutePath, "devices").redirectErrorStream(true).start()
+            .inputStream.bufferedReader().readLines().drop(1).mapNotNull { it.trim().split(Regex("\\s+")).firstOrNull()?.takeIf(String::isNotEmpty) }
+        val others = listed.filterNot { Regex("^emulator-\\d+$").matches(it) }
+        if (others.isNotEmpty()) {
+            throw GradleException(
+                "refusing: a device that is not an emulator is attached (${others.joinToString()}). " +
+                    "This task wipes the app's data and is for emulators only; unplug it or disconnect it and run again."
+            )
+        }
+    }
 }

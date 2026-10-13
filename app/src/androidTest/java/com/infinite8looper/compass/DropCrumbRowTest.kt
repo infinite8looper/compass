@@ -70,9 +70,21 @@ class DropCrumbRowTest {
 
     /** Back turns the row of screens one screen toward settings: from the compass, two of them end on the waypoints. */
     private suspend fun toWaypoints() {
+        // Each step is looked at, so a Back that turns nothing is told from a list that shows nothing: the compass
+        // has drawn (its heading, or the hold-flat hint on a watch held upright), then one Back shows the settings,
+        // then a second shows the waypoints.
+        shows("the compass") { nodes().any { n -> n.isVisibleToUser && n.text?.toString()?.let { it == "Hold flat" || it == "--" || it.endsWith("°") } == true } }
         delay(1_500)
-        repeat(2) { instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK); delay(1_500) }
-        shows("the waypoints screen") { withText("Log here").any { it.isVisibleToUser } }
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        shows("the settings after one Back from the compass") { withText("Settings").any { it.isVisibleToUser } }
+        delay(1_500)
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        shows("the waypoints screen after a second Back") { withText("Log here").any { it.isVisibleToUser } }
+        delay(1_000)
+        // The row under the trail's row stands at the lower edge of the list when the screen opens, and outside it
+        // on a small screen: the list is scrolled one step, through the system's tree, so that row is inside it.
+        nodes().firstOrNull { it.isScrollable && it.isFocused }?.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
+        delay(1_000)
     }
 
     /** One short press of the side button. */
@@ -112,9 +124,9 @@ class DropCrumbRowTest {
 
     /** Waits until [isSo], and says what was waited for and what the screen held if it never is. */
     private suspend fun shows(what: String, isSo: () -> Boolean) {
-        val deadline = SystemClock.uptimeMillis() + 15_000
+        val deadline = SystemClock.uptimeMillis() + 10_000
         while (!isSo()) {
-            assertTrue("$what did not come in 15 s; on screen: ${nodes().mapNotNull { it.text?.toString() }.filter { it.isNotEmpty() }}", SystemClock.uptimeMillis() < deadline)
+            assertTrue("$what did not come in 10 s; on screen: ${nodes().mapNotNull { it.text?.toString() }.filter { it.isNotEmpty() }}", SystemClock.uptimeMillis() < deadline)
             delay(100)
         }
     }
@@ -137,6 +149,12 @@ class DropCrumbRowTest {
         }
     }
 
+    /** A double press as the view model takes it, then the mode the settings file holds: the switch itself is checked apart from what the list shows. */
+    private suspend fun doublePress(vm: CompassViewModel, leaves: TrailMode) {
+        vm.trailDoublePress().join()
+        assertEquals("the stored mode after the double press", leaves, settings.settings.first().trailMode)
+    }
+
     @Test fun theRowIsThereOnlyWhileATrailIsLaid() = runBlocking {
         // Crumbs are stored, so the trail's own row shows whatever the setting and the trail are doing.
         crumbDao.insert(Crumb(lat = 43.7022, lon = -72.2896, accuracyM = 5f, createdAt = System.currentTimeMillis()))
@@ -153,17 +171,16 @@ class DropCrumbRowTest {
             assertEquals(TrailMode.OFF, settings.settings.first().trailMode)
             assertTrue("`Drop crumb` shows with the trail off", withText("Drop crumb").isEmpty())
             // Laid: the row is there.
-            vm.trailDoublePress().join()
+            doublePress(vm, leaves = TrailMode.LAYING)
             trailRowSays("Laying, 1 crumb")
             shows("`Drop crumb`") { withText("Drop crumb").isNotEmpty() }
             dropCrumbRow()
             // Retraced: gone again.
-            vm.trailDoublePress().join()
+            doublePress(vm, leaves = TrailMode.RETRACING)
             trailRowSays("Retracing, 1 left")
-            assertEquals(TrailMode.RETRACING, settings.settings.first().trailMode)
             assertTrue("`Drop crumb` shows while the trail is retraced", withText("Drop crumb").isEmpty())
             // Laid again, then the setting off.
-            vm.trailDoublePress().join()
+            doublePress(vm, leaves = TrailMode.LAYING)
             trailRowSays("Laying, 1 crumb")
             shows("`Drop crumb`") { withText("Drop crumb").isNotEmpty() }
             settings.setBreadcrumbTrail(false)

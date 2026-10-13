@@ -252,9 +252,9 @@ fun CompassScreen(
             // until then a turn or a press is taken and dropped, so it reaches nothing else either.
             .onRotaryScrollEvent { e ->
                 if (paneView() == PaneView.IN_VIEW) {
-                    val turn = crownTurn(crown, e.verticalScrollPixels, crownStepPx)
-                    crown = turn.carried
-                    if (turn.steps != 0) vm.moveFocus(turn.steps)
+                    val steps = crownSteps(crown, e.verticalScrollPixels, crownStepPx)
+                    crown = crownCarried(crown, e.verticalScrollPixels, crownStepPx)
+                    if (steps != 0) vm.moveFocus(steps)
                 } else crown = 0f
                 true
             }
