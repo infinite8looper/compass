@@ -65,3 +65,19 @@ fun marqueeRestMs(elapsedMs: Double, overflow: Float, perSecond: Float, holdMs: 
         else -> 0.0
     }
 }
+
+/** What a name that may slide is doing: standing at its start, staying wherever it has got to, or sliding. */
+enum class MarqueePhase { RESET, HELD, RUNNING }
+
+/**
+ * What a name does that is [overflowPx] pixels too long, by how much of its screen the wearer has ([view]) and
+ * whether the app is in front. It slides only on a screen at rest in view with the app in front. While the screen
+ * is passing in a swipe, or something of the system's is over the app, it stays where it is and goes on from there
+ * afterwards. On a hidden screen it stands at its start, as does a name that does not slide at all
+ * ([marqueeScrolls]).
+ */
+fun marqueePhase(view: PaneView, appInFront: Boolean, overflowPx: Int, motionScale: Float): MarqueePhase = when {
+    !marqueeScrolls(overflowPx, motionScale) || view == PaneView.HIDDEN -> MarqueePhase.RESET
+    view == PaneView.PASSING || !appInFront -> MarqueePhase.HELD
+    else -> MarqueePhase.RUNNING
+}

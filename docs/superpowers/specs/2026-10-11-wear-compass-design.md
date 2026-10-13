@@ -84,7 +84,7 @@ Fullscreen on a black background, following the mockup:
 - Around the heading: the focused target's color dot and name above it, and the distance below it. The focused target's marker is drawn larger than the others.
 - No on-screen button: a press of the watch's side button logs a waypoint.
 - A small label `MAG` when the dial is showing magnetic north (see North reference).
-- With Show coordinates on: the watch's position as two small lines under the distance, the latitude over the longitude (`43.7022° N`, `72.2896° W`). See "Coordinates, as built" in the v2 document.
+- With Show coordinates on: the watch's position as two small lines, the latitude (`43.7022° N`) at the top of the readout and the longitude (`72.2896° W`) at the bottom. See "Coordinates, as built" in the v2 document.
 - A name too long for its slot slides back and forth in it.
 
 Gestures on this screen:
@@ -138,7 +138,7 @@ The compass screen also shows a small prompt that leads here when the reported a
 - North: true or magnetic.
 - Units: metric or imperial, defaulting from the watch's locale.
 - Tick feedback (default on): a faint vibration as the heading crosses the dial's minor tick marks.
-- Show coordinates (default off): shows the current GPS position on the compass screen, as two small lines under the distance (see "Coordinates, as built" in the v2 document). Turning it on asks for location access with the system dialog if it has not been granted; if the wearer denies it, the switch stays off and two lines under it say "Needs access to precise location". If access is already granted it turns on without asking, and turning it off never asks for anything.
+- Show coordinates (default off): shows the current GPS position on the compass screen, as two small lines, the latitude at the top of the readout and the longitude at the bottom (see "Coordinates, as built" in the v2 document). Turning it on asks for location access with the system dialog if it has not been granted; if the wearer denies it, the switch stays off and two lines under it say "Needs access to precise location". If access is already granted it turns on without asking, and turning it off never asks for anything.
 - Back up waypoints (default on): includes the saved waypoints and settings in the watch's system backup (when the watch can encrypt it) and in device-to-device transfer. See "Backup and transfer" under Behavior for what turning it off does and does not do.
 - Calibrate.
 - About: version and the MIT license.

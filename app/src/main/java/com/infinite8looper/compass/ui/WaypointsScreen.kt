@@ -306,7 +306,7 @@ fun WaypointsScreen(
                         // A name too long for the row slides back and forth in it, while this screen is in view.
                         MarqueeText(
                             w.name, if (w.isTarget) nameOnStyle else nameStyle, { if (w.isTarget) Ink else Dim },
-                            running = { paneView() == PaneView.IN_VIEW },
+                            view = paneView,
                         )
                         nav.distances[w.id]?.let { d ->
                             Text(
@@ -329,7 +329,7 @@ fun WaypointsScreen(
                     .padding(top = r * STATUS_TOP),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                StatusLine(words, logStatusColor(current), headerStyle, Modifier.width(r * STATUS_WIDTH), running = { paneView() == PaneView.IN_VIEW })
+                StatusLine(words, logStatusColor(current), headerStyle, Modifier.width(r * STATUS_WIDTH), view = paneView)
                 // A note under the status is dim; a second line that carries the status's words on has its color.
                 if (detail != null) Text(
                     detail, color = if (statusDetailContinues(current)) logStatusColor(current) else Dim, style = detailStyle,

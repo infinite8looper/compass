@@ -95,68 +95,6 @@ class CoordinatesTest {
         } finally { Locale.setDefault(before) }
     }
 
-    // What the compass shows of the position.
-
-    private val hanover = GeoPoint(43.7022, -72.2896)
-    private fun readout(
-        show: Boolean = true, position: GeoPoint? = hanover, stale: Boolean = false, noPosition: LogFailure? = null,
-        distanceLocating: Boolean = false, slotTaken: Boolean = false,
-    ) = coordinatesReadout(show, position, stale, noPosition, distanceLocating, slotTaken)
-
-    @Test fun withTheSettingOffNothingIsShown() {
-        assertNull(readout(show = false))
-        assertNull(readout(show = false, position = null))
-        assertNull(readout(show = false, stale = true))
-    }
-
-    @Test fun withAFixTheTwoLinesAreTheLatitudeAndTheLongitude() {
-        assertEquals(CoordinatesReadout("43.7022° N", "72.2896° W", old = false), readout())
-        assertEquals(CoordinatesReadout("33.8688° S", "151.2093° E", old = false), readout(position = GeoPoint(-33.8688, 151.2093)))
-    }
-
-    @Test fun untilTheFirstFixItSaysLocating() {
-        assertEquals(CoordinatesReadout("Locating…", null, old = false), readout(position = null))
-        // An old fix cannot be there without a fix.
-        assertEquals(CoordinatesReadout("Locating…", null, old = false), readout(position = null, stale = true))
-    }
-
-    /** The distance's own `Locating…` stands right above; the word is not said twice. */
-    @Test fun whileTheDistanceSaysLocatingTheCoordinatesDoNotSayItToo() {
-        assertNull(readout(position = null, distanceLocating = true))
-        // With a fix the coordinates are shown whatever the distance says.
-        assertEquals("43.7022° N", readout(distanceLocating = true)?.first)
-    }
-
-    @Test fun anOldFixIsMarkedOldOnTheFirstLine() {
-        assertEquals(CoordinatesReadout("43.7022° N (old)", "72.2896° W", old = true), readout(stale = true))
-    }
-
-    /** Without the permission nothing is shown, whatever else holds: the switch can be stored on after the permission has been taken away. */
-    @Test fun withoutThePermissionNothingIsShown() {
-        assertNull(readout(position = null, noPosition = LogFailure.NO_PERMISSION))
-        assertNull(readout(noPosition = LogFailure.NO_PERMISSION))
-    }
-
-    @Test fun withLocationSwitchedOffAndNoFixItSaysSo() {
-        assertEquals(CoordinatesReadout("Location is off", null, old = false), readout(position = null, noPosition = LogFailure.LOCATION_OFF))
-        // The words are the logging status's own.
-        assertEquals(statusText(LogStatus.Failed(LogFailure.LOCATION_OFF), Units.METRIC).first, readout(position = null, noPosition = LogFailure.LOCATION_OFF)?.first)
-        // A fix that was taken before location was switched off is still shown, and is marked old once it is.
-        assertEquals("43.7022° N (old)", readout(stale = true, noPosition = LogFailure.LOCATION_OFF)?.first)
-    }
-
-    /** While the lines' place is taken (the hold-flat words, the calibrate prompt, a status's second line) nothing is shown. */
-    @Test fun whileItsPlaceIsTakenNothingIsShown() {
-        assertNull(readout(slotTaken = true))
-        assertNull(readout(position = null, slotTaken = true))
-        assertNull(readout(stale = true, slotTaken = true))
-    }
-
-    @Test fun aPositionThatIsNotANumberShowsNothing() {
-        assertNull(readout(position = GeoPoint(Double.NaN, 0.0)))
-        assertNull(readout(position = GeoPoint(0.0, Double.POSITIVE_INFINITY)))
-    }
-
     // When the coordinates are a reason for location to run.
 
     @Test fun theCoordinatesWantLocationOnlyWhileTheSettingIsOnAndTheCompassIsOnScreen() {

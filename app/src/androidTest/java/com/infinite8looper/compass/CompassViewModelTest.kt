@@ -1306,7 +1306,12 @@ class CompassViewModelTest {
                 val ui = withTimeout(10_000) { vm.nav.first { it.loaded && it.showCoordinates } }
                 assertEquals(LogFailure.NO_PERMISSION, ui.noPosition)
                 withTimeoutOrNull(6_000) { vm.nav.collect { assertNull(it.position); assertNull(it.fixElapsedMs) } }
-                assertNull(com.infinite8looper.compass.nav.coordinatesReadout(true, vm.nav.value.position, false, vm.nav.value.noPosition, false, false))
+                val now = vm.nav.value
+                val lines = com.infinite8looper.compass.nav.readout(
+                    LogStatus.Idle, now.units, com.infinite8looper.compass.nav.FocusKind.NONE, null, false, false, now.position, false, null,
+                    now.noPosition, showCoordinates = true, holdFlat = false,
+                )
+                assertNull(lines.latitude); assertNull(lines.longitude)
             }
         } finally { settings.setShowCoordinates(false) }
     }

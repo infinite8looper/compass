@@ -138,6 +138,27 @@ class MarqueeTest {
         assertEquals(0.0, marqueeRestMs(100.0, 90f, 60f, holdMs = Double.NaN), 0.0)
     }
 
+    /**
+     * What a name too long for its place does, by how much of its screen the wearer has: it slides on a screen at
+     * rest in view with the app in front, stays where it is while the screen is passing in a swipe or something of
+     * the system's is over the app, and stands at its start on a hidden screen.
+     */
+    @Test fun aNameSlidesInViewHoldsWhilePassingAndStartsOverWhenHidden() {
+        assertEquals(MarqueePhase.RUNNING, marqueePhase(PaneView.IN_VIEW, appInFront = true, overflowPx = 40, motionScale = 1f))
+        assertEquals(MarqueePhase.HELD, marqueePhase(PaneView.PASSING, appInFront = true, overflowPx = 40, motionScale = 1f))
+        assertEquals(MarqueePhase.RESET, marqueePhase(PaneView.HIDDEN, appInFront = true, overflowPx = 40, motionScale = 1f))
+        // Not in front (a dialog of the system's over the app, or the app leaving): nothing moves, nothing is lost.
+        assertEquals(MarqueePhase.HELD, marqueePhase(PaneView.IN_VIEW, appInFront = false, overflowPx = 40, motionScale = 1f))
+        assertEquals(MarqueePhase.HELD, marqueePhase(PaneView.PASSING, appInFront = false, overflowPx = 40, motionScale = 1f))
+        assertEquals(MarqueePhase.RESET, marqueePhase(PaneView.HIDDEN, appInFront = false, overflowPx = 40, motionScale = 1f))
+        // A name that fits, or animations removed: at its start, whatever the screen.
+        for (view in PaneView.entries) for (front in listOf(true, false)) {
+            assertEquals(MarqueePhase.RESET, marqueePhase(view, front, overflowPx = 0, motionScale = 1f))
+            assertEquals(MarqueePhase.RESET, marqueePhase(view, front, overflowPx = -3, motionScale = 1f))
+            assertEquals(MarqueePhase.RESET, marqueePhase(view, front, overflowPx = 40, motionScale = 0f))
+        }
+    }
+
     @Test fun whetherANameScrolls() {
         assertTrue(marqueeScrolls(overflowPx = 1, motionScale = 1f))
         assertTrue(marqueeScrolls(overflowPx = 300, motionScale = 0.5f))

@@ -463,37 +463,6 @@ private fun formatDegrees(deg: Double, positive: Char, negative: Char): String {
 }
 
 /**
- * What the compass shows of the watch's position: one line, or two. [old] says the fix it comes from is old, and
- * the lines are drawn fainter.
- */
-data class CoordinatesReadout(val first: String, val second: String?, val old: Boolean)
-
-/**
- * The coordinates readout, or null when there is none to show.
- * - Nothing with the setting off ([show]), and nothing without the location permission, which can be taken away
- *   while the setting is stored on.
- * - Nothing while the lines' place is taken ([slotTaken]): by the words of the hold-flat hint, by the calibrate
- *   prompt, or by the second line of a status.
- * - With a live [position]: the latitude over the longitude. When that fix is old ([stale]) the first line ends in
- *   ` (old)`, as the distance does.
- * - Before the first fix: `Locating…`, unless the distance, right above, says the same ([distanceLocating]); or
- *   `Location is off` when location is switched off, where no fix will come.
- */
-fun coordinatesReadout(
-    show: Boolean, position: GeoPoint?, stale: Boolean, noPosition: LogFailure?, distanceLocating: Boolean, slotTaken: Boolean,
-): CoordinatesReadout? {
-    if (!show || slotTaken || noPosition == LogFailure.NO_PERMISSION) return null
-    if (position == null) return when {
-        noPosition == LogFailure.LOCATION_OFF -> CoordinatesReadout(statusText(LogStatus.Failed(LogFailure.LOCATION_OFF), Units.METRIC).first, null, old = false)
-        distanceLocating -> null
-        else -> CoordinatesReadout("Locating…", null, old = false)
-    }
-    val lat = formatLatitude(position.lat) ?: return null
-    val lon = formatLongitude(position.lon) ?: return null
-    return CoordinatesReadout(if (stale) "$lat (old)" else lat, lon, old = stale)
-}
-
-/**
  * Whether the coordinates readout is a reason for location to run: with the setting on, while the compass is on
  * screen. It is no reason to keep the screen awake.
  */

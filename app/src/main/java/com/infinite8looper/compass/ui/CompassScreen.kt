@@ -200,29 +200,10 @@ fun CompassScreen(
         }
     }
 
-    // What the logging status puts on the screen, or null while there is none. Read through a derived state, so
-    // the screen is composed again only when the words or their color change.
-    val logStatusState = vm.logStatus.collectAsStateWithLifecycle()
-    val logLines by remember {
-        derivedStateOf {
-            val status = logStatusState.value
-            if (status == LogStatus.Idle) null
-            else statusText(status, navState.value.units).let { (text, detail) ->
-                StatusLines(text, detail, logStatusColor(status), if (statusDetailContinues(status)) logStatusColor(status) else Dim)
-            }
-        }
-    }
-
-    // While a trail is retraced and no position can come at all (the permission is not held, or location is switched
-    // off), the compass says so where the crumb's distance would be, in the words the logging status uses for it.
-    val noPositionLines by remember {
-        derivedStateOf {
-            val n = navState.value
-            val reason = n.noPosition
-            if (reason == null || n.focused?.isCrumb != true) null
-            else statusText(LogStatus.Failed(reason), n.units).let { (text, detail) -> StatusLines(text, detail, ErrorColor, ErrorColor) }
-        }
-    }
+    // The logging status. Its words, and every other line of the readout that says something about position, are
+    // decided in one place ([readout]), below, where the screen is composed: it changes with a press and with a
+    // position fix, not with a frame.
+    val logStatus by vm.logStatus.collectAsStateWithLifecycle()
 
     LogResultTimer(vm, paneView)
 
@@ -321,6 +302,10 @@ fun CompassScreen(
         }
         val bodyStyle = style(0.097f)
         fun Modifier.slot(y: Float, width: Float) = align(Alignment.Center).offset(y = r * y).width(r * width)
+        // Where the rows stand. With the coordinates switched on there are two rows more, the latitude at the top
+        // and the longitude at the bottom, and the rows between stand a little closer to the heading to make room.
+        // Which set it is depends on the setting alone, so no row moves while the compass is in use.
+        val rows = if (nav.showCoordinates) ROWS_WITH_COORDINATES else ROWS
 
         // The dial steps back while the hint asks for something: its value is the last one taken, not a live one.
         val dialAlpha = animateFloatAsState(if (holdFlat) DIAL_DIMMED else 1f, tween(250), label = "dial")
@@ -330,16 +315,23 @@ fun CompassScreen(
             focused = nav.focused, crumbTicks = nav.trail.tickAngles,
         )
 
-        // What the slots just above and below the heading hold: a target's name and distance, the words
-        // "No target", or nothing. While a waypoint is being logged the slot below holds the status instead, with
-        // or without targets. A slot added next to the heading belongs in [linesAroundHeading] too.
+        // The lines that say something about position: the row under the heading (a status, the distance, or
+        // `No target`), the smaller row under it, and the coordinates. One function decides them all.
         val focused = nav.focused
-        val noTarget = focused == null && nav.loaded && nav.waypoints.isNotEmpty()
-        val status = logLines ?: noPositionLines
-        val linesAroundHeading = focused != null || noTarget || status != null
-        // The status's second line sits where the prompts' words do, and has that place for as long as it shows.
+        val lines = readout(
+            status = logStatus, units = nav.units,
+            focus = when { focused == null -> FocusKind.NONE; focused.isCrumb -> FocusKind.CRUMB; else -> FocusKind.WAYPOINT },
+            distanceM = focused?.distanceM, arrived = focused?.arrived == true,
+            noTarget = focused == null && nav.loaded && nav.waypoints.isNotEmpty(),
+            position = nav.position, stale = stale, fixAccuracyM = nav.fixAccuracyM, noPosition = nav.noPosition,
+            showCoordinates = nav.showCoordinates && vm.supported, holdFlat = holdFlat,
+        )
+        // The hold-flat drawing has more room when the rows next to the heading are empty. A row added next to the
+        // heading belongs here too.
+        val linesAroundHeading = focused != null || lines.main != null
+        // A status's second line sits where the prompts' words do, and has that place for as long as it shows.
         // The hold-flat drawing goes on looping above it.
-        val promptWords = status?.detail == null
+        val promptWords = lines.detail == null
 
         // A tap on the compass does nothing, with one exception: while the calibrate prompt shows, the part of
         // the middle from the prompt down is its tap area, at least 48 dp both ways. The prompt, words and tap
@@ -360,7 +352,7 @@ fun CompassScreen(
             // when there are both.
             val laying = nav.trail.mode == TrailMode.LAYING
             if (showingMagnetic || laying) {
-                Row(Modifier.slot(-0.31f, 0.6f), Arrangement.Center, Alignment.CenterVertically) {
+                Row(Modifier.slot(rows.top, 0.6f), Arrangement.Center, Alignment.CenterVertically) {
                     if (showingMagnetic) Text("MAG", color = Dim, style = style(0.079f), maxLines = 1)
                     if (showingMagnetic && laying) Spacer(Modifier.width(r * 0.06f))
                     if (laying) Text(trailLabel(nav.trail.count), color = CrumbColor, style = style(0.079f), maxLines = 1, softWrap = false)
@@ -372,84 +364,51 @@ fun CompassScreen(
             val hintHeight = if (linesAroundHeading) 0.255f else 0.42f
             when {
                 holdFlat -> HoldFlatHint(
-                    labelStyle = bodyStyle, labelOffset = r * PROMPT_Y,
+                    labelStyle = bodyStyle, labelOffset = r * rows.prompt,
                     modifier = Modifier.slot(0f, hintHeight * 1.9f).height(r * hintHeight), showLabel = promptWords,
                     running = { paneView() != PaneView.HIDDEN },
                 )
                 else -> {
                     HeadingNumber({ headingText }, style(0.30f, FontWeight.Light), Modifier.slot(0f, 2 * READOUT_RADIUS))
-                    if (calibrate) Text("Calibrate", color = Dim, style = bodyStyle, maxLines = 1, modifier = Modifier.slot(PROMPT_Y, 0.6f))
+                    if (calibrate) Text("Calibrate", color = Dim, style = bodyStyle, maxLines = 1, modifier = Modifier.slot(rows.prompt, 0.6f))
                 }
             }
         }
 
-        when {
-            focused != null -> {
-                Row(Modifier.slot(-0.195f, 0.78f), Arrangement.Center, Alignment.CenterVertically) {
-                    // The crumb of a trail that is walked to stands here as a focused target does, in the trail's color.
-                    Box(Modifier.size(r * 0.062f).background(if (focused.isCrumb) CrumbColor else waypointColor(focused.hue), CircleShape))
-                    Spacer(Modifier.width(r * 0.035f))
-                    // A name too long for the slot slides back and forth in it, while the compass is in view.
-                    MarqueeText(focused.name, bodyStyle, { Ink }, running = { paneView() == PaneView.IN_VIEW })
-                }
-                val d = focused.distanceM
-                if (status == null) {
-                    // For the crumb walked to, a fix too poor to consume it has its accuracy after the distance,
-                    // dim: the wearer standing on a crumb that stays sees why.
-                    val note = if (focused.isCrumb && d != null && !focused.arrived) poorFixNote(nav.fixAccuracyM, stale, nav.units) else null
-                    val words = when {
-                        d == null -> "Locating…"
-                        focused.arrived -> "Arrived at target"
-                        stale -> "${formatDistance(d, nav.units)} (old)"
-                        else -> formatDistance(d, nav.units)
-                    }
-                    Text(
-                        text = if (note == null) AnnotatedString(words) else buildAnnotatedString {
-                            append(words); append(' ')
-                            withStyle(SpanStyle(color = Dim)) { append(note) }
-                        },
-                        color = if (stale) Dim else Ink, style = bodyStyle, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.slot(0.195f, 0.78f),
-                    )
-                }
+        if (focused != null) {
+            Row(Modifier.slot(rows.name, 0.78f), Arrangement.Center, Alignment.CenterVertically) {
+                // The crumb of a trail that is walked to stands here as a focused target does, in the trail's color.
+                Box(Modifier.size(r * 0.062f).background(if (focused.isCrumb) CrumbColor else waypointColor(focused.hue), CircleShape))
+                Spacer(Modifier.width(r * 0.035f))
+                // A name too long for the slot slides back and forth in it, while the compass is in view.
+                MarqueeText(focused.name, bodyStyle, { Ink }, view = paneView)
             }
-            // With no waypoints saved, or before the first real state arrives, nothing is shown here: the screen
-            // is a plain compass.
-            noTarget && status == null ->
-                Text("No target", color = Dim, style = bodyStyle, maxLines = 1, modifier = Modifier.slot(0.195f, 0.78f))
         }
 
-        if (status != null) {
-            StatusLine(status.text, status.color, bodyStyle, Modifier.slot(0.195f, 0.78f), running = { paneView() == PaneView.IN_VIEW })
-            status.detail?.let { StatusLine(it, status.detailColor, style(0.079f), Modifier.slot(STATUS_DETAIL_Y, 0.62f)) }
-        }
-
-        // The watch's own position, when the setting asks for it: two small, quiet lines under the distance, the
-        // latitude over the longitude. They stand where the prompts' words and a status's second line do, and give
-        // that place up to them: while the hold-flat hint, the calibrate prompt or such a line shows, there are no
-        // coordinates.
-        if (vm.supported) {
-            val coordinates = coordinatesReadout(
-                nav.showCoordinates, nav.position, stale, nav.noPosition,
-                distanceLocating = focused != null && status == null && focused.distanceM == null,
-                slotTaken = holdFlat || calibrate || status?.detail != null,
+        lines.main?.let { main ->
+            val color = toneColor(main.tone)
+            if (lines.mainIsStatus) StatusLine(main.words, color, bodyStyle, Modifier.slot(rows.main, 0.78f), view = paneView)
+            else Text(
+                // For the crumb walked to, a fix too poor to consume it has its accuracy after the distance,
+                // dim: the wearer standing on a crumb that stays sees why.
+                text = if (main.note == null) AnnotatedString(main.words) else buildAnnotatedString {
+                    append(main.words); append(' ')
+                    withStyle(SpanStyle(color = Dim)) { append(main.note) }
+                },
+                color = color, style = bodyStyle, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.slot(rows.main, 0.78f),
             )
-            if (coordinates != null) {
-                val coordinateStyle = style(COORDINATES_SIZE)
-                val color = if (coordinates.old) Faint else Dim
-                Text(
-                    coordinates.first, color = color, style = coordinateStyle, maxLines = 1, softWrap = false,
-                    modifier = Modifier.slot(COORDINATES_Y, 0.66f),
-                )
-                coordinates.second?.let {
-                    // The pane ticks come up through this line's place around a swipe. It steps back as they show
-                    // and returns as they fade, read while drawing.
-                    Text(
-                        it, color = color, style = coordinateStyle, maxLines = 1, softWrap = false,
-                        modifier = Modifier.slot(COORDINATES_Y + COORDINATES_STEP, 0.5f).graphicsLayer { alpha = 1f - paneTicks.value },
-                    )
-                }
-            }
+        }
+        lines.detail?.let { StatusLine(it.words, toneColor(it.tone), style(0.079f), Modifier.slot(rows.detail, 0.62f), view = paneView) }
+
+        // The watch's own position, when the setting asks for it: two small, quiet lines, the latitude above
+        // everything else in the readout and the longitude below it. They stay through a save, a failure, the
+        // calibrate prompt and a swipe, and are left out only in the hold-flat state.
+        val coordinateStyle = style(COORDINATES_SIZE)
+        lines.latitude?.let {
+            Text(it.words, color = toneColor(it.tone), style = coordinateStyle, maxLines = 1, softWrap = false, modifier = Modifier.slot(rows.latitude, 0.6f))
+        }
+        lines.longitude?.let {
+            Text(it.words, color = toneColor(it.tone), style = coordinateStyle, maxLines = 1, softWrap = false, modifier = Modifier.slot(rows.longitude, 0.5f))
         }
 
         // At the bottom of the readout's own circle, under the lowest line of text: the one place at 6 o'clock
@@ -459,24 +418,18 @@ fun CompassScreen(
 }
 
 /**
- * The logging status as the compass shows it: a line in the distance slot and, for some, a smaller one under it,
- * which is dim when it is a note and in the first line's color when it carries the first line's words on.
- */
-private data class StatusLines(val text: String, val detail: String?, val color: Color, val detailColor: Color)
-
-/**
  * One line of the logging status, on the compass and on the waypoints screen. It starts at the size of [style] and, when the words are wider than the slot,
  * steps down to three quarters of it before it cuts them short or, where things may move, slides them: the longest of the fixed messages and a waypoint
  * number of several digits do not fit the slot at full size, and the width a font gives them differs by watch.
  */
 @Composable
-internal fun StatusLine(text: String, color: Color, style: TextStyle, modifier: Modifier, running: () -> Boolean = { true }) {
+internal fun StatusLine(text: String, color: Color, style: TextStyle, modifier: Modifier, view: () -> PaneView = { PaneView.IN_VIEW }) {
     // Words that are too wide even at three quarters (`Saved Waypoint` with a number of many digits) slide back and
-    // forth at that size, as a name does, while [running] says so. Whether they are is known once they have been
+    // forth at that size, as a name does, on a screen that [view] says is in view. Whether they are is known once they have been
     // laid out at that size, so they are drawn cut short for one frame first.
     var tooWide by remember(text, style) { mutableStateOf(false) }
     val live = modifier.semantics { liveRegion = LiveRegionMode.Polite }
-    if (tooWide) MarqueeText(text, style.copy(fontSize = style.fontSize * STATUS_SMALLEST), { color }, live, running)
+    if (tooWide) MarqueeText(text, style.copy(fontSize = style.fontSize * STATUS_SMALLEST), { color }, live, view)
     else BasicText(
         text, live, style, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis, color = { color },
         onTextLayout = { if (it.hasVisualOverflow) tooWide = true },
@@ -487,22 +440,40 @@ internal fun StatusLine(text: String, color: Color, style: TextStyle, modifier: 
 /** How small a line of the logging status is drawn, as a share of its full size, before it is cut short or slides. */
 private const val STATUS_SMALLEST = 0.75f
 
+/** The color a line of the readout is drawn in. Read where the line is composed; the role colors can change while the app runs. */
+private fun toneColor(tone: ReadoutTone): Color = when (tone) {
+    ReadoutTone.INK -> Ink
+    ReadoutTone.DIM -> Dim
+    ReadoutTone.FAINT -> Faint
+    ReadoutTone.CONFIRM -> ConfirmColor
+    ReadoutTone.ERROR -> ErrorColor
+}
+
 /** Stands for the focused target's id in the frame loop while no target is focused. Row ids start at 1. */
 private const val NO_TARGET = 0L
 
-/** Where the calibrate prompt and the words of the hold-flat hint sit, in dial radii below the center. */
-private const val PROMPT_Y = 0.31f
+/**
+ * Where the readout's rows stand, in dial radii from the center (negative is above it): the row of `MAG` and the
+ * trail's label, the name, the row under the heading, the smaller row under that, and the calibrate prompt and the
+ * words of the hold-flat hint, which share that place. The two coordinate rows are used only by the second set.
+ */
+private class ReadoutRows(
+    val latitude: Float, val top: Float, val name: Float, val main: Float, val detail: Float, val prompt: Float, val longitude: Float,
+)
 
-/** Where the second line of the logging status sits: under the distance slot, where the prompts' words are. */
-private const val STATUS_DETAIL_Y = 0.30f
+/** The rows as they stand with the coordinates switched off. */
+private val ROWS = ReadoutRows(latitude = 0f, top = -0.31f, name = -0.195f, main = 0.195f, detail = 0.30f, prompt = 0.31f, longitude = 0f)
 
 /**
- * The coordinates readout: where its first line sits, in dial radii below the center, how far under it the second
- * is, and the size of its text. The pane ticks reach into the second line's place, which is why it steps back for them.
+ * The rows with the coordinates switched on: the latitude above the top row and the longitude below the prompts,
+ * each far enough inside the circle the letters sweep to be whole at its widest (`179.9999° W`), and the rows
+ * between a little closer to the heading. The longitude ends above the pane ticks.
  */
-private const val COORDINATES_Y = 0.288f
-private const val COORDINATES_STEP = 0.076f
-private const val COORDINATES_SIZE = 0.074f
+private val ROWS_WITH_COORDINATES =
+    ReadoutRows(latitude = -0.345f, top = -0.27f, name = -0.185f, main = 0.170f, detail = 0.258f, prompt = 0.262f, longitude = 0.348f)
+
+/** The size of the coordinates' text, in dial radii. */
+private const val COORDINATES_SIZE = 0.070f
 
 /** Where the outer ends of the pane ticks are on the compass, just inside [READOUT_RADIUS], and their size there. */
 private const val PANE_TICKS_ON_COMPASS = 0.465f

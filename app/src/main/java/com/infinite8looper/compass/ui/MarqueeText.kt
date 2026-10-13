@@ -3,6 +3,7 @@ package com.infinite8looper.compass.ui
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -15,11 +16,13 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.Paint
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
@@ -29,9 +32,11 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.lifecycle.repeatOnLifecycle
 import com.infinite8looper.compass.nav.MARQUEE_DP_PER_SECOND
+import com.infinite8looper.compass.nav.MarqueePhase
+import com.infinite8looper.compass.nav.PaneView
 import com.infinite8looper.compass.nav.marqueeOffset
+import com.infinite8looper.compass.nav.marqueePhase
 import com.infinite8looper.compass.nav.marqueeRestMs
 import com.infinite8looper.compass.nav.marqueeScrolls
 import com.infinite8looper.compass.nav.marqueeTimeMs
@@ -50,13 +55,17 @@ import kotlin.math.roundToInt
  *
  * With the system's animations switched off nothing slides, and text that does not fit ends in an ellipsis.
  *
- * It slides only while the app is on screen and [running] says so; otherwise it stands at its start and asks for
- * no frame; and while it waits at an end it asks for none either. A new [text] starts from the first wait. The slide is applied to the text's layer while it is placed:
- * a frame of it measures nothing, draws no text again and composes nothing. [color] is read while drawing.
+ * [view] says how much of the screen the text is on the wearer has ([marqueePhase]). It slides only on a screen at
+ * rest in view with the app in front. While that screen is passing in a swipe, or the app is not in front, it stays
+ * where it is and goes on from there afterwards; on a hidden screen it stands at its start. A new [text] starts
+ * from the first wait. While it does not slide, and while it waits at an end, it asks for no frame.
+ *
+ * A frame of the slide measures nothing, composes nothing and draws no text again: the offset is a property of the
+ * sliding text's own layer. [color] is read while drawing. Text that fits is drawn with no clip and no layer.
  */
 @Composable
 fun MarqueeText(
-    text: String, style: TextStyle, color: () -> Color, modifier: Modifier = Modifier, running: () -> Boolean = { true },
+    text: String, style: TextStyle, color: () -> Color, modifier: Modifier = Modifier, view: () -> PaneView = { PaneView.IN_VIEW },
 ) {
     val scale = motionScale()
     // Whether text that is too long would slide at all: not with the system's animations switched off.
@@ -65,37 +74,47 @@ fun MarqueeText(
     // written every frame of a slide. Neither is read where anything is composed.
     val overflow = remember { mutableIntStateOf(0) }
     val offset = remember { mutableFloatStateOf(0f) }
-    val lifecycle = LocalLifecycleOwner.current.lifecycle
-    // The loop below outlives a recomposition, so it asks whichever [running] was passed last.
-    val isRunning by rememberUpdatedState(running)
+    val appState = LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
+    // The loop below outlives a recomposition, so it asks whichever [view] was passed last.
+    val currentView by rememberUpdatedState(view)
     val density = LocalDensity.current
     val perSecond = with(density) { MARQUEE_DP_PER_SECOND.dp.toPx() }
 
-    LaunchedEffect(text, scale, perSecond, lifecycle) {
+    LaunchedEffect(text, scale, perSecond) {
+        // How long the text has been sliding and waiting, not counting the time it was held; and the overflow that
+        // time belongs to.
+        var elapsed = 0L
+        var slidOver = 0
         offset.floatValue = 0f
         if (!slides) return@LaunchedEffect
-        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            // Nothing to slide stands for "not running" too: the loop below is left, and no frame is asked for.
-            snapshotFlow { if (isRunning()) overflow.intValue else 0 }.collectLatest { over ->
-                offset.floatValue = 0f
-                if (!marqueeScrolls(over, scale)) return@collectLatest
-                var start = -1L
-                var restMs = 0.0
-                // One function for every frame, made here: a frame makes nothing new.
-                val frame: (Long) -> Unit = { now ->
-                    if (start < 0L) start = now
-                    val ms = marqueeTimeMs(now - start, scale)
-                    offset.floatValue = marqueeOffset(ms, over.toFloat(), perSecond)
-                    restMs = marqueeRestMs(ms, over.toFloat(), perSecond)
-                }
-                try {
+        snapshotFlow {
+            val over = overflow.intValue
+            marqueePhase(currentView(), appState.value == Lifecycle.State.RESUMED, over, scale) to over
+        }.collectLatest { (phase, over) ->
+            // A different width is a different slide.
+            if (over != slidOver) { slidOver = over; elapsed = 0L; offset.floatValue = 0f }
+            when (phase) {
+                MarqueePhase.RESET -> { elapsed = 0L; offset.floatValue = 0f }
+                // Where it is, it stays: no frame is asked for.
+                MarqueePhase.HELD -> Unit
+                MarqueePhase.RUNNING -> {
+                    var last = -1L
+                    var restMs = 0.0
+                    // One function for every frame, made here: a frame makes nothing new.
+                    val frame: (Long) -> Unit = { now ->
+                        if (last >= 0L) elapsed += now - last
+                        last = now
+                        val ms = marqueeTimeMs(elapsed, scale)
+                        offset.floatValue = marqueeOffset(ms, over.toFloat(), perSecond)
+                        restMs = marqueeRestMs(ms, over.toFloat(), perSecond)
+                    }
                     while (true) {
                         withFrameNanos(frame)
                         // While the text waits at an end nothing changes: no frame is asked for until the wait is
                         // nearly over. The time is the system's animation time, so the wait is scaled back.
                         if (restMs > MARQUEE_FRAME_MS) delay(((restMs - MARQUEE_FRAME_MS) * scale).toLong())
                     }
-                } finally { offset.floatValue = 0f }
+                }
             }
         }
     }
@@ -105,6 +124,7 @@ fun MarqueeText(
     val pastStart = remember { derivedStateOf { offset.floatValue > 0f } }
     val pastEnd = remember { derivedStateOf { overflow.intValue > 0 && offset.floatValue < overflow.intValue } }
     val fade = with(density) { MARQUEE_FADE.toPx() }
+    val layerPaint = remember { Paint() }
 
     Layout(
         content = {
@@ -113,26 +133,31 @@ fun MarqueeText(
                 overflow = if (slides) TextOverflow.Clip else TextOverflow.Ellipsis,
             )
         },
-        modifier = modifier
-            // Cut off at the edges of the place. Only text that slides is drawn into a picture of its own before it
-            // goes onto the screen, which is what lets its ends fade out.
-            .graphicsLayer {
-                clip = true
-                compositingStrategy = if (overflow.intValue > 0) CompositingStrategy.Offscreen else CompositingStrategy.Auto
-            }
-            .drawWithContent {
-                drawContent()
-                // No wider than the text is too long by: a name a few pixels too long loses a few pixels at an edge.
-                val soft = minOf(fade, overflow.intValue.toFloat())
-                if (soft > 0f && size.width > 2f * soft) {
-                    if (pastStart.value) drawRect(
+        modifier = modifier.drawWithContent {
+            val over = overflow.intValue
+            // Text that fits is drawn as it is: no clip, no layer.
+            if (over <= 0) { drawContent(); return@drawWithContent }
+            // No wider than the text is too long by: a name a few pixels too long loses a few pixels at an edge.
+            val soft = if (size.width > 2f * fade) minOf(fade, over.toFloat()) else 0f
+            val fadeStart = soft > 0f && pastStart.value
+            val fadeEnd = soft > 0f && pastEnd.value
+            clipRect {
+                if (!fadeStart && !fadeEnd) { this@drawWithContent.drawContent(); return@clipRect }
+                // The text is drawn into a picture of its own first, so its ends can be faded out without
+                // touching what is behind it.
+                drawIntoCanvas { canvas ->
+                    canvas.saveLayer(Rect(0f, 0f, size.width, size.height), layerPaint)
+                    this@drawWithContent.drawContent()
+                    if (fadeStart) drawRect(
                         Brush.horizontalGradient(listOf(Color.Transparent, Color.Black), 0f, soft), blendMode = BlendMode.DstIn,
                     )
-                    if (pastEnd.value) drawRect(
+                    if (fadeEnd) drawRect(
                         Brush.horizontalGradient(listOf(Color.Black, Color.Transparent), size.width - soft, size.width), blendMode = BlendMode.DstIn,
                     )
+                    canvas.restore()
                 }
-            },
+            }
+        },
     ) { measurables, constraints ->
         // Text that may slide is measured at its full width; text that may not is given its place and ends in an
         // ellipsis if that is too narrow.
@@ -146,7 +171,8 @@ fun MarqueeText(
         layout(width, height) {
             val y = (height - line.height) / 2
             if (over > 0) {
-                // Whole pixels: text moved by part of a pixel is drawn slightly differently from frame to frame.
+                // The slide is a property of the text's own layer, so a frame of it draws no text again. Whole
+                // pixels: text moved by part of a pixel is drawn slightly differently from frame to frame.
                 line.placeWithLayer(0, y) { translationX = -offset.floatValue.roundToInt().toFloat() }
             } else {
                 // In a place wider than the text, the text stands where its alignment puts it.
