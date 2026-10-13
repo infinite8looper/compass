@@ -107,6 +107,45 @@ class CompassViewModelTest {
         assertEquals(second.id, settings.settings.first().focusedId)
     }
 
+    @Test fun crownStepsThatArriveTogetherAreAllTaken() = runBlocking {
+        val vm = viewModel()
+        val first = vm.logWaypoint(hanover)
+        val second = vm.logWaypoint(hanover.copy(point = GeoPoint(43.7067, -72.2896)))
+        val third = vm.logWaypoint(hanover.copy(point = GeoPoint(43.6950, -72.3000)))
+        // Targets are newest first: [third, second, first], and the focus is on first.
+        assertEquals(first.id, settings.settings.first().focusedId)
+        // As a turn of the crown gives them: on the main thread, one after another, none waited for.
+        withContext(Dispatchers.Main) { List(5) { vm.moveFocus(1) } }.joinAll()
+        // Five steps on from first, round the three: third, second, first, third, second.
+        assertEquals(second.id, settings.settings.first().focusedId)
+        // Two steps back, the same way: third, first.
+        withContext(Dispatchers.Main) { List(2) { vm.moveFocus(-1) } }.joinAll()
+        assertEquals(first.id, settings.settings.first().focusedId)
+        // And a turn one way and then the other: seven on and three back are four on, which is one on.
+        withContext(Dispatchers.Main) { List(7) { vm.moveFocus(1) } + List(3) { vm.moveFocus(-1) } }.joinAll()
+        assertEquals(third.id, settings.settings.first().focusedId)
+    }
+
+    @Test fun aCrownStepMadeWhileAWaypointIsSavedIsKept() = runBlocking {
+        val vm = viewModel()
+        val first = vm.logWaypoint(hanover)
+        val second = vm.logWaypoint(hanover.copy(point = GeoPoint(43.7067, -72.2896)))
+        repeat(6) { round ->
+            // The targets are newest first and end in [second, first]; the focus is on first, the last of them.
+            settings.setFocused(first.id)
+            // A step back from first, and a save that begins before the step has been stored. Whichever of the
+            // two comes first, the step ends on second: a new waypoint goes to the front and takes no focus.
+            val saved = withContext(Dispatchers.Main) {
+                val step = vm.moveFocus(-1)
+                val save = async { vm.logWaypoint(hanover.copy(point = GeoPoint(43.6950 + round * 0.001, -72.3000))) }
+                step.join()
+                save.await()
+            }
+            assertEquals("round $round", second.id, settings.settings.first().focusedId)
+            assertEquals("round $round", saved.id, dao.observeAll().first().first().id)
+        }
+    }
+
     @Test fun blindNavigationAndTheBreadcrumbTrailReachTheScreenStateAndFollowTheirSetters() = runBlocking {
         val vm = viewModel()
         try {

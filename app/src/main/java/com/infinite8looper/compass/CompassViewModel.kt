@@ -224,7 +224,7 @@ class CompassViewModel(
                 .onEach { quietly("follow the trail") { retrace(it) } }
                 .map<Fix, Fix?> { it }
                 // A location failure ends the fixes, not the screen state: the waypoints and settings keep flowing.
-                .catch { Log.w(TAG, "location updates failed", it) }
+                .catch { Log.w(TAG, "location updates failed (" + it.javaClass.simpleName + ")") }
         }
         .onStart { emit(null) }
 
@@ -259,7 +259,7 @@ class CompassViewModel(
             blindNavigation = s.blindNavigation, breadcrumbTrail = s.breadcrumbTrail, trail = trail, noPosition = noPosition,
             fixAccuracyM = f?.accuracyM, position = f?.point)
     }
-        .catch { Log.w(TAG, "screen state stopped updating", it) }
+        .catch { Log.w(TAG, "screen state stopped updating (" + it.javaClass.simpleName + ")") }
         .stateIn(viewModelScope, sharing, NavUi.EMPTY)
 
     init {
@@ -289,18 +289,29 @@ class CompassViewModel(
         return ids to resolveFocus(ids, settingsStore.settings.first().focusedId)
     }
 
+    /**
+     * A change of the focus reads the targets and the stored focus and then writes the focus it works out from
+     * them. These are made one at a time, in the order they were asked for: the crown asks for a step at every
+     * detent, and two steps that both read before either had written would move the focus once. It is a lock of
+     * its own, not the one for the waypoint edits, so a step does not wait behind an edit.
+     */
+    private val focusChanges = Mutex()
+
     fun moveFocus(step: Int) = launchQuietly("move focus") {
         // While a trail is retraced the waypoint focus is suspended: it does not move, and is back afterwards.
         if (trailModeNow() == TrailMode.RETRACING) return@launchQuietly
-        val (ids, focused) = targetsAndFocus()
-        // With no targets there is nothing to step to, and a stored focus must survive.
-        if (ids.isNotEmpty()) settingsStore.setFocused(stepFocus(ids, focused, step))
+        focusChanges.withLock {
+            val (ids, focused) = targetsAndFocus()
+            // With no targets there is nothing to step to, and a stored focus must survive.
+            if (ids.isNotEmpty()) settingsStore.setFocused(stepFocus(ids, focused, step))
+        }
     }
 
     /** Stores a new waypoint as a target. Throws if the waypoint cannot be stored, so the caller can say so. */
     suspend fun logWaypoint(fix: Fix): Waypoint {
-        // The focus falls back to the newest target when none is stored, so pin it down before adding one.
-        targetsAndFocus().second?.let { settingsStore.setFocused(it) }
+        // The focus falls back to the newest target when none is stored, so pin it down before adding one. Under
+        // the lock a step of the focus takes, so the pin cannot write back a focus that a step has just moved on from.
+        focusChanges.withLock { targetsAndFocus().second?.let { settingsStore.setFocused(it) } }
         val n = settingsStore.nextWaypointNumber()
         val w = Waypoint(
             name = "Waypoint $n", lat = fix.point.lat, lon = fix.point.lon, accuracyM = fix.accuracyM,
@@ -631,7 +642,7 @@ class CompassViewModel(
 
     /** Runs a write whose failure must not take the app down. Cancellation still propagates. */
     private suspend fun quietly(what: String, block: suspend () -> Unit) {
-        try { block() } catch (e: CancellationException) { throw e } catch (e: Exception) { Log.w(TAG, "could not $what", e) }
+        try { block() } catch (e: CancellationException) { throw e } catch (e: Exception) { Log.w(TAG, "could not $what (" + e.javaClass.simpleName + ")") }
     }
 
     private fun launchQuietly(what: String, block: suspend () -> Unit): Job = viewModelScope.launch { quietly(what, block) }
