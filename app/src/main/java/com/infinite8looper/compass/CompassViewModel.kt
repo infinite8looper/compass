@@ -86,11 +86,12 @@ class CompassViewModel(
     private val sharing = SharingStarted.WhileSubscribed(2_000)
 
     /**
-     * The record of a restore that brought a backup made with `Back up waypoints` off, and whether the switch is
-     * still owed off by it: true from a restore until the settings file has been written ([RestoredOptOut]).
+     * The process's record of a restore that brought a backup made with `Back up waypoints` off, the same object
+     * the backup agent asks, and whether the switch is still owed off by it: true from a restore until the settings
+     * file has been written ([RestoredOptOut]).
      */
-    private val restoredOptOut = RestoredOptOut(app.filesDir, app.noBackupFilesDir)
-    private val backupOwedOff = MutableStateFlow(restoredOptOut.owed())
+    private val restoredOptOut = RestoredOptOut.get(app)
+    private val backupOwedOff = restoredOptOut.owedState
 
     /**
      * The switches of the settings screen, or null until the settings file has been read. Nothing else is waited
@@ -280,7 +281,7 @@ class CompassViewModel(
         // made, so that the first press of a process finds them there and does not wait for the file.
         launchQuietly("read the trail's stored mode") { settingsStore.storedTrail() }
         // A switch still owed off by a restore whose settings file could not be written then is written now.
-        launchQuietly("turn the backup switch off after a restore") { restoredOptOut.settle(settingsStore); backupOwedOff.value = restoredOptOut.owed() }
+        launchQuietly("turn the backup switch off after a restore") { restoredOptOut.owed(); restoredOptOut.settle(settingsStore) }
         // Rebuilds the database file once, off the main thread, so it holds nothing of rows deleted or changed
         // by an earlier build or on another device. A failure is not fatal: the backup agent tries again.
         viewModelScope.launch(Dispatchers.IO) {
@@ -672,7 +673,7 @@ class CompassViewModel(
      */
     fun setBackupEnabled(on: Boolean) = launchQuietly("set backup") {
         // The wearer's choice also ends whatever a restore still owed; if it cannot be written, that stays owed.
-        try { restoredOptOut.wearerSet(settingsStore, on) } finally { backupOwedOff.value = restoredOptOut.owed() }
+        restoredOptOut.wearerSet(settingsStore, on)
         // Tells the system the data is worth backing up again; the backup agent decides what is actually saved.
         BackupManager.dataChanged(getApplication<Application>().packageName)
     }

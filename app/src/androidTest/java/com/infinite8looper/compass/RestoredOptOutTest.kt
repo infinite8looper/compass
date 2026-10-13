@@ -11,6 +11,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.*
@@ -137,5 +138,37 @@ class RestoredOptOutTest {
             assertTrue("the write went through an unwritable folder: the test setup did not hold", failed)
             assertTrue("no longer owed although the switch was not written", restored.owed())
         } finally { folder.setWritable(true, false) }
+    }
+
+    @Test fun thereIsOneForTheProcessAndItsOwedStateCanBeWatched() = runBlocking {
+        assertSame(RestoredOptOut.get(ctx), RestoredOptOut.get(ctx))
+        store.setBackupEnabled(true)
+        val restored = RestoredOptOut(dir, second)
+        assertFalse(restored.owedState.value)
+        restored.markerCame()
+        assertTrue("the watched state did not follow the marker's coming", restored.owedState.value)
+        assertTrue(restored.settle(store))
+        assertFalse("the watched state did not follow the settling", restored.owedState.value)
+        restored.markerCame(); assertTrue(restored.owedState.value)
+        restored.wearerSet(store, on = true)
+        assertFalse("the watched state did not follow the wearer's choice", restored.owedState.value)
+    }
+
+    /**
+     * The settling of what a restore owes and the wearer turning the switch on, started together, many times: the
+     * wearer's choice is the later one or it clears what was owed first, so the switch always ends on. Without the
+     * two being kept apart, a settling that had already found the switch owed writes it off after the wearer's on.
+     */
+    @Test fun settlingAndTheWearersChoiceCannotInterleave() = runBlocking {
+        val restored = RestoredOptOut(dir, second)
+        repeat(150) { round ->
+            store.setBackupEnabled(true)
+            restored.markerCame()
+            val settling = launch(Dispatchers.Default) { restored.settle(store) }
+            val choosing = launch(Dispatchers.Default) { kotlinx.coroutines.yield(); restored.wearerSet(store, on = true) }
+            settling.join(); choosing.join()
+            assertEquals("round $round", true to false, store.readBackupSwitch())
+            assertFalse("round $round: still owed", restored.owed())
+        }
     }
 }

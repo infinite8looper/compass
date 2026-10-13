@@ -50,8 +50,10 @@ class SettingsBackupAgent : BackupAgent() {
         // the setting off.
         var copying = false
         val copy = {
-            // The setting is read again here, with the lock held, so that turning it off during a pass counts.
-            if (backupEnabled()) { copying = true; super.onFullBackup(data) }
+            // Decided again here, with the lock held, by the same function that decided the pass: the switch on,
+            // nothing owed off by a restore, the storage taking a write. So turning it off during a pass counts,
+            // and the two decisions cannot come to differ.
+            if (pass() == BackupPass.COPY) { copying = true; super.onFullBackup(data) }
         }
         try {
             // No database files yet: there are no waypoints to protect, and none is created for the sake of a backup.
@@ -69,7 +71,8 @@ class SettingsBackupAgent : BackupAgent() {
         }
     }
 
-    private val restoredOptOut by lazy { RestoredOptOut(filesDir, noBackupFilesDir) }
+    /** The process's one record of a switch owed off by a restore, which the screens ask too. */
+    private val restoredOptOut by lazy { RestoredOptOut.get(this) }
 
     /**
      * What this pass hands over ([backupPass]), from the stored switch and who turned it off, taken in one read. A
@@ -140,25 +143,16 @@ class SettingsBackupAgent : BackupAgent() {
         }
     }
 
+    /**
+     * Asks the app's own settings store (DataStore allows one instance per file). A failure or a read that does
+     * not finish in 5 seconds gives null, which every caller takes as "not on".
+     */
     private fun <T> read(what: String, ask: suspend (SettingsStore) -> T?): T? = try {
         runBlocking { withTimeout(5_000) { ask(SettingsStore.get(applicationContext)) } }
     } catch (e: Exception) {
         // Only the kind of error is logged: its message can quote file paths.
         Log.w(TAG, "could not read " + what + " (" + e.javaClass.simpleName + ")")
         null
-    }
-
-    /**
-     * Reads the stored setting through the app's own store (DataStore allows one instance per file). Only a positive
-     * "on" allows a backup: an unreadable file, a damaged file (reset with the switch off) or a timeout all mean no.
-     */
-    private fun backupEnabled(): Boolean = try {
-        runBlocking { withTimeout(5_000) { SettingsStore.get(applicationContext).readBackupEnabled() } } == true
-    } catch (e: Exception) {
-        // The wearer's choice could not be read: backing up nothing is the safe error.
-        // Only the kind of error is logged: its message can quote file paths.
-        Log.w(TAG, "could not read the backup setting; backing up nothing (" + e.javaClass.simpleName + ")")
-        false
     }
 
     private companion object {
