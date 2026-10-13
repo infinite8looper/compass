@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.material3.dynamicColorScheme
+import com.infinite8looper.compass.nav.PANE_TICK_LENGTH_CURRENT
 import com.infinite8looper.compass.nav.Pane
 import com.infinite8looper.compass.nav.ScrollArc
 import com.infinite8looper.compass.nav.WatchScheme
@@ -135,7 +136,6 @@ fun softTint(position: Float): Color = Color((SOFT_TINT_ALPHA_255 shl 24) or sof
 /** Where the outer ends of the pane ticks are on a screen that keeps its bottom edge for them. */
 internal const val PANE_TICKS_AT_EDGE = 0.93f
 private const val PANE_TICK_LENGTH = 0.055f
-private const val PANE_TICK_LENGTH_CURRENT = 0.085f
 private const val PANE_TICK_WIDTH = 0.018f
 private const val PANE_TICK_SPACING = 0.085f
 

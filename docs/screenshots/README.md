@@ -136,3 +136,4 @@ The app follows when it next comes back on screen (Home, then open it again). `s
 - Real GPS: the emulators give the fed position with no jitter, so arrival at the 10 m and 12 m distances and positions logged while moving were not seen as a watch gives them.
 - The encryption requirement on Google's backup: only the emulator's local backup transport was used, with a build made without that requirement.
 - Device-to-device transfer: not run.
+- Another system font: the rows of the compass's readout stand 2 to 4 px apart in these pictures, in places worked out from this font's letter heights. A watch whose system font has taller letters or longer descenders was not seen.

@@ -4,7 +4,10 @@
 # the per-class counts and the totals of each, then the sum over all of them. With no names it runs on
 #   Wear_OS_API33, Wear_OS_API34, Wear_OS_Newest (Wear OS 7.0, API 37) and Wear_OS_Large_Round (API 35).
 # For each emulator it: switches to it with scripts/switch-emulator.sh (which stops the one that is attached, boots
-# the named one and installs the debug app if it has been built), wakes the screen, starts scripts/geo-feed.sh at
+# the named one and installs the debug app if it has been built), lays the virtual watch flat at a magnetic
+# heading of 40 (scripts/set-heading.sh: a booted emulator is upright, where the compass shows its hold-flat hint
+# and no heading, and the test of the heading's description would be skipped), wakes the screen and checks that it
+# is awake (two of the images put it to sleep when the pose changes), starts scripts/geo-feed.sh at
 # 43.7022,-72.2896 (the position some of the tests need, and the one the tests compare against), runs the suite,
 # stops the feed, and keeps a copy of the result files.
 # The tests wipe the app's data and Gradle uninstalls the app when a run ends. Use emulators only.
@@ -45,7 +48,22 @@ for avd in $avds; do
     summary+=("$avd: not run"); bad=1; continue
   fi
   sdk=$($ADB shell getprop ro.build.version.sdk | tr -d '\r')
-  $ADB shell input keyevent KEYCODE_WAKEUP
+  # A booted emulator's virtual watch is upright, which is the hold-flat state: the compass shows no heading there
+  # and the test of the heading's description would be skipped. Laid flat, through the emulator's sensors.
+  # The API 33 and Wear OS 7.0 images put the screen to sleep when the pose is changed this way, and there no
+  # activity is resumed and no position is delivered: so the screen is woken after it, and the suite is not
+  # started unless the watch says it is awake.
+  scripts/set-heading.sh 40 > /dev/null
+  awake=""
+  for try in 1 2 3 4 5; do
+    sleep 3; $ADB shell input keyevent KEYCODE_WAKEUP; sleep 2
+    awake=$($ADB shell dumpsys power | tr -d '\r' | sed -n 's/.*mWakefulness=\([A-Za-z]*\).*/\1/p' | head -1)
+    [ "$awake" = "Awake" ] && break
+  done
+  if [ "$awake" != "Awake" ]; then
+    echo "$avd: the screen would not stay awake after the watch was laid flat ($awake), not run"
+    summary+=("$avd: not run"); bad=1; continue
+  fi
   scripts/geo-feed.sh -72.2896 43.7022 $(( gradle_seconds + 120 )) > /dev/null 2>&1 &
   feed_pid=$!
   ./gradlew connectedDebugAndroidTest > $out/suite-$avd.log 2>&1 &

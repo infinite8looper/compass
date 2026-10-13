@@ -54,16 +54,18 @@ scripts/all-suites.sh                      # API 33, API 34, Wear OS 7.0 (API 37
 scripts/all-suites.sh Wear_OS_API34        # only the named emulators
 ```
 
-For each emulator it switches to it, starts the position feed, runs `connectedDebugAndroidTest` with a 40-minute deadline, stops the feed, keeps a copy of the results, and prints per-class counts and totals, then the sum over all. Output is in `app/build/all-suites/` (`suite-<avd>.log`, `results-<avd>/`). The last emulator is left running with the debug app installed again. The exit status is 1 if a run failed or a test failed.
+For each emulator it switches to it, lays the virtual watch flat at a magnetic heading of 40 (`scripts/set-heading.sh`), wakes the screen and checks that it is awake, starts the position feed, runs `connectedDebugAndroidTest` with a 40-minute deadline, stops the feed, keeps a copy of the results, and prints per-class counts and totals, then the sum over all. Output is in `app/build/all-suites/` (`suite-<avd>.log`, `results-<avd>/`). The last emulator is left running with the debug app installed again. The exit status is 1 if a run failed or a test failed.
 
 ## Emulator-only behavior
 
 - `DeletedWaypointTest` has tests that set the device-wide debug property `debug.sqlite.journalmode` to check the database under the platform's other journal mode; they are skipped anywhere that is not an emulator (the test recognizes one by `Build.HARDWARE` being `ranchu` or `goldfish`, or `Build.PRODUCT` starting with `sdk_`).
-- `AccessibilityTreeTest.theHeadingIsDescribedWithItsNameAndUnit` checks the heading's description only where the heading number is on screen. An emulator in its default pose is upright and shows the hold-flat hint in its place, and there the test passes having checked only that; lay the virtual watch flat first (`scripts/set-heading.sh 40`) to have it check the description.
+- `AccessibilityTreeTest.theHeadingIsDescribedWithItsNameAndUnit` needs the heading number on screen. A booted emulator's virtual watch is upright, where the compass shows the hold-flat hint and no heading; there the test is skipped (`assumeTrue`), Gradle's build still succeeds, and `scripts/test-counts.sh device` counts it as skipped and prints the reason. So a bare `./gradlew connectedDebugAndroidTest` on an upright emulator reports 1 skipped. `scripts/all-suites.sh` lays each emulator flat first (`scripts/set-heading.sh 40`), so there it runs; by hand, run `scripts/set-heading.sh 40` before the suite. `theTreeHoldsEitherTheHeadingOrTheHoldFlatHintAndNeverBoth` runs in either pose and checks the one it finds.
 - `WatchColorsDeviceTest` reads what the watch gives: with the system setting `dynamic_color_theme_enabled` at 1 on API 35 or newer one branch of each test runs, anywhere else the other.
 - `scripts/seed-targets.sh` and `scripts/raw-swipe.sh` refuse to run on anything but an emulator; `scripts/set-heading.sh` and `scripts/geo-feed.sh` use `adb emu` commands, which exist only for emulators.
 
 ## What differs by image
+
+- API 33 and Wear OS 7.0 (API 37): a change of pose sent through the emulator's console (`scripts/set-heading.sh`, `adb emu sensor set acceleration ...`) puts the screen to sleep (seen on API 33 as `mWakefulness=Dozing` right after the command; on API 37 as activities that stay stopped). Why these two images do it was not looked into. An app on a sleeping screen is stopped and gets no position, so the tests that use the real activity then fail (23 and 22 of 134 in one run). Send `adb shell input keyevent KEYCODE_WAKEUP` after changing the pose; `scripts/all-suites.sh` does. The API 34 and 35 images stay awake.
 
 - API 33: no `adb shell input rotaryencoder`; `scripts/crown.sh` writes the crown's events as root (`adb root`, then `sendevent`) and says so; run `adb unroot` afterwards. The image sometimes goes to ambient shortly after launch; `adb shell input keyevent KEYCODE_WAKEUP` wakes it.
 - Wear OS 7.0 (API 37, `Wear_OS_Newest`): a signed image, so there is no `adb root` and no `sqlite3` on the device. `scripts/seed-targets.sh` changes a copy of the database file with this machine's `sqlite3` and puts it back; `scripts/raw-swipe.sh` sends the touch through the emulator's console instead of the device.
@@ -98,4 +100,4 @@ scripts/frame-times.sh <label>                # frame times while the heading sw
 
 ## Counts at the time of writing
 
-354 unit tests. 133 instrumented tests, run on each of `Wear_OS_API33`, `Wear_OS_API34`, `Wear_OS_Newest` and `Wear_OS_Large_Round` by `scripts/all-suites.sh` on 2026-10-13: 133 passed, 0 failed and 0 skipped on each, 532 in all. Lint (`./gradlew lintDebug`) reports 0 errors and one warning, `StaticFieldLeak` on the settings store's singleton.
+355 unit tests. 134 instrumented tests, run on each of `Wear_OS_API33`, `Wear_OS_API34`, `Wear_OS_Newest` and `Wear_OS_Large_Round` by `scripts/all-suites.sh` on 2026-10-13: 134 passed, 0 failed and 0 skipped on each, 536 in all. Lint (`./gradlew lintDebug`) reports 0 errors and one warning, `StaticFieldLeak` on the settings store's singleton.

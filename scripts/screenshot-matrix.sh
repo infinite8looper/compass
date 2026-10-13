@@ -13,7 +13,7 @@
 #   coords       coordinates with no target, old, before the first fix, with a target; hold-flat with them on
 #   trail        a crumb saved, laying, the trail's row, retracing, facing the crumb, `Hold to clear`, `Trail complete`
 #   waypoints    empty, a few, thirty (top and end), old distances, the status band after `Log here`
-#   edit         a short name, the color being dragged (finger down), `Hold to delete` half way
+#   edit         a short name, the color being dragged (finger down), `Hold to delete` late in the hold
 #   settings     top, middle, end; `Breadcrumb trail` and `Show coordinates` on; every switch off
 #   calibration  normal; interference
 #   panes        the three screens side by side; the row half way through a swipe; the compass's three ticks
@@ -45,7 +45,14 @@ HERE_LAT=43.7022; HERE_LON=-72.2896
 GREEN='#7FD99A'; RED='#FF3B30'      # the confirming green and the error color where the watch gives no scheme
 tmp=$(mktemp -d) || exit 1
 readonly_db=0      # 1 while the `log` section has the app's database file read-only
-trap 'pkill -f geo-feed.sh; [ $readonly_db = 1 ] && $ADB shell run-as $PKG chmod 660 databases/waypoints.db; rm -rf "$tmp"' EXIT
+cleanup() {      # however it ends: finished, an error, Ctrl-C or a kill
+  pkill -f geo-feed.sh
+  [ $readonly_db = 1 ] && $ADB shell run-as $PKG chmod 660 databases/waypoints.db
+  rm -rf "$tmp"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # ---- small tools -------------------------------------------------------------------------------------------
 shot() {   # shot <state>: one picture
@@ -190,8 +197,10 @@ sec_compass() {
   seed many; shot compass-many
   seed 0:0:4; shot compass-arrived
   seed none; shot compass-clean          # true north: a position is known from the targets before
-  seed $THREE; to_waypoints; tap "3 of 3 targets"; sleep 1; from_waypoints; sleep 1; shot compass-no-target
-  to_waypoints; tap "0 of 3 targets"; sleep 1; from_waypoints; sleep 3
+  seed $THREE; to_waypoints; tap "3 of 3 targets" || { from_waypoints; return 1; }
+  sleep 1; from_waypoints; sleep 1; shot compass-no-target
+  to_waypoints; tap "0 of 3 targets" || { from_waypoints; return 1; }
+  sleep 1; from_waypoints; sleep 3
   location off; sleep 25; shot compass-stale
   app_stop; app_start; sleep 4; shot compass-location-off
   location on; home; app_stop; app_start; sleep 1.2; shot compass-locating; sleep 6
@@ -231,7 +240,8 @@ sec_coords() {
   seed $THREE; shot coords-target
   # Hold-flat with the coordinates on: the two lines are left out, and a row with a descender stands over the words.
   seed 0:0:4; upright; sleep 3.5; shot coords-holdflat-arrived; flat; sleep 5
-  seed $THREE; to_waypoints; tap "3 of 3 targets"; sleep 1; from_waypoints; sleep 1
+  seed $THREE; to_waypoints; tap "3 of 3 targets" || { from_waypoints; return 1; }
+  sleep 1; from_waypoints; sleep 1
   upright; sleep 3.5; shot coords-holdflat-no-target; flat; sleep 4
 }
 sec_trail() {
@@ -320,6 +330,8 @@ ALL=(permission compass moving log coords trail waypoints edit settings calibrat
 for s in "$@"; do
   if [[ ${ALL[(i)$s]} -gt ${#ALL} ]]; then echo "no section '$s' (sections: $ALL)" >&2; exit 1; fi
 done
-for s in "$@"; do echo "== $s"; sec_$s; done
+failed=()
+for s in "$@"; do echo "== $s"; sec_$s || { echo "section $s stopped early" >&2; failed+=($s); }; done
 pkill -f geo-feed.sh; location on; flat; fresh > /dev/null
 echo "done: pictures in $OUT, app data wiped"
+if [ ${#failed} -gt 0 ]; then echo "sections that stopped early: $failed" >&2; exit 1; fi

@@ -29,7 +29,7 @@ private val ROWS = ReadoutRows(latitude = 0f, top = -0.31f, name = -0.195f, main
  * Below the heading four things share a quarter of the radius: the heading's digits (or the hold-flat drawing),
  * a row of words that can have a descender, a prompt or a status's second line, and the longitude. The places
  * leave at least 2 px of air between each pair on the smaller round screen ([rowGap]); there is no more to
- * share out without moving the longitude into the pane ticks.
+ * share out without moving the longitude into the pane ticks, over which a descender in its row has 1.5 px.
  */
 private val ROWS_WITH_COORDINATES =
     ReadoutRows(latitude = -0.345f, top = -0.27f, name = -0.185f, main = 0.167f, detail = 0.267f, prompt = 0.275f, longitude = 0.351f)
@@ -54,6 +54,21 @@ private const val HEADING_BASELINE = 0.37f
  */
 fun rowGap(upper: Float, upperSize: Float, upperDescends: Boolean, lower: Float, lowerSize: Float, lowerHasTallLetters: Boolean): Float =
     (lower - (if (lowerHasTallLetters) TALL_TOP else DIGIT_TOP) * lowerSize) - (upper + (if (upperDescends) DESCENDER else BASELINE) * upperSize)
+
+/** Where a row's ink ends: the bottom of a descender if its words can have one, its baseline if not. */
+fun rowBottom(row: Float, size: Float, descends: Boolean): Float = row + (if (descends) DESCENDER else BASELINE) * size
+
+/**
+ * The three ticks that show which screen is in view, as the compass draws them under the longitude's row: where
+ * their outer ends are (just inside the circle the letters sweep), their size there against the ticks at the
+ * edge of the other screens, and the length of the longest of them, the current screen's, at full size.
+ */
+const val PANE_TICKS_ON_COMPASS = 0.465f
+const val PANE_TICKS_SCALE = 0.75f
+const val PANE_TICK_LENGTH_CURRENT = 0.085f
+
+/** Where the longest pane tick on the compass begins, in dial radii below the middle. */
+fun paneTicksTopOnCompass(): Float = PANE_TICKS_ON_COMPASS - PANE_TICK_LENGTH_CURRENT * PANE_TICKS_SCALE
 
 /** The air between the heading's digits, which stand in the middle, and a row of words under them. */
 fun headingGap(row: Float, rowSize: Float): Float = (row - TALL_TOP * rowSize) - HEADING_BASELINE * READOUT_HEADING_SIZE

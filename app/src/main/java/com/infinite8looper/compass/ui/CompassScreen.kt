@@ -461,9 +461,6 @@ private const val NO_TARGET = 0L
 private const val PROMPT_TAP_ABOVE = 0.055f
 private const val PROMPT_TAP_HEIGHT = 0.52f
 
-/** Where the outer ends of the pane ticks are on the compass, just inside [READOUT_RADIUS], and their size there. */
-private const val PANE_TICKS_ON_COMPASS = 0.465f
-private const val PANE_TICKS_SCALE = 0.75f
 /** How long the pane ticks stay after the compass has come to rest, and how long they take to fade. */
 private const val PANE_TICKS_LINGER_MS = 1_200L
 private const val PANE_TICKS_FADE_MS = 400

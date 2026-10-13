@@ -30,15 +30,26 @@ class ReadoutRowsTest {
         // A status's second line with a descender (`precise location`) over the longitude.
         assertTrue("the smaller row over the longitude", rowGap(rows.detail, READOUT_DETAIL_SIZE, true, rows.longitude, COORDINATES_SIZE, false) >= air)
         // The latitude, digits, over `MAG` and the trail's label, and those over the name.
-        assertTrue("the latitude over MAG", rowGap(rows.latitude, COORDINATES_SIZE, false, rows.top, READOUT_DETAIL_SIZE, true) > 0f)
-        assertTrue("MAG over the name", rowGap(rows.top, READOUT_DETAIL_SIZE, false, rows.name, READOUT_BODY_SIZE, true) > 0f)
+        assertTrue("the latitude over MAG", rowGap(rows.latitude, COORDINATES_SIZE, false, rows.top, READOUT_DETAIL_SIZE, true) >= air)
+        assertTrue("MAG over the name", rowGap(rows.top, READOUT_DETAIL_SIZE, false, rows.name, READOUT_BODY_SIZE, true) >= air)
     }
 
-    @Test fun theRowsAboveTheHeadingStayWhereTheyWereAndTheLongitudeIsInsideTheReadout() {
+    @Test fun theRowsAboveTheHeadingAndTheRowsWithTheCoordinatesOffStayWhereTheyWere() {
         val rows = readoutRows(coordinates = true)
         assertEquals(-0.345f, rows.latitude, 0f); assertEquals(-0.27f, rows.top, 0f); assertEquals(-0.185f, rows.name, 0f)
-        // The longitude ends above the pane ticks: the tallest one starts 0.401 of the radius below the middle (0.465 - 0.085 * 0.75).
-        assertTrue(rows.longitude + 0.5f * COORDINATES_SIZE < 0.401f - 2f / 192f)
+    }
+
+    /** The pane ticks show under the longitude for about a second around a swipe. Their places are the ones the screen draws them at. */
+    @Test fun theLongitudesRowEndsAboveThePaneTicks() {
+        val rows = readoutRows(coordinates = true)
+        val ticksTop = paneTicksTopOnCompass()
+        assertEquals(PANE_TICKS_ON_COMPASS - PANE_TICK_LENGTH_CURRENT * PANE_TICKS_SCALE, ticksTop, 0f)
+        // The longitude itself, digits on their baseline: the same 2 px as every other pair.
+        assertTrue("the longitude over the ticks", ticksTop - rowBottom(rows.longitude, COORDINATES_SIZE, descends = false) >= air)
+        // `Locating…`, which stands in that row before the first fix, has a descender. There is not room for 2 px
+        // under it as well as under `Calibrate` above the row; it has 1.5 px on the smaller screen and does not touch.
+        val underADescender = ticksTop - rowBottom(rows.longitude, COORDINATES_SIZE, descends = true)
+        assertTrue("Locating… over the ticks: $underADescender", underADescender >= 1.5f / 192f)
         val off = readoutRows(coordinates = false)
         assertEquals(-0.31f, off.top, 0f); assertEquals(-0.195f, off.name, 0f); assertEquals(0.195f, off.main, 0f)
         assertEquals(0.30f, off.detail, 0f); assertEquals(0.31f, off.prompt, 0f)
