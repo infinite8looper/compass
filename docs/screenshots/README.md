@@ -60,7 +60,9 @@ Every picture here is a capture from an emulator, taken on 2026-10-13 from the d
 |-|-|-|
 | `Saved Crumb 1` | `trail-crumb-saved` | `trail`: `Breadcrumb trail` on, a double press (two `KEYCODE_STEM_1`), a press |
 | Laying, `Trail 3`, a crumb tick near 180 | `trail-laying` | `trail`: crumbs dropped at 43.7022, 43.70274 and 43.70328 north, then the feed moved to 43.7042 |
-| The trail's row while laying | `trail-row-laying` | `trail`: the waypoints screen |
+| The trail's row while laying, the `Drop crumb` row coming in under it | `trail-row-laying` | by hand, not by the script: `Breadcrumb trail` on, three crumbs put in the database, the `Trail` row tapped |
+| The `Drop crumb` row | `trail-drop-crumb` | the same, the list scrolled up by one row |
+| `Saved Crumb 4` after a tap on `Drop crumb` | `trail-drop-crumb-saved` | the same: `Drop crumb` tapped, taken 1.6 s later |
 | Retracing, `Crumb 3` | `trail-retracing` | `trail`: a double press, heading 160 |
 | Facing the crumb | `trail-facing` | `trail`: heading 180 |
 | The trail's row while retracing | `trail-row-retracing` | `trail`: the waypoints screen |
@@ -99,6 +101,24 @@ Every picture here is a capture from an emulator, taken on 2026-10-13 from the d
 | Every switch off (3 frames: top, middle, end) | `settings-all-off` | `settings`: each row tapped |
 | Calibration | `calibrate` | `calibration`: `Calibrate` tapped |
 | Interference | `calibrate-interference` | `calibration`: `adb emu sensor set magnetic-field 0:80:-45` (92 microtesla) |
+| The question before backups are turned off | `backup-off-question` | by hand: `Back up waypoints` tapped while it is on |
+
+## The largest font size
+
+The system's font scale set to 1.24, the largest step of the Wear OS font size setting (`adb shell settings put system font_scale 1.24`), by hand and not by the script. Three waypoints, one named `Trailhead parking lot north`, three crumbs, `Breadcrumb trail` on and a trail being laid.
+
+| State | File | How it was produced |
+|-|-|-|
+| The compass at the default font scale | `font-default-compass` | font scale 1.0, heading 40 |
+| The compass at 1.24: the readout is the same | `font-largest-compass` | font scale 1.24, the same state |
+| Settings, top of the list | `font-largest-settings-top` | one Back from the compass |
+| Settings, further down: lines that take a second line | `font-largest-settings-middle` | scrolled |
+| Settings, further down still | `font-largest-settings-end` | scrolled |
+| Waypoints with the `Drop crumb` row | `font-largest-waypoints` | a second Back, the list scrolled up by one row |
+| Edit, a name on two lines | `font-largest-edit` | a long press on `Trailhead parking lot north` |
+| Calibration | `font-largest-calibration` | `Calibrate` tapped |
+| Calibration with interference | `font-largest-calibration-interference` | `adb emu sensor set magnetic-field 0:80:-45` |
+| The question before backups are turned off | `font-largest-backup-off-question` | `Back up waypoints` tapped |
 
 ## The three screens
 

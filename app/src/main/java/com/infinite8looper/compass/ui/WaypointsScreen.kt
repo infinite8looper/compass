@@ -287,7 +287,8 @@ fun WaypointsScreen(
                         Text("Trail", color = if (active) Ink else Dim, style = if (active) nameOnStyle else nameStyle, maxLines = 1)
                         Text(
                             if (clearing) TRAIL_HOLD_TO_CLEAR else trailRowDetail(trail.mode, trail.count),
-                            color = if (clearing) ErrorColor else Dim, style = distanceStyle, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            // One line at the default font size; at a larger one, on a small screen, it goes on to a second.
+                            color = if (clearing) ErrorColor else Dim, style = distanceStyle, maxLines = 2, overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
@@ -325,7 +326,7 @@ fun WaypointsScreen(
                         nav.distances[w.id]?.let { d ->
                             Text(
                                 if (stale) "${formatDistance(d, nav.units)} (old)" else formatDistance(d, nav.units),
-                                color = if (stale) Faint else Dim, style = distanceStyle, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                color = if (stale) Faint else Dim, style = distanceStyle, maxLines = 2, overflow = TextOverflow.Ellipsis,
                             )
                         }
                     }

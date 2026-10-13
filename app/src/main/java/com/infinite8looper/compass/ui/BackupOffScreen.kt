@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -21,6 +23,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.wear.compose.foundation.lazy.AutoCenteringParams
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumnDefaults
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
@@ -32,9 +35,10 @@ import com.infinite8looper.compass.nav.BACKUP_OFF_QUESTION
 
 /**
  * The question asked before `Back up waypoints` is turned off, opened from that switch while it is on: what is
- * asked, a smaller line saying what turning it off does to the stored backup, and the two answers as rows of a list
- * like the settings', inside the frame. The answer that leaves the switch on stands in the middle when the screen
- * opens, and the one that turns it off is under it in the error color.
+ * asked, a smaller line saying what turning it off does to the stored backup, and under them the two answers side by
+ * side, in a list like the settings', inside the frame, so a font size at which it does not all fit can be scrolled.
+ * The answer that leaves the switch on is at the left in the accent color, and the one that turns it off at the
+ * right in the error color.
  *
  * [onTurnOff] is what the answer that turns it off does, and [onKeep] what the other does. A right swipe and Back
  * leave with nothing changed, which is done where the screen is put into the navigation host (ui/CompassApp.kt).
@@ -42,8 +46,8 @@ import com.infinite8looper.compass.nav.BACKUP_OFF_QUESTION
  */
 @Composable
 fun BackupOffScreen(onTurnOff: () -> Unit, onKeep: () -> Unit) {
-    // The first answer is the row in the middle, with the question above it.
-    val listState = rememberScalingLazyListState(initialCenterItemIndex = 1)
+    // The question is in the middle, with the two answers under it.
+    val listState = rememberScalingLazyListState(initialCenterItemIndex = 0)
     val r = screenRadius()
     val density = LocalDensity.current
     val questionStyle = remember(r, density) { density.instrumentText(r * 0.105f, FontWeight.Medium, TextAlign.Center) }
@@ -54,6 +58,8 @@ fun BackupOffScreen(onTurnOff: () -> Unit, onKeep: () -> Unit) {
         Box(Modifier.fillMaxSize().padding(r * (1f - LIST_RADIUS)).clip(CircleShape)) {
             ScalingLazyColumn(
                 state = listState,
+                // The question can stand in the middle, which is where the screen opens.
+                autoCentering = AutoCenteringParams(itemIndex = 0),
                 scalingParams = ScalingLazyColumnDefaults.scalingParams(edgeScale = 1f, edgeAlpha = 1f),
                 verticalArrangement = Arrangement.spacedBy(0.dp, Alignment.CenterVertically),
                 contentPadding = PaddingValues(0.dp),
@@ -68,14 +74,16 @@ fun BackupOffScreen(onTurnOff: () -> Unit, onKeep: () -> Unit) {
                         }
                     }
                 }
-                item(key = "keep") {
-                    InstrumentRow(Modifier.clickable(role = Role.Button, onClick = onKeep), centered = true) {
-                        Text(BACKUP_OFF_KEEP, color = AccentColor, style = answerStyle, maxLines = 1)
-                    }
-                }
-                item(key = "off") {
-                    InstrumentRow(Modifier.clickable(role = Role.Button, onClick = onTurnOff), centered = true) {
-                        Text(BACKUP_OFF_CONFIRM, color = ErrorColor, style = answerStyle, maxLines = 1)
+                item(key = "answers") {
+                    // The two answers side by side, each half the row and as tall as a touch needs: under the
+                    // question, both are on screen with it at every font size.
+                    Row(Modifier.width(r * ANSWERS_WIDTH).heightIn(min = HitHeight), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.weight(1f).heightIn(min = HitHeight).clickable(role = Role.Button, onClick = onKeep), Alignment.Center) {
+                            Text(BACKUP_OFF_KEEP, color = AccentColor, style = answerStyle, maxLines = 1)
+                        }
+                        Box(Modifier.weight(1f).heightIn(min = HitHeight).clickable(role = Role.Button, onClick = onTurnOff), Alignment.Center) {
+                            Text(BACKUP_OFF_CONFIRM, color = ErrorColor, style = answerStyle, maxLines = 1)
+                        }
                     }
                 }
             }
@@ -86,3 +94,5 @@ fun BackupOffScreen(onTurnOff: () -> Unit, onKeep: () -> Unit) {
 
 /** How wide the question and its smaller line may be, as a share of the screen's radius. */
 private const val QUESTION_WIDTH = 1.25f
+/** How wide the two answers are together: under the middle of the screen, where the circle is narrower. */
+private const val ANSWERS_WIDTH = 1.45f
