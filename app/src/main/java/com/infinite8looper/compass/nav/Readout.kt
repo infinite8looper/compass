@@ -26,12 +26,17 @@ data class ReadoutLine(val words: String, val tone: ReadoutTone, val note: Strin
  * `No target`. [detail] is the smaller row under it, which only a status has. [latitude] and [longitude] are the
  * coordinates' rows, the first above the name and the second at the bottom; the second also carries the one line
  * that stands for the coordinates while there are none (`Locating…`, `Location is off`). [mainIsStatus] says [main]
- * holds a status, which is drawn smaller before it is cut short.
+ * holds a status, which is drawn smaller before it is cut short. [prompt] is which of the two prompts about the compass
+ * itself shows; it and [detail] share one place, so at most one of them is there.
  */
 data class Readout(
     val main: ReadoutLine?, val detail: ReadoutLine?, val latitude: ReadoutLine?, val longitude: ReadoutLine?,
     val mainIsStatus: Boolean = false,
+    val prompt: ReadoutPrompt? = null,
 )
+
+/** The words about the compass itself that stand in the place under the row under the heading: `Hold flat`, or `Calibrate`. */
+enum class ReadoutPrompt { HOLD_FLAT, CALIBRATE }
 
 /** What has the focus on the compass: nothing, a waypoint that is a target, or the crumb of a trail that is walked to. */
 enum class FocusKind { NONE, WAYPOINT, CRUMB }
@@ -50,6 +55,14 @@ private const val LOCATING = "Locating…"
  *   ending in ` (old)` when the fix is [stale], and for a crumb followed by a poor fix's accuracy ([poorFixNote]).
  * - With nothing focused: `No target` when there are waypoints and none is a target ([noTarget]), else nothing.
  *
+ * The prompts, `Hold flat` ([holdFlat]) and `Calibrate` ([lowAccuracy], when the watch is not tilted too far), are
+ * about the compass working at all and share the place of the row under the row under the heading:
+ * - The second line of a press's status has that place while it shows, and the prompt is back when the status ends.
+ * - What a focused target says while no position can come stands for as long as that lasts, so it gives the place
+ *   up: while a prompt is due, a message of two lines (`Needs access to` / `precise location`) is not shown, neither
+ *   line, and returns when the prompt ends. Meanwhile the row under the heading has the target's distance if there
+ *   is one, and otherwise nothing. A message of one line (`Location is off`) is not in the prompt's place and stays.
+ *
  * The coordinates ([showCoordinates]) add their two rows and change none of the above. They are left out only in
  * the hold-flat state ([holdFlat]) and without the permission.
  * - With a [position]: the latitude and the longitude, fainter when the fix is old. That it is old is said once:
@@ -60,11 +73,16 @@ private const val LOCATING = "Locating…"
 fun readout(
     status: LogStatus, units: Units, focus: FocusKind, distanceM: Double?, arrived: Boolean, noTarget: Boolean,
     position: GeoPoint?, stale: Boolean, fixAccuracyM: Float?, noPosition: LogFailure?, showCoordinates: Boolean, holdFlat: Boolean,
+    lowAccuracy: Boolean = false,
 ): Readout {
+    // The prompt that is due, before anything is said about its place.
+    val due = when { holdFlat -> ReadoutPrompt.HOLD_FLAT; lowAccuracy -> ReadoutPrompt.CALIBRATE; else -> null }
     // The status that has the two rows: the press's, or what a focused target says when no position can come.
+    // The second stands for as long as its cause does, so where it would need the prompt's place it gives way.
     val shown: LogStatus? = when {
         status != LogStatus.Idle -> status
-        noPosition != null && (focus == FocusKind.CRUMB || (focus == FocusKind.WAYPOINT && distanceM == null)) -> LogStatus.Failed(noPosition)
+        noPosition != null && (focus == FocusKind.CRUMB || (focus == FocusKind.WAYPOINT && distanceM == null)) ->
+            LogStatus.Failed(noPosition).takeUnless { due != null && statusText(it, units).second != null }
         else -> null
     }
     var distanceSaysOld = false
@@ -79,7 +97,9 @@ fun readout(
         detail = null
         main = when {
             focus == FocusKind.NONE -> if (noTarget) ReadoutLine("No target", ReadoutTone.DIM) else null
-            distanceM == null -> ReadoutLine(LOCATING, ReadoutTone.INK)
+            // Waiting for a position is said only where one can come and none is known. (A target with no distance
+            // beside a known position does not happen today; the position is what is known.)
+            distanceM == null -> if (position == null && noPosition == null) ReadoutLine(LOCATING, ReadoutTone.INK) else null
             arrived -> ReadoutLine("Arrived at target", if (stale) ReadoutTone.DIM else ReadoutTone.INK)
             stale -> { distanceSaysOld = true; ReadoutLine(formatDistance(distanceM, units) + " (old)", ReadoutTone.DIM) }
             else -> ReadoutLine(
@@ -112,7 +132,7 @@ fun readout(
             }
         }
     }
-    return Readout(main, detail, latitude, longitude, mainIsStatus = shown != null)
+    return Readout(main, detail, latitude, longitude, mainIsStatus = shown != null, prompt = if (detail == null) due else null)
 }
 
 /** The color of a logging status's words, as a tone. */

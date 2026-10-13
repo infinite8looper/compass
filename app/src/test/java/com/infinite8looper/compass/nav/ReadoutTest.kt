@@ -17,7 +17,7 @@ class ReadoutTest {
 
     private data class Case(
         val coordinates: Boolean, val noPosition: LogFailure?, val fix: FixAge, val focus: FocusKind, val noTarget: Boolean,
-        val arrived: Boolean, val status: LogStatus, val holdFlat: Boolean, val accuracyM: Float,
+        val arrived: Boolean, val status: LogStatus, val holdFlat: Boolean, val accuracyM: Float, val lowAccuracy: Boolean,
     ) {
         fun lines(): Readout = readout(
             status = status, units = Units.IMPERIAL, focus = focus,
@@ -25,7 +25,7 @@ class ReadoutTest {
             arrived = arrived && focus != FocusKind.NONE && fix != FixAge.NONE, noTarget = noTarget && focus == FocusKind.NONE,
             position = if (fix == FixAge.NONE) null else GeoPoint(43.7022, -72.2896), stale = fix == FixAge.STALE,
             fixAccuracyM = if (fix == FixAge.NONE) null else accuracyM, noPosition = noPosition, showCoordinates = coordinates,
-            holdFlat = holdFlat,
+            holdFlat = holdFlat, lowAccuracy = lowAccuracy,
         )
     }
 
@@ -34,8 +34,8 @@ class ReadoutTest {
         for (coordinates in listOf(false, true)) for (noPosition in listOf(null, LogFailure.NO_PERMISSION, LogFailure.LOCATION_OFF))
             for (fix in FixAge.entries) for (focus in FocusKind.entries) for (noTarget in listOf(false, true))
                 for (arrived in listOf(false, true)) for (status in statuses) for (holdFlat in listOf(false, true))
-                    for (accuracy in listOf(5f, 30f))
-                        yield(Case(coordinates, noPosition, fix, focus, noTarget, arrived, status, holdFlat, accuracy))
+                    for (accuracy in listOf(5f, 30f)) for (lowAccuracy in listOf(false, true))
+                        yield(Case(coordinates, noPosition, fix, focus, noTarget, arrived, status, holdFlat, accuracy, lowAccuracy))
     }
 
     private fun Readout.all(): List<ReadoutLine> = listOfNotNull(main, detail, latitude, longitude)
@@ -43,8 +43,8 @@ class ReadoutTest {
     private fun count(words: List<String>, part: String) = words.sumOf { it.windowed(part.length).count { w -> w == part } }
 
     @Test fun theTableCoversEveryCombination() {
-        // 2 settings x 3 reasons x 3 fixes x 3 kinds of focus x 2 x 2 x 9 statuses x 2 x 2 accuracies.
-        assertEquals(2 * 3 * 3 * 3 * 2 * 2 * 9 * 2 * 2, cases().count())
+        // 2 settings x 3 reasons x 3 fixes x 3 kinds of focus x 2 x 2 x 9 statuses x 2 x 2 accuracies x 2 sensor accuracies.
+        assertEquals(2 * 3 * 3 * 3 * 2 * 2 * 9 * 2 * 2 * 2, cases().count())
     }
 
     @Test fun noTwoLinesSayTheSameThing() {
@@ -89,7 +89,7 @@ class ReadoutTest {
             val on = case.lines()
             val off = case.copy(coordinates = false).lines()
             assertEquals("$case", off.main, on.main); assertEquals("$case", off.detail, on.detail)
-            assertEquals("$case", off.mainIsStatus, on.mainIsStatus)
+            assertEquals("$case", off.mainIsStatus, on.mainIsStatus); assertEquals("$case", off.prompt, on.prompt)
         }
     }
 
@@ -114,11 +114,108 @@ class ReadoutTest {
         status: LogStatus = LogStatus.Idle, focus: FocusKind = FocusKind.NONE, distanceM: Double? = null, arrived: Boolean = false,
         noTarget: Boolean = false, position: GeoPoint? = null, stale: Boolean = false, fixAccuracyM: Float? = null,
         noPosition: LogFailure? = null, showCoordinates: Boolean = true, holdFlat: Boolean = false, units: Units = Units.IMPERIAL,
-    ) = readout(status, units, focus, distanceM, arrived, noTarget, position, stale, fixAccuracyM, noPosition, showCoordinates, holdFlat)
+        lowAccuracy: Boolean = false,
+    ) = readout(status, units, focus, distanceM, arrived, noTarget, position, stale, fixAccuracyM, noPosition, showCoordinates, holdFlat, lowAccuracy)
 
     @Test fun aCleanCompassHasNoLines() {
         assertEquals(Readout(null, null, null, null), lines(showCoordinates = false))
         assertEquals(Readout(null, null, null, null), lines(showCoordinates = false, position = hanover, fixAccuracyM = 5f))
+    }
+
+    // The prompts about the compass itself, and what gives way to what in their place.
+
+    /**
+     * `Hold flat` and `Calibrate` are about the compass working at all. They show whenever their state holds, for
+     * every position state, with a waypoint or a crumb in focus or nothing: the only thing that has their place
+     * before them is the second line of a press's own status, which ends by itself.
+     */
+    @Test fun holdFlatAndCalibrateShowInEveryPositionStateUnlessAPressesStatusHasTheirPlace() {
+        for (case in cases()) {
+            val lines = case.lines()
+            val pressDetail = statusText(case.status, Units.IMPERIAL).second != null
+            val expected = when {
+                pressDetail -> null
+                case.holdFlat -> ReadoutPrompt.HOLD_FLAT
+                case.lowAccuracy -> ReadoutPrompt.CALIBRATE
+                else -> null
+            }
+            assertEquals("$case", expected, lines.prompt)
+            // The place holds one thing: a prompt, or a status's second line.
+            assertFalse("$case", lines.prompt != null && lines.detail != null)
+        }
+    }
+
+    /** The standing message of a target that can get no position gives its place up to a prompt, both lines, and has it back after. */
+    @Test fun aTargetsStandingMessageGivesWayToAPromptAndReturns() {
+        for (focus in listOf(FocusKind.WAYPOINT, FocusKind.CRUMB)) {
+            val plain = lines(focus = focus, noPosition = LogFailure.NO_PERMISSION, showCoordinates = false)
+            assertEquals("$focus", "Needs access to", plain.main?.words); assertEquals("$focus", "precise location", plain.detail?.words)
+            assertNull(plain.prompt)
+            for ((holdFlat, low, prompt) in listOf(
+                Triple(true, false, ReadoutPrompt.HOLD_FLAT), Triple(false, true, ReadoutPrompt.CALIBRATE), Triple(true, true, ReadoutPrompt.HOLD_FLAT),
+            )) {
+                val l = lines(focus = focus, noPosition = LogFailure.NO_PERMISSION, showCoordinates = false, holdFlat = holdFlat, lowAccuracy = low)
+                assertEquals("$focus $holdFlat $low", prompt, l.prompt)
+                // Neither half of the sentence stands alone, and nothing is said in its place that is not so.
+                assertNull("$focus $holdFlat $low", l.main); assertNull("$focus $holdFlat $low", l.detail)
+            }
+            // A message of one line has no part in the prompts' place and stays.
+            val off = lines(focus = focus, noPosition = LogFailure.LOCATION_OFF, showCoordinates = false, lowAccuracy = true)
+            assertEquals("$focus", ReadoutLine("Location is off", ReadoutTone.ERROR), off.main)
+            assertEquals("$focus", ReadoutPrompt.CALIBRATE, off.prompt)
+        }
+        // A crumb that still has a distance from before shows it while the message has given way.
+        val crumb = lines(focus = FocusKind.CRUMB, noPosition = LogFailure.NO_PERMISSION, distanceM = 300.0, position = hanover, stale = true, holdFlat = true, showCoordinates = false)
+        assertEquals("984 ft (old)", crumb.main?.words)
+        assertEquals(ReadoutPrompt.HOLD_FLAT, crumb.prompt)
+    }
+
+    /** A press's status keeps the place for its second line, as before, and the prompt is back when it ends. */
+    @Test fun aPressesSecondLineHasThePromptsPlaceWhileItShows() {
+        val saving = lines(status = LogStatus.Saving(5f), lowAccuracy = true)
+        assertEquals("±16 ft", saving.detail?.words); assertNull(saving.prompt)
+        assertEquals(ReadoutPrompt.CALIBRATE, lines(status = LogStatus.Saving(null), lowAccuracy = true).prompt)
+        val denied = lines(status = LogStatus.Failed(LogFailure.NO_PERMISSION), holdFlat = true, focus = FocusKind.WAYPOINT, noPosition = LogFailure.NO_PERMISSION)
+        assertEquals("precise location", denied.detail?.words); assertNull(denied.prompt)
+        assertEquals(ReadoutPrompt.HOLD_FLAT, lines(holdFlat = true, lowAccuracy = true).prompt)
+        assertNull(lines().prompt)
+    }
+
+    // Edges.
+
+    @Test fun theSouthernAndEasternHemispheresGoThroughTheReadout() {
+        val sydney = lines(position = GeoPoint(-33.8688, 151.2093))
+        assertEquals(ReadoutLine("33.8688° S", ReadoutTone.DIM), sydney.latitude)
+        assertEquals(ReadoutLine("151.2093° E", ReadoutTone.DIM), sydney.longitude)
+        val old = lines(position = GeoPoint(-33.8688, 151.2093), stale = true)
+        assertEquals(ReadoutLine("33.8688° S (old)", ReadoutTone.FAINT), old.latitude)
+        assertEquals(ReadoutLine("151.2093° E", ReadoutTone.FAINT), old.longitude)
+    }
+
+    /** Old cannot be said of a position there is none of: with no position, `stale` changes nothing. */
+    @Test fun staleWithNoPositionChangesNothing() {
+        for (focus in FocusKind.entries) for (noPosition in listOf(null, LogFailure.LOCATION_OFF, LogFailure.NO_PERMISSION)) for (status in statuses) {
+            assertEquals(
+                "$focus $noPosition $status", lines(focus = focus, noPosition = noPosition, status = status),
+                lines(focus = focus, noPosition = noPosition, status = status, stale = true),
+            )
+        }
+        assertEquals(ReadoutLine("Locating…", ReadoutTone.DIM), lines(stale = true).longitude)
+        assertEquals(ReadoutLine("Locating…", ReadoutTone.INK), lines(focus = FocusKind.WAYPOINT, stale = true).main)
+    }
+
+    /**
+     * `Locating…` is never beside a position. A target with no distance while a position is known does not happen
+     * today (the distance comes from the position); if it did, the position is what is known and is what is shown.
+     */
+    @Test fun locatingIsNeverBesideAPositionEvenWhereADistanceIsMissing() {
+        for (focus in listOf(FocusKind.WAYPOINT, FocusKind.CRUMB)) for (coordinates in listOf(true, false)) for (stale in listOf(false, true))
+            for (noPosition in listOf(null, LogFailure.LOCATION_OFF, LogFailure.NO_PERMISSION)) for (status in statuses) {
+                val l = lines(focus = focus, distanceM = null, position = hanover, showCoordinates = coordinates, stale = stale, noPosition = noPosition, status = status)
+                val words = l.words()
+                assertFalse("$focus $coordinates $stale $noPosition $status: $words", words.any { "Locating…" in it } && l.latitude != null)
+                if (coordinates && noPosition != LogFailure.NO_PERMISSION) assertTrue("$focus $stale $noPosition $status", l.latitude!!.words.startsWith("43.7022° N"))
+            }
     }
 
     @Test fun aWaypointTargetsDistance() {
@@ -245,5 +342,11 @@ class ReadoutTest {
         assertNull(lines(position = GeoPoint(Double.NaN, 0.0)).latitude)
         assertNull(lines(position = GeoPoint(Double.NaN, 0.0)).longitude)
         assertNull(lines(position = GeoPoint(0.0, Double.POSITIVE_INFINITY)).latitude)
+        for (bad in listOf(Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY)) {
+            for (point in listOf(GeoPoint(bad, -72.2896), GeoPoint(43.7022, bad), GeoPoint(bad, bad))) {
+                val l = lines(position = point)
+                assertNull("$point", l.latitude); assertNull("$point", l.longitude)
+            }
+        }
     }
 }

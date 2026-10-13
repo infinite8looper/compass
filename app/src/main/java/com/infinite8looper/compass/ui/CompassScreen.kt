@@ -324,23 +324,24 @@ fun CompassScreen(
             distanceM = focused?.distanceM, arrived = focused?.arrived == true,
             noTarget = focused == null && nav.loaded && nav.waypoints.isNotEmpty(),
             position = nav.position, stale = stale, fixAccuracyM = nav.fixAccuracyM, noPosition = nav.noPosition,
-            showCoordinates = nav.showCoordinates && vm.supported, holdFlat = holdFlat,
+            showCoordinates = nav.showCoordinates && vm.supported, holdFlat = holdFlat, lowAccuracy = vm.supported && lowAccuracy,
         )
         // The hold-flat drawing has more room when the rows next to the heading are empty. A row added next to the
         // heading belongs here too.
         val linesAroundHeading = focused != null || lines.main != null
-        // A status's second line sits where the prompts' words do, and has that place for as long as it shows.
-        // The hold-flat drawing goes on looping above it.
-        val promptWords = lines.detail == null
-
+        // The place under the row under the heading holds one thing, and [readout] says which: a status's second
+        // line, or the words of the hold-flat hint, or the calibrate prompt. The hold-flat drawing loops whether
+        // or not its words have the place.
+        val calibrate = lines.prompt == ReadoutPrompt.CALIBRATE
         // A tap on the compass does nothing, with one exception: while the calibrate prompt shows, the part of
-        // the middle from the prompt down is its tap area, at least 48 dp both ways. The prompt, words and tap
-        // area alike, is there only while its words have their place. A long press that starts on that area
-        // is the area's own touch and opens nothing.
-        val calibrate = vm.supported && !holdFlat && lowAccuracy && promptWords
+        // the middle from the prompt's word down is its tap area, as tall as a touch needs at least. It starts at
+        // the top of the word wherever the rows put it, and is there only while the word is. A long press that
+        // starts on it is the area's own touch and opens nothing. The longitude under the word is drawn text with
+        // no touch of its own.
         if (calibrate) {
+            val tapHeight = maxOf(r * PROMPT_TAP_HEIGHT, HitHeight)
             Box(
-                Modifier.slot(y = 0.255f + 0.26f, width = 0.9f).height(r * 0.52f)
+                Modifier.align(Alignment.Center).offset(y = r * (rows.prompt - PROMPT_TAP_ABOVE) + tapHeight / 2).width(r * 0.9f).height(tapHeight)
                     .clickable(interactionSource = null, indication = null, onClick = onCalibrate)
             )
         }
@@ -365,7 +366,7 @@ fun CompassScreen(
             when {
                 holdFlat -> HoldFlatHint(
                     labelStyle = bodyStyle, labelOffset = r * rows.prompt,
-                    modifier = Modifier.slot(0f, hintHeight * 1.9f).height(r * hintHeight), showLabel = promptWords,
+                    modifier = Modifier.slot(0f, hintHeight * 1.9f).height(r * hintHeight), showLabel = lines.prompt == ReadoutPrompt.HOLD_FLAT,
                     running = { paneView() != PaneView.HIDDEN },
                 )
                 else -> {
@@ -471,6 +472,13 @@ private val ROWS = ReadoutRows(latitude = 0f, top = -0.31f, name = -0.195f, main
  */
 private val ROWS_WITH_COORDINATES =
     ReadoutRows(latitude = -0.345f, top = -0.27f, name = -0.185f, main = 0.170f, detail = 0.258f, prompt = 0.262f, longitude = 0.348f)
+
+/**
+ * The calibrate prompt's tap area, in dial radii: how far above the middle of its word it starts, which is half the
+ * word's line, and how far down it reaches from there.
+ */
+private const val PROMPT_TAP_ABOVE = 0.055f
+private const val PROMPT_TAP_HEIGHT = 0.52f
 
 /** The size of the coordinates' text, in dial radii. */
 private const val COORDINATES_SIZE = 0.070f
