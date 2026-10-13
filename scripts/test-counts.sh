@@ -27,6 +27,7 @@ WHERE = {
 }
 if len(sys.argv) > 2 and sys.argv[2]:
     WHERE["device"] = sys.argv[2] + "/**/*.xml"
+ASSUMPTION_FAILURES = {"org.junit.AssumptionViolatedException", "org.junit.internal.AssumptionViolatedException"}
 bad = False
 for kind in (["unit", "device"] if sys.argv[1] == "all" else [sys.argv[1]]):
     files = sorted(glob.glob(WHERE[kind], recursive=True))
@@ -45,7 +46,9 @@ for kind in (["unit", "device"] if sys.argv[1] == "all" else [sys.argv[1]]):
                 # A test that JUnit skipped because an assumption did not hold (`assumeTrue`) is written by the
                 # Android plugin's device results as a failure whose text is the AssumptionViolatedException, while
                 # Gradle itself counts it as skipped and the build succeeds. It is counted here as Gradle counts it.
-                if failure is not None and "AssumptionViolatedException" in words.split(":")[0]:
+                # Only that: what stands before the first colon of the first line, or the whole line when it has
+                # no colon, has to be the name of one of JUnit's two assumption classes and nothing else.
+                if failure is not None and words.split(":")[0].strip() in ASSUMPTION_FAILURES:
                     other[(cls, "skipped")] += 1
                     notes.append((cls, case.get("name"), words.split(":", 1)[-1].strip()))
                 elif failure is not None:

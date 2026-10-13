@@ -41,7 +41,7 @@ The side button does nothing on settings, edit and calibration. Whether a physic
 - True or magnetic north is a setting. True north uses the declination for the last known position; with no position ever known, the dial shows magnetic north and `MAG`.
 - When the watch is tilted steeply (it begins past 70 degrees and ends below 60), the heading is not taken: the dial dims and a looping drawing of a watch turning level appears with `Hold flat`.
 - The `Calibrate` prompt appears when the magnetometer reports low or unreliable accuracy, and opens the calibration screen.
-- With `Show coordinates` on, the latitude (for example `43.7022° N`) is at the top of the readout and the longitude (`72.2896° W`) at the bottom. They are hidden only in the hold-flat state.
+- With `Show coordinates` on, the latitude (for example `43.7022° N`) is at the top of the readout and the longitude (`72.2896° W`) at the bottom. They are not shown in the hold-flat state or without the location permission. Before a position is known the latitude is absent and the longitude's place shows `Locating…`, or `Location is off` with location switched off, unless the distance's row or a logging result already says why there is no position.
 - A waypoint name that does not fit slides back and forth in its place. With the system's animations removed it ends in an ellipsis.
 - The heading sensor runs while the compass is on screen or calibration is open, and stops about 2 seconds after.
 
@@ -59,7 +59,7 @@ A single press of the side button on the compass or the waypoints screen saves t
 - A waypoint's color is the color at its place on a ring that fades between three colors: the accent (the pointer), the north color and the error color. On API 35 and newer, while the system's dynamic color setting (`dynamic_color_theme_enabled`) is on, the app reads the system's color scheme; if the scheme's main color is not too pale or gray, those three follow it. Otherwise they are blue, red and red. On the emulators that setting was off until switched on by hand, and no emulator was found on which the watch face changes the scheme. With blue, red and red, a third of the ring is one red.
 - The distance is under the heading, in meters and kilometers or feet and miles. A target under 10 m (30 ft) away shows `Arrived at target` and has no line or arrow; it counts as left again only beyond 12 m (36 ft). A distance from a fix more than 20 seconds old is marked `(old)`.
 - When the heading is within 2 degrees of the focused target (held until it is more than 3 degrees off), its line is drawn thicker at 12 o'clock.
-- While a target exists and the compass is in view, the screen stays awake and position updates come about every 5 seconds.
+- While a target exists and the app is on screen, position updates come about every 5 seconds, on any of the three screens. The screen stays awake while a target exists and the compass is in view.
 - Targets and the focus are stored and survive closing the app.
 
 ## Blind navigation
@@ -73,7 +73,7 @@ Off by default (`Breadcrumb trail` in settings). With it on:
 1. A double press with no trail starts one; the compass shows `Trail` and the crumb count.
 2. While laying, each single press drops a crumb at the current position, with the same fix rules as saving a waypoint. Waypoints can still be saved from `Log here`.
 3. A double press switches to retracing: the newest crumb is shown like a focused target (`Crumb N`) with its direction and distance.
-4. A crumb is deleted and the next newest takes over when a fix of 15 m or better is within 10 m (30 ft) of it while the compass is on screen. After the last, `Trail complete` shows and the trail is off.
+4. A crumb is deleted and the next newest takes over when a fix of 15 m or better is within 10 m (30 ft) of it while the compass is the screen at rest in view and the app is in front. After the last, `Trail complete` shows and the trail is off.
 5. A double press while retracing returns to laying with the remaining crumbs.
 
 Crumbs are stored separately from waypoints, are never listed with them except as the one `Trail` row, and survive closing the app. While a trail is retraced the waypoint focus is suspended and returns afterwards.

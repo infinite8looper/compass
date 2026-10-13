@@ -6,8 +6,9 @@
 # For each emulator it: switches to it with scripts/switch-emulator.sh (which stops the one that is attached, boots
 # the named one and installs the debug app if it has been built), lays the virtual watch flat at a magnetic
 # heading of 40 (scripts/set-heading.sh: a booted emulator is upright, where the compass shows its hold-flat hint
-# and no heading, and the test of the heading's description would be skipped), wakes the screen and checks that it
-# is awake (two of the images put it to sleep when the pose changes), starts scripts/geo-feed.sh at
+# and no heading, and the test of the heading's description would be skipped), reads the pose back from the
+# emulator and does not run the suite unless it is flat, wakes the screen and checks that it is awake (two of the
+# images put it to sleep when the pose changes), starts scripts/geo-feed.sh at
 # 43.7022,-72.2896 (the position some of the tests need, and the one the tests compare against), runs the suite,
 # stops the feed, and keeps a copy of the result files.
 # The tests wipe the app's data and Gradle uninstalls the app when a run ends. Use emulators only.
@@ -18,8 +19,11 @@
 # Deadlines: the switch has the deadlines of scripts/switch-emulator.sh (90 s for the old emulator to stop, 300 s
 # to boot, 120 s for the package manager); the Gradle run has 40 minutes, after which it is stopped and counted as
 # failed (ALL_SUITES_GRADLE_SECONDS changes that).
-# Exit status: 0 if every run succeeded and no test failed, 1 otherwise. The last emulator in the list is left
-# running with the debug app installed again. Needs JDK 17 (found with /usr/libexec/java_home) and python3.
+# Exit status: 0 if every run succeeded, no test failed and no test was skipped, 1 otherwise: on an emulator
+# laid flat no test of this suite is skipped, so a skipped one means a test did not check its subject.
+# The last emulator in the list is left running with the debug app installed again, and every emulator the suite
+# ran on is left lying flat at the magnetic heading of 40: the pose is not put back to upright.
+# Needs JDK 17 (found with /usr/libexec/java_home) and python3.
 ADB=~/Library/Android/sdk/platform-tools/adb
 cd "$(dirname "$0")/.." || exit 1
 if [ -z "$JAVA_HOME" ]; then export JAVA_HOME=$(/usr/libexec/java_home -v 17) || exit 1; fi
@@ -53,7 +57,13 @@ for avd in $avds; do
   # The API 33 and Wear OS 7.0 images put the screen to sleep when the pose is changed this way, and there no
   # activity is resumed and no position is delivered: so the screen is woken after it, and the suite is not
   # started unless the watch says it is awake.
-  scripts/set-heading.sh 40 > /dev/null
+  scripts/set-heading.sh 40 > /dev/null; posed=$?
+  # The pose as the emulator gives it back: flat is gravity along the watch's z axis and next to none along x and y.
+  pose=$($ADB emu sensor get acceleration 2>/dev/null | tr -d '\r' | sed -n 's/^acceleration = //p' | head -1)
+  if [ $posed -ne 0 ] || ! echo "$pose" | awk -F: 'NF == 3 && $1 > -1 && $1 < 1 && $2 > -1 && $2 < 1 && $3 > 9 { ok = 1 } END { exit !ok }'; then
+    echo "$avd: the watch could not be laid flat (set-heading.sh exit status $posed, acceleration read back: ${pose:-none}), not run"
+    summary+=("$avd: not run"); bad=1; continue
+  fi
   awake=""
   for try in 1 2 3 4 5; do
     sleep 3; $ADB shell input keyevent KEYCODE_WAKEUP; sleep 2
@@ -91,6 +101,7 @@ for avd in $avds; do
     sum_passed=$(( sum_passed + counts[1] )); sum_failed=$(( sum_failed + counts[2] )); sum_skipped=$(( sum_skipped + counts[3] ))
     summary+=("$avd (API $sdk): ${counts[1]} passed, ${counts[2]} failed, ${counts[3]} skipped, gradle $gstatus")
     if [ "${counts[2]}" != "0" ]; then bad=1; fi
+    if [ "${counts[3]}" != "0" ]; then echo "$avd: ${counts[3]} test(s) skipped, which counts as a failed run"; bad=1; fi
   else
     summary+=("$avd (API $sdk): no result files, gradle $gstatus")
     bad=1
