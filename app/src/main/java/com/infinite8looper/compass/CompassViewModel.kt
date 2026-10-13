@@ -128,14 +128,18 @@ class CompassViewModel(app: Application, val locationSource: LocationSource) : A
     /**
      * The crumbs as the screens and the decision about location get them ([crumbsForScreens]): the held list, and
      * while it is unread no crumbs with the breadcrumb trail setting off, so that with the setting off nothing waits
-     * for a read of the crumbs. With the setting on this gives nothing until the list has been read.
+     * for a read of the crumbs. With the setting on and the list unread this gives null, each time that comes about:
+     * the trail is not known then, and the screens wait ([nav]).
      */
-    private val crumbsShown: Flow<List<CrumbPoint>> =
+    private val crumbsShown: Flow<List<CrumbPoint>?> =
         combine(crumbsHeld, settingsStore.settings.map { it.breadcrumbTrail }.distinctUntilChanged()) { held, on -> crumbsForScreens(held, on) }
-            .filterNotNull().distinctUntilChanged()
-    /** What the trail is doing: the stored mode, as the setting and the crumbs let it stand ([effectiveTrailMode]). */
-    private val trailMode: Flow<TrailMode> =
-        combine(settingsStore.settings, crumbsShown) { s, cs -> effectiveTrailMode(s.trailMode, s.breadcrumbTrail, cs.size) }
+            .distinctUntilChanged()
+    /**
+     * What the trail is doing: the stored mode, as the setting and the crumbs let it stand ([effectiveTrailMode]).
+     * Null while it is not known, which is with the setting on and the crumbs unread.
+     */
+    private val trailMode: Flow<TrailMode?> =
+        combine(settingsStore.settings, crumbsShown) { s, cs -> cs?.let { effectiveTrailMode(s.trailMode, s.breadcrumbTrail, it.size) } }
             .distinctUntilChanged()
 
     private val compassOnScreen = MutableStateFlow(false)
@@ -173,7 +177,8 @@ class CompassViewModel(app: Application, val locationSource: LocationSource) : A
      */
     private val locationWanted: Flow<Boolean> =
         combine(hasTargets, trailMode, compassOnScreen, permissionTick) { hasTargets, mode, compass, _ ->
-            (hasTargets || trailWantsLocation(mode, compass)) && locationSource.hasPermission()
+            // While the trail is not known the screens show nothing, and location does not run for them.
+            mode != null && (hasTargets || trailWantsLocation(mode, compass)) && locationSource.hasPermission()
         }.distinctUntilChanged()
 
     /** The live fix, or null when location is not wanted, so a fix never outlives the updates that made it. */
@@ -199,6 +204,9 @@ class CompassViewModel(app: Application, val locationSource: LocationSource) : A
     private var arrived: Set<Long> = emptySet()
 
     val nav: StateFlow<NavUi> = combine(waypoints, settingsStore.settings, fix, crumbsShown, noPosition) { ws, s, f, cs, noPosition ->
+        // With the setting on and the crumbs unread the trail is not known: the screens are as they are before the
+        // stores have answered, for as long as that lasts, and an unread trail is never shown as an empty one.
+        if (cs == null) return@combine NavUi.EMPTY
         val known = f?.point ?: s.lastPosition
         val declination = known?.let { declinationAt(it, f?.altitudeM ?: s.lastAltitudeM ?: 0f, System.currentTimeMillis()) }
         val mode = effectiveTrailMode(s.trailMode, s.breadcrumbTrail, cs.size)
@@ -367,7 +375,9 @@ class CompassViewModel(app: Application, val locationSource: LocationSource) : A
     private suspend fun saveFreshFix(pressedAt: Long, byTrail: Boolean): LogStatus {
         var passedOver = 0
         val asCrumb = try {
-            byTrail && singlePress(trailModeNow()) == SinglePress.CRUMB
+            // A crumb can be stored only on a trail that has been read. One that has not is waited for here,
+            // before any fix is looked for and with no lock held, and if it stays unread the press has failed.
+            (byTrail && singlePress(trailModeNow()) == SinglePress.CRUMB).also { crumb -> if (crumb && crumbsHeld.value == null) readTrail() }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -414,8 +424,8 @@ class CompassViewModel(app: Application, val locationSource: LocationSource) : A
      * the crown and a position fix do not wait for the crumbs then ([trailModeNow], [retrace]). With the setting on
      * and the crumbs unread, what waits is, by the stored mode:
      * - off: nothing. A press saves a waypoint and the crown moves the focus, at once.
-     * - laying: the crown moves the focus at once. A press of the side button looks for its fix at once; storing the
-     *   crumb then waits here, holding the lock the waypoint edits use, and ends in `Couldn't save`.
+     * - laying: the crown moves the focus at once. A press of the side button waits here before it looks for a fix,
+     *   holding no lock, and ends in `Couldn't save`.
      * - retracing: a press of the side button waits here before it looks for a fix, and ends in `Couldn't save`; a
      *   turn of the crown waits here and moves nothing. Neither holds the edit lock. A position fix does not wait.
      * - in every mode a double press, or a tap on the trail's row, waits here with the edit lock held and changes
@@ -432,12 +442,14 @@ class CompassViewModel(app: Application, val locationSource: LocationSource) : A
      * them ([trailModeUnread]): always with the breadcrumb trail setting off. Otherwise it comes from [readTrail],
      * which is immediate once the crumbs have been read.
      *
-     * A press and a turn of the crown ask this as they are made, and the stored mode and the switch are read as the
-     * settings file has them then ([SettingsStore.storedTrail]): a change made to them a moment later, while the
-     * main thread is busy, does not reach back into a press that was already made.
+     * A press and a turn of the crown ask this as they are made. The stored mode and the switch come from memory
+     * ([SettingsStore.storedTrail]) and so do the crumbs, so the mode is the one that stood when the press was
+     * made: a change that is made after it does not reach back into it.
      */
     private suspend fun trailModeNow(): TrailMode {
         val stored = settingsStore.storedTrail()
+        // With the crumbs read nothing here waits: the mode is decided before the press's or the turn's own call returns.
+        crumbsHeld.value?.let { return effectiveTrailMode(stored.mode, stored.settingOn, it.size) }
         return trailModeUnread(stored.mode, stored.settingOn) ?: readTrail().first.mode
     }
 

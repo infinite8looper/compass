@@ -993,6 +993,69 @@ class CompassViewModelTest {
     }
 
     /**
+     * With the crumbs unread, the screens show what the stores hold while the setting is off, go back to waiting when
+     * it is switched on (an unread trail is not shown as an empty one), and show the stores again when it is off.
+     */
+    @Test fun withTheCrumbsUnreadSwitchingTheSettingOnMakesTheScreensWaitAndOffShowsThemAgain() = runBlocking {
+        val id = dao.insert(com.infinite8looper.compass.data.Waypoint(name = "A", lat = farNorth.lat, lon = farNorth.lon, accuracyM = 5f, createdAt = 1, hue = 0f, isTarget = true))
+        settings.setTrailMode(TrailMode.LAYING)
+        try { whileTheCrumbsCannotBeRead {
+            val vm = viewModel()
+            val seen = CopyOnWriteArrayList<NavUi>()
+            val watching = launch(Dispatchers.Main) { vm.nav.collect { seen += it } }
+            assertEquals(listOf(id), withTimeout(5_000) { vm.nav.first { it.loaded } }.waypoints.map { it.id })
+            settings.setBreadcrumbTrail(true)
+            withTimeout(5_000) { vm.nav.first { !it.loaded } }
+            delay(1_500)
+            assertFalse(vm.nav.value.loaded)
+            // At no time was the trail shown as one being laid with no crumbs.
+            assertTrue(seen.none { it.loaded && it.breadcrumbTrail })
+            settings.setBreadcrumbTrail(false)
+            assertEquals(listOf(id), withTimeout(5_000) { vm.nav.first { it.loaded } }.waypoints.map { it.id })
+            watching.cancel()
+        } } finally { settings.setTrailMode(TrailMode.OFF) }
+    }
+
+    /**
+     * With the setting on and a trail being laid, a press of the side button while the crumbs cannot be read does not
+     * look for a position fix first, and holds up no change to a waypoint while it waits for the crumbs.
+     */
+    @Test fun withTheSettingOnAndLayingAPressThatCannotReadTheTrailLooksForNoFixAndHoldsUpNoEdit() = runBlocking {
+        val id = dao.insert(com.infinite8looper.compass.data.Waypoint(name = "A", lat = farNorth.lat, lon = farNorth.lon, accuracyM = 5f, createdAt = 1, hue = 0f, isTarget = true))
+        settings.setBreadcrumbTrail(true)
+        settings.setTrailMode(TrailMode.LAYING)
+        try { whileTheCrumbsCannotBeRead {
+            // The app is in front, so a fix would come if one were looked for.
+            ActivityScenario.launch(MainActivity::class.java).use {
+                val vm = viewModel()
+                delay(1_500)
+                val statuses = CopyOnWriteArrayList<LogStatus>()
+                val watching = launch(Dispatchers.Main) { vm.logStatus.collect { statuses += it } }
+                val started = SystemClock.elapsedRealtime()
+                val press = withContext(Dispatchers.Main) { vm.sidePress() }
+                // Changes to a waypoint are made one after another for as long as the press lasts, and each is timed.
+                var slowest = 0L
+                var edits = 0
+                while (press.isActive) {
+                    val at = SystemClock.elapsedRealtime()
+                    withTimeout(10_000) { vm.rename(id, "A${edits++}").join() }
+                    slowest = maxOf(slowest, SystemClock.elapsedRealtime() - at)
+                    delay(50)
+                }
+                val took = SystemClock.elapsedRealtime() - started
+                delay(200)
+                watching.cancel()
+                assertEquals(LogStatus.Failed(LogFailure.SAVE_FAILED), vm.logStatus.value)
+                // No fix was looked at: the status never carried a fix's accuracy.
+                assertTrue("$statuses", statuses.none { it is LogStatus.Saving && it.accuracyM != null })
+                assertTrue("slowest edit $slowest ms of $edits", slowest < 1_000)
+                assertTrue("$took ms", took < 3_000)
+                assertEquals(1, dao.observeAll().first().size)
+            }
+        } } finally { settings.setTrailMode(TrailMode.OFF) }
+    }
+
+    /**
      * With the setting on and a trail being laid, a press of the side button while the crumbs cannot be read ends in
      * `Couldn't save` and stores nothing; `Log here` still saves a waypoint. The reading is tried again, so once the
      * table is back a press drops a crumb.

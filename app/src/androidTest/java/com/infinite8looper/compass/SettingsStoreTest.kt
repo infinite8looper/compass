@@ -23,6 +23,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -293,6 +295,37 @@ class SettingsStoreTest {
         assertEquals(StoredTrail(TrailMode.LAYING, settingOn = true), asked.await())
         assertEquals(StoredTrail(TrailMode.OFF, settingOn = false), s.storedTrail())
         assertEquals(TrailMode.OFF, s.settings.first().trailMode)
+    }
+
+    /**
+     * Once the store has read or written the trail's mode or switch, it answers what the trail is without waiting:
+     * the answer is there before the one who asked can be overtaken by a later change.
+     */
+    @Test fun theStoredTrailIsAnsweredWithoutWaitingOnceTheStoreHasIt() = withStore { s, _ ->
+        suspend fun answeredAtOnce(): StoredTrail = withContext(Dispatchers.Main) {
+            val answer = async(start = CoroutineStart.UNDISPATCHED) { s.storedTrail() }
+            assertTrue(answer.isCompleted)
+            answer.await()
+        }
+        // The first answer is read from the file.
+        assertEquals(StoredTrail(TrailMode.OFF, settingOn = false), s.storedTrail())
+        assertEquals(StoredTrail(TrailMode.OFF, settingOn = false), answeredAtOnce())
+        s.setBreadcrumbTrail(true)
+        assertEquals(StoredTrail(TrailMode.OFF, settingOn = true), answeredAtOnce())
+        for (mode in listOf(TrailMode.LAYING, TrailMode.RETRACING, TrailMode.OFF, TrailMode.LAYING)) {
+            s.setTrailMode(mode)
+            assertEquals(StoredTrail(mode, settingOn = true), answeredAtOnce())
+        }
+        s.setBreadcrumbTrail(false)
+        assertEquals(StoredTrail(TrailMode.OFF, settingOn = false), answeredAtOnce())
+        // Changes made from several threads at once leave the answer equal to what the file holds.
+        coroutineScope {
+            repeat(40) { i ->
+                launch(Dispatchers.IO) { if (i % 2 == 0) s.setBreadcrumbTrail(i % 4 == 0) else s.setTrailMode(TrailMode.entries[i % 3]) }
+            }
+        }
+        val held = s.settings.first()
+        assertEquals(StoredTrail(held.trailMode, held.breadcrumbTrail), answeredAtOnce())
     }
 
     @Test fun theTrailsModeSurvivesANewStoreOnTheSameFile() = runBlocking {

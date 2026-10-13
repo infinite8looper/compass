@@ -58,3 +58,65 @@ fun softTintOf(rgb: Int): Int {
     fun soft(channel: Int) = (top - (top - channel) * SOFT_TINT_SATURATION_KEPT).roundToInt()
     return (soft(r) shl 16) or (soft(g) shl 8) or soft(b)
 }
+
+/** A soft tint is drawn at this much of full strength: 153 of 255, which is 0.6. */
+const val SOFT_TINT_ALPHA_255 = 153
+
+/** The least contrast with the black field that a line drawn on it has: 3 to 1, what the Web Content Accessibility Guidelines ask of a mark that carries meaning. */
+const val MIN_LINE_CONTRAST = 3.0
+
+/** What [rgb] drawn at the soft tint's strength over black comes out as: each channel at 153 of 255. */
+fun softTintOverBlack(rgb: Int): Int {
+    fun over(channel: Int) = ((channel and 0xFF) * SOFT_TINT_ALPHA_255 + 127) / 255
+    return (over(rgb shr 16) shl 16) or (over(rgb shr 8) shl 8) or over(rgb)
+}
+
+/**
+ * The color of a soft line for a target whose color is [rgb]: its soft tint ([softTintOf]), made to read on black.
+ *
+ * A tint that has [MIN_LINE_CONTRAST] against black when drawn at its strength is used as it is. One that has not
+ * (with the app's own colors, the ring's darker stretch between the blue and the red) is made brighter, by the
+ * least whole step of brightness that reads: every channel is raised in the same proportion, which keeps the hue
+ * and the saturation. A color too dark to read even at full brightness, which no ring of the three role colors
+ * holds, is then mixed with white, just far enough; that keeps its hue too.
+ *
+ * It allocates nothing, so it can be called while drawing.
+ */
+fun softLineColor(rgb: Int): Int {
+    val tint = softTintOf(rgb)
+    if (readsAsSoftLine(tint)) return tint
+    val top = maxOf(tint shr 16 and 0xFF, tint shr 8 and 0xFF, tint and 0xFF)
+    val brightest = if (top == 0) tint else brighter(tint, top, 255)
+    if (top > 0 && readsAsSoftLine(brightest)) {
+        // The least brightness that reads lies above the tint's own and at or below the full one.
+        var low = top
+        var high = 255
+        while (high - low > 1) {
+            val mid = (low + high) / 2
+            if (readsAsSoftLine(brighter(tint, top, mid))) high = mid else low = mid
+        }
+        return brighter(tint, top, high)
+    }
+    // More white is always lighter, so the least share of white that is enough is found by halving.
+    var low = 0f
+    var high = 1f
+    repeat(16) {
+        val mid = (low + high) / 2f
+        if (readsAsSoftLine(paler(brightest, mid))) high = mid else low = mid
+    }
+    return paler(brightest, high)
+}
+
+private fun readsAsSoftLine(rgb: Int): Boolean = contrastOnBlack(softTintOverBlack(rgb)) >= MIN_LINE_CONTRAST
+
+/** [rgb], whose brightest channel is [top], with every channel raised in proportion so that the brightest is [to]. */
+private fun brighter(rgb: Int, top: Int, to: Int): Int {
+    fun raised(channel: Int) = ((channel and 0xFF) * to + top / 2) / top
+    return (raised(rgb shr 16) shl 16) or (raised(rgb shr 8) shl 8) or raised(rgb)
+}
+
+/** [rgb] mixed with white, [share] of the way. */
+private fun paler(rgb: Int, share: Float): Int {
+    fun mixed(channel: Int) = mixChannel(channel, 255, share)
+    return (mixed(rgb shr 16) shl 16) or (mixed(rgb shr 8) shl 8) or mixed(rgb)
+}

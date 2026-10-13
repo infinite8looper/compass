@@ -194,6 +194,91 @@ class ColorRingTest {
         assertEquals(hex(0x7FB8FF), hex(softTintOf(0x2F8BFF)))
     }
 
+    // The soft tint as it is drawn: a line at 0.6 of full strength on black.
+
+    /** The contrast with black of [rgb] drawn at the soft tint's strength. */
+    private fun drawnContrast(rgb: Int) = contrastOnBlack(softTintOverBlack(rgb))
+
+    /** The lowest contrast of the soft line anywhere on the ring of [roles], every twentieth of a degree, made by [tint]. */
+    private fun lowestSoft(roles: RoleColors, tint: (Int) -> Int): Double = (0 until 7200).minOf { drawnContrast(tint(ring(it / 7200f, roles))) }
+
+    @Test fun drawnAtItsStrengthOverBlackEachChannelIsSixTenths() {
+        assertEquals(hex(0x999999), hex(softTintOverBlack(0xFFFFFF)))
+        assertEquals(hex(0x000000), hex(softTintOverBlack(0x000000)))
+        assertEquals(hex(0x996000), hex(softTintOverBlack(0xFFA000)))
+        assertEquals(softTintOverBlack(0x2F8BFF), softTintOverBlack(0xFF2F8BFF.toInt()))
+    }
+
+    @Test fun theSoftLineReadsOnBlackEverywhereOnTheRing() {
+        // The tint by itself, before it is made to read: with the app's own colors it is under 3 to 1 for a stretch
+        // either side of the red third, where the ring is at its darkest; with the two schemes it is not.
+        assertEquals(2.50, lowestSoft(own, ::softTintOf), 0.01)
+        assertEquals(LOWEST_SOFT_A, lowestSoft(schemeA, ::softTintOf), 0.01)
+        assertEquals(LOWEST_SOFT_B, lowestSoft(schemeB, ::softTintOf), 0.01)
+        val under = (0 until 3600).count { drawnContrast(softTintOf(ring(it / 3600f, own))) < MIN_LINE_CONTRAST } / 10f
+        assertEquals(109f, under, 2f)
+        // The line as it is drawn has 3 to 1 or more everywhere.
+        for ((name, roles) in listOf("own" to own, "A" to schemeA, "B" to schemeB)) {
+            val lowest = lowestSoft(roles, ::softLineColor)
+            assertTrue("$name: $lowest", lowest >= MIN_LINE_CONTRAST)
+        }
+        assertEquals(3.0, lowestSoft(own, ::softLineColor), 0.02)
+        assertEquals(LOWEST_SOFT_A, lowestSoft(schemeA, ::softLineColor), 0.01)
+        assertEquals(LOWEST_SOFT_B, lowestSoft(schemeB, ::softLineColor), 0.01)
+    }
+
+    @Test fun aSoftLineThatAlreadyReadsIsTheTintUnchanged() {
+        var unchanged = 0
+        for (roles in listOf(own, schemeA, schemeB)) for (twentieth in 0 until 7200) {
+            val tint = softTintOf(ring(twentieth / 7200f, roles))
+            if (drawnContrast(tint) >= MIN_LINE_CONTRAST) { assertEquals(hex(tint), hex(softLineColor(ring(twentieth / 7200f, roles)))); unchanged++ }
+        }
+        // All of the two schemes' rings and about 251 of the 360 degrees of the app's own.
+        assertTrue("$unchanged", unchanged > 7200 * 2 + 7200 * 240 / 360)
+        assertEquals(hex(softTintOf(0xFF3B30)), hex(softLineColor(0xFF3B30)))
+        assertEquals(hex(softTintOf(0x2F8BFF)), hex(softLineColor(0x2F8BFF)))
+    }
+
+    @Test fun aSoftLineMadeToReadKeepsTheHueAndTheSaturationAndIsOnlyAsBrightAsItNeeds() {
+        var changed = 0
+        for (twentieth in 0 until 7200) {
+            val full = ring(twentieth / 7200f, own)
+            val tint = softTintOf(full)
+            val line = softLineColor(full)
+            if (line == tint) continue
+            changed++
+            val at = "at ${twentieth / 20f}: ${hex(full)} tint ${hex(tint)} line ${hex(line)}"
+            // The same hue as the ring color's and as the tint's, to within what whole channel values allow.
+            assertTrue("$at: ${hueApart(full, line)}", hueApart(full, line) <= SOFT_LINE_HUE_TOLERANCE)
+            assertTrue("$at: ${hueApart(tint, line)}", hueApart(tint, line) <= SOFT_LINE_HUE_TOLERANCE)
+            assertEquals(at, saturationOf(tint), saturationOf(line), 0.02f)
+            // Brighter than the tint, and no brighter than reading needs: one step of brightness less would not read.
+            assertTrue(at, valueOf(line) > valueOf(tint))
+            assertTrue("$at: ${drawnContrast(line)}", drawnContrast(line) >= MIN_LINE_CONTRAST && drawnContrast(line) < MIN_LINE_CONTRAST + 0.12)
+        }
+        assertTrue("$changed", changed in 2000..2400)
+    }
+
+    @Test fun aSoftLineReadsForAnyColorHoweverDark() {
+        // Colors no ring of role colors has, down to black: brightened as far as they go and then, if that is not
+        // enough, mixed with white. A black line would be invisible; it comes out a gray that reads.
+        for (rgb in listOf(0x000000, 0x000001, 0x100000, 0x0000FF, 0x000080, 0x300030, 0x102030, 0x808080, 0xFFFFFF, 0xFF0000)) {
+            val line = softLineColor(rgb)
+            assertTrue("${hex(rgb)} -> ${hex(line)}: ${drawnContrast(line)}", drawnContrast(line) >= MIN_LINE_CONTRAST)
+            assertEquals(0, line ushr 24)
+        }
+        // A full blue cannot read at this strength however bright: it is made paler, and stays blue.
+        val blueLine = softLineColor(0x0000FF)
+        assertEquals(240f, hueOf(blueLine), 1f)
+        assertTrue(hex(blueLine), saturationOf(blueLine) < saturationOf(softTintOf(0x0000FF)))
+        // A random sweep of colors.
+        val random = java.util.Random(12)
+        repeat(20_000) {
+            val rgb = random.nextInt(0x1000000)
+            assertTrue(hex(rgb), drawnContrast(softLineColor(rgb)) >= MIN_LINE_CONTRAST)
+        }
+    }
+
     @Test fun theValuesNewWaypointsAreGivenLandOnDifferentColors() {
         // The stored values of the first eight waypoints, as before; on the app's own ring each has a color of its own
         // except those that fall in the red third.
@@ -205,6 +290,10 @@ class ColorRingTest {
     }
 
     private companion object {
+        const val LOWEST_SOFT_A = 4.55
+        const val LOWEST_SOFT_B = 5.41
+        /** Degrees of hue between a soft line that was brightened and the color it was made from. */
+        const val SOFT_LINE_HUE_TOLERANCE = 2f
         const val LOWEST_A = 8.30
         const val LOWEST_B = 13.28
         const val ROLES_A = "#B7CFFF #D57FFF #FFBEB9"

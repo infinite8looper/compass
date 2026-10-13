@@ -23,6 +23,8 @@ import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.util.Locale
 
 data class Settings(
@@ -100,14 +102,34 @@ class SettingsStore(
         )
     }
 
+    // The breadcrumb trail's stored mode and its switch are also held here, in memory, as this store last read or
+    // wrote them. The two are changed only by [setBreadcrumbTrail] and [setTrailMode], which are run one at a time
+    // and each put what the file holds after its write here before it returns.
+    private val trailWrites = Mutex()
+    @Volatile private var trailHeld: StoredTrail? = null
+
+    private fun trailIn(p: Preferences) = StoredTrail(trailModeOf(p[TRAIL_MODE]), p[BREADCRUMB_TRAIL] ?: false)
+
     /**
-     * The breadcrumb trail's stored mode and its switch as the settings file has them when this is called. [settings]
-     * joins two files and gives its reader the newest contents there are by the time the reader gets to run, which on
-     * a busy main thread can already hold a change made after the call. This reads the one file and takes the first
-     * contents it gives. It is for a press, which acts on what the trail was doing when it was made.
+     * The breadcrumb trail's stored mode and its switch. It is for a press, which acts on what the trail was doing
+     * when it was made.
+     *
+     * Once this store has read or written the two, the answer comes from memory without waiting, so whoever asks on
+     * the main thread has it before anything else can run there. What is guaranteed: the answer is what the last
+     * change that had returned to its caller left, and a change that returns later is not in it. [settings] cannot
+     * promise that: it joins two files and gives its reader the newest contents there are by the time the reader
+     * gets to run.
+     *
+     * Before the first read or write (for a moment after the process starts) this reads the settings file and
+     * waits for it. A file that cannot be read answers off, and the answer is not kept, so the next call reads again.
      */
-    suspend fun storedTrail(): StoredTrail =
-        settingsData.first().let { StoredTrail(trailModeOf(it[TRAIL_MODE]), it[BREADCRUMB_TRAIL] ?: false) }
+    suspend fun storedTrail(): StoredTrail = trailHeld ?: trailWrites.withLock {
+        trailHeld ?: try {
+            trailIn(store.data.first()).also { trailHeld = it }
+        } catch (e: IOException) {
+            StoredTrail(TrailMode.OFF, settingOn = false)
+        }
+    }
 
     /**
      * Older installs kept the last position in the settings file, which is backed up. On first use this moves it to
@@ -137,13 +159,15 @@ class SettingsStore(
     suspend fun setShowCoordinates(on: Boolean) { store.edit { it[SHOW_COORDINATES] = on } }
     suspend fun setBlindNavigation(on: Boolean) { store.edit { it[BLIND_NAVIGATION] = on } }
     /** Switching the breadcrumb trail off also ends laying or retracing, in the same write. The crumbs are not touched. */
-    suspend fun setBreadcrumbTrail(on: Boolean) { store.edit { it[BREADCRUMB_TRAIL] = on; if (!on) it.remove(TRAIL_MODE) } }
+    suspend fun setBreadcrumbTrail(on: Boolean) {
+        trailWrites.withLock { trailHeld = trailIn(store.edit { it[BREADCRUMB_TRAIL] = on; if (!on) it.remove(TRAIL_MODE) }) }
+    }
     /**
      * Whether a trail is being laid or retraced. It is kept in the settings file, with the switch it depends on, so
      * it survives closing the app and is backed up and restored with the settings.
      */
     suspend fun setTrailMode(mode: TrailMode) {
-        store.edit { if (mode == TrailMode.OFF) it.remove(TRAIL_MODE) else it[TRAIL_MODE] = mode.name }
+        trailWrites.withLock { trailHeld = trailIn(store.edit { if (mode == TrailMode.OFF) it.remove(TRAIL_MODE) else it[TRAIL_MODE] = mode.name }) }
     }
     /**
      * What the backup agent asks, and the only answer that allows a backup is `true`. Unlike [settings] this does

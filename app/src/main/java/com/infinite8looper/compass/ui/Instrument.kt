@@ -53,7 +53,8 @@ import com.infinite8looper.compass.nav.WatchScheme
 import com.infinite8looper.compass.nav.ringColor
 import com.infinite8looper.compass.nav.roleColors
 import com.infinite8looper.compass.nav.rowInset
-import com.infinite8looper.compass.nav.softTintOf
+import com.infinite8looper.compass.nav.SOFT_TINT_ALPHA_255
+import com.infinite8looper.compass.nav.softLineColor
 
 // The colors the screens share, each named for what it is used for. A screen takes a color from here by its
 // role, so a role's color is changed in this one place.
@@ -124,12 +125,10 @@ val CrumbColor = Color(0xFF8FA6BF)
 /**
  * The pale, partly transparent version of a waypoint's color that its line has while another target is focused. It
  * is made from [waypointColor] for the same [position], so the two always have one hue: the same color with less
- * saturation ([softTintOf]), drawn at 0.6 of full strength.
+ * saturation, drawn at 0.6 of full strength, and made brighter where it would otherwise not read as a line on
+ * black ([softLineColor]).
  */
-fun softTint(position: Float): Color = Color(SOFT_TINT_ALPHA or softTintOf(ringAt(position)))
-
-/** 0.6 of full strength (153 of 255), as the top eight bits of a color. */
-private const val SOFT_TINT_ALPHA = 0x99 shl 24
+fun softTint(position: Float): Color = Color((SOFT_TINT_ALPHA_255 shl 24) or softLineColor(ringAt(position)))
 
 // The parts the screens share, drawn in fractions of the screen's radius.
 
