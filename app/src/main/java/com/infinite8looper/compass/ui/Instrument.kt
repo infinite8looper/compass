@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -45,9 +46,7 @@ import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.wear.compose.material3.dynamicColorScheme
 import com.infinite8looper.compass.nav.PANE_TICK_LENGTH_CURRENT
 import com.infinite8looper.compass.nav.menuTextSize
@@ -385,34 +384,40 @@ internal fun screenRadius(): Dp {
     return with(LocalDensity.current) { (minOf(window.width, window.height) / 2f).toDp() }
 }
 
+// The system's font size. The app's whole composition is given a density whose font scale is 1 ([WithoutFontScale]),
+// so inside the app a size in sp is that many dp, on every API level and for every kind of text: the system's own
+// conversion, which above the default size scales large text less than small text and which a text's parts do not
+// all apply alike, takes no part. The font scale comes in at one place, [instrumentText], as a plain multiplication.
+private val systemFontScale = mutableFloatStateOf(1f)
+
 /**
- * Text for the menus (the waypoints list, the settings, the edit screen and calibration), set the way the compass
- * sets its readout: no font padding, so lines sit where they are put. [size] is the text's height at the system's
- * default font size, and comes from the screen's radius; the text is drawn at that height times the system's font
- * scale ([menuTextSize]). This is the one place the font scale comes into the app: a screen multiplies nothing
- * itself, and the compass, which sizes its own text from the dial's radius, does not come here.
+ * Reads the system's font scale for the menus' text. The activity calls this before it shows anything; a change
+ * of the font size makes the activity again, which reads it again.
+ */
+fun followFontScale(context: Context) {
+    systemFontScale.floatValue = context.resources.configuration.fontScale
+}
+
+/** [content] with a density that is the screen's, with the font scale taken out of it. */
+@Composable
+fun WithoutFontScale(content: @Composable () -> Unit) {
+    val density = LocalDensity.current.density
+    CompositionLocalProvider(LocalDensity provides remember(density) { Density(density, fontScale = 1f) }, content = content)
+}
+
+/**
+ * Text for the menus (the waypoints list, the settings, the edit screen, calibration and the question before
+ * backups are turned off), set the way the compass sets its readout: no font padding, so lines sit where they are
+ * put. [size] is the text's height at the system's default font size, and comes from the screen's radius; the text
+ * is drawn at that height times the system's font scale ([menuTextSize]). This is the one place the font scale
+ * comes into the app: a screen multiplies nothing itself, and the compass, which sizes its own text from the dial's
+ * radius, does not come here.
  */
 internal fun Density.instrumentText(size: Dp, weight: FontWeight = FontWeight.Normal, align: TextAlign = TextAlign.Start): TextStyle {
-    // `toSp` undoes what drawing does with the font scale, so the drawn height is exactly this. The line's height
-    // is converted by itself and not made from the font size's number: above the default font size the system
-    // scales large sizes less than small ones, so a multiple of a size is not drawn as that multiple.
-    val height = menuTextSize(size.value, fontScale)
+    val sp = menuTextSize(size.value, systemFontScale.floatValue).dp.toSp()
     return TextStyle(
-        fontSize = height.dp.toSp(), lineHeight = (height * 1.15f).dp.toSp(), fontWeight = weight, textAlign = align,
+        fontSize = sp, lineHeight = sp * 1.15f, fontWeight = weight, textAlign = align,
         platformStyle = PlatformTextStyle(includeFontPadding = false),
         lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None),
     )
 }
-
-/**
- * A text height as the size to give a text that makes itself smaller to fit (`BasicText` with `autoSize`). Such a
- * text draws a size in sp, its line height too, at that number times the font scale. Every other text draws it the
- * way [Density] converts it, which above the default font size, on API level 34 and later, scales large sizes less
- * than small ones; a size made with `toSp` is drawn too large by a self-sizing text there (seen on the API 35
- * emulator at a font scale of 1.24: a line asked for at 46 pixels was 51). So the sizes of a self-sizing text are
- * made here, and its style is made by [autoSizeStyle].
- */
-internal fun Density.autoSizeUnit(height: Dp): TextUnit = (height.value / fontScale).sp
-
-/** [style] for a text that makes itself smaller to fit: the same, with its line height as such a text draws it ([autoSizeUnit]). */
-internal fun Density.autoSizeStyle(style: TextStyle): TextStyle = style.copy(lineHeight = autoSizeUnit(style.lineHeight.toDp()))

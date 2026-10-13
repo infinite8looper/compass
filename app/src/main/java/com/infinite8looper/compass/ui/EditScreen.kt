@@ -76,6 +76,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.wear.compose.foundation.requestFocusOnHierarchyActive
 import androidx.wear.compose.material3.Text
@@ -307,10 +308,8 @@ private fun EditWaypoint(vm: CompassViewModel, w: Waypoint, leave: () -> Unit) {
             // line at the smallest size and slides back and forth there. The row around it is what is tapped.
             if (nameSlides) MarqueeText(w.name, smallNameStyle, { Ink }, Modifier.weight(1f, fill = false))
             else BasicText(
-                w.name, Modifier.weight(1f, fill = false), remember(nameStyle, density) { density.autoSizeStyle(nameStyle) }, maxLines = 2, overflow = TextOverflow.Ellipsis, color = { Ink },
-                autoSize = with(density) {
-                    TextAutoSize.StepBased(autoSizeUnit(smallNameStyle.fontSize.toDp()), autoSizeUnit(nameStyle.fontSize.toDp()), stepSize = autoSizeUnit(0.5.dp))
-                },
+                w.name, Modifier.weight(1f, fill = false), nameStyle, maxLines = 2, overflow = TextOverflow.Ellipsis, color = { Ink },
+                autoSize = TextAutoSize.StepBased(minFontSize = smallNameStyle.fontSize, maxFontSize = nameStyle.fontSize, stepSize = 0.5.sp),
             )
         }
         var place by remember { mutableStateOf<LayoutCoordinates?>(null) }

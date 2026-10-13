@@ -41,6 +41,7 @@ import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -440,20 +441,13 @@ internal fun StatusLine(text: String, color: Color, style: TextStyle, modifier: 
     // laid out at that size, so they are drawn cut short for one frame first.
     var tooWide by remember(text, style) { mutableStateOf(false) }
     val live = modifier.semantics { liveRegion = LiveRegionMode.Polite }
-    // The sizes are worked out as heights and each made into a size by itself, so that three quarters is three
-    // quarters at any font scale, and the text that sizes itself gets its sizes the way it draws them ([autoSizeUnit]).
-    val density = LocalDensity.current
-    val full = with(density) { style.fontSize.toDp() }
-    if (tooWide) MarqueeText(text, style.copy(fontSize = with(density) { (full * STATUS_SMALLEST).toSp() }), { color }, live, view)
+    if (tooWide) MarqueeText(text, style.copy(fontSize = style.fontSize * STATUS_SMALLEST), { color }, live, view)
     else BasicText(
-        text, live, remember(style, density) { density.autoSizeStyle(style) }, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis, color = { color },
+        text, live, style, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis, color = { color },
         onTextLayout = { if (it.hasVisualOverflow) tooWide = true },
-        autoSize = TextAutoSize.StepBased(minFontSize = density.autoSizeUnit(full * STATUS_SMALLEST), maxFontSize = density.autoSizeUnit(full), stepSize = density.autoSizeUnit(STATUS_SIZE_STEP)),
+        autoSize = TextAutoSize.StepBased(minFontSize = style.fontSize * STATUS_SMALLEST, maxFontSize = style.fontSize, stepSize = 0.25.sp),
     )
 }
-
-/** The sizes tried for a line of the logging status are this far apart, as heights, so they are the same sizes at every font scale. */
-private val STATUS_SIZE_STEP = 0.25.dp
 
 /** How small a line of the logging status is drawn, as a share of its full size, before it is cut short or slides. */
 private const val STATUS_SMALLEST = 0.75f

@@ -34,7 +34,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.wear.compose.material3.LocalTextStyle
 import androidx.wear.compose.material3.Text
@@ -126,8 +126,8 @@ fun CalibrationScreen(vm: CompassViewModel) {
             BasicText(
                 "Magnetic interference nearby. Move away from chargers, magnets and steel.",
                 Modifier.offset(y = r * WARNING_Y).width(r * WARNING_WIDTH).semantics { liveRegion = LiveRegionMode.Polite },
-                remember(warningStyle, density) { density.autoSizeStyle(warningStyle) }, maxLines = 3, overflow = TextOverflow.Ellipsis, color = { ErrorColor },
-                autoSize = with(density) { TextAutoSize.StepBased(autoSizeUnit(warningStyle.fontSize.toDp() * WARNING_SMALLEST), autoSizeUnit(warningStyle.fontSize.toDp()), stepSize = autoSizeUnit(0.25.dp)) },
+                warningStyle, maxLines = 3, overflow = TextOverflow.Ellipsis, color = { ErrorColor },
+                autoSize = TextAutoSize.StepBased(minFontSize = warningStyle.fontSize * WARNING_SMALLEST, maxFontSize = warningStyle.fontSize, stepSize = 0.25.sp),
             )
         }
     }

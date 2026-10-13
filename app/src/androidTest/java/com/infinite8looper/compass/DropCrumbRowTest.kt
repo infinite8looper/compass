@@ -72,7 +72,7 @@ class DropCrumbRowTest {
     private suspend fun toWaypoints() {
         delay(1_500)
         repeat(2) { instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK); delay(1_500) }
-        withTimeout(10_000) { while (withText("Log here").none { it.isVisibleToUser }) delay(100) }
+        shows("the waypoints screen") { withText("Log here").any { it.isVisibleToUser } }
     }
 
     /** One short press of the side button. */
@@ -108,8 +108,15 @@ class DropCrumbRowTest {
     }
 
     /** The trail's own row is on screen, so the list has been drawn for what the trail is doing now. */
-    private suspend fun trailRowSays(detail: String) {
-        withTimeout(10_000) { while (withText("Trail").isEmpty() || withText(detail).isEmpty()) delay(100) }
+    private suspend fun trailRowSays(detail: String) = shows("the trail's row with `$detail`") { withText("Trail").isNotEmpty() && withText(detail).isNotEmpty() }
+
+    /** Waits until [isSo], and says what was waited for and what the screen held if it never is. */
+    private suspend fun shows(what: String, isSo: () -> Boolean) {
+        val deadline = SystemClock.uptimeMillis() + 15_000
+        while (!isSo()) {
+            assertTrue("$what did not come in 15 s; on screen: ${nodes().mapNotNull { it.text?.toString() }.filter { it.isNotEmpty() }}", SystemClock.uptimeMillis() < deadline)
+            delay(100)
+        }
     }
 
     @Test fun whileATrailIsLaidTheRowDropsACrumbAsASinglePressOfTheSideButtonDoes() = runBlocking {
@@ -148,7 +155,7 @@ class DropCrumbRowTest {
             // Laid: the row is there.
             vm.trailDoublePress().join()
             trailRowSays("Laying, 1 crumb")
-            withTimeout(10_000) { while (withText("Drop crumb").isEmpty()) delay(100) }
+            shows("`Drop crumb`") { withText("Drop crumb").isNotEmpty() }
             dropCrumbRow()
             // Retraced: gone again.
             vm.trailDoublePress().join()
@@ -158,9 +165,9 @@ class DropCrumbRowTest {
             // Laid again, then the setting off.
             vm.trailDoublePress().join()
             trailRowSays("Laying, 1 crumb")
-            withTimeout(10_000) { while (withText("Drop crumb").isEmpty()) delay(100) }
+            shows("`Drop crumb`") { withText("Drop crumb").isNotEmpty() }
             settings.setBreadcrumbTrail(false)
-            withTimeout(10_000) { while (withText("Drop crumb").isNotEmpty()) delay(100) }
+            shows("the list without `Drop crumb`") { withText("Drop crumb").isEmpty() }
         }
     }
 
