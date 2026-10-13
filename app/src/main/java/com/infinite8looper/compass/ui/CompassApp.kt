@@ -37,6 +37,7 @@ import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.currentBackStackEntryAsState
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import com.infinite8looper.compass.CompassViewModel
+import com.infinite8looper.compass.nav.BACKUP_OFF_ROUTE
 import com.infinite8looper.compass.nav.CALIBRATE_ROUTE
 import com.infinite8looper.compass.nav.EDIT_ROUTE
 import com.infinite8looper.compass.nav.LogStatus
@@ -154,6 +155,7 @@ fun CompassApp() {
                 Panes(
                     vm, panes, top = { topScreen(route?.destination?.route) }, log = logHere, onEdit = { nav.navigate("edit/$it") { launchSingleTop = true } },
                     onCalibrate = { nav.navigate(CALIBRATE_ROUTE) { launchSingleTop = true } },
+                    onBackupOff = { nav.navigate(BACKUP_OFF_ROUTE) { launchSingleTop = true } },
                 )
             }
             composable(EDIT_ROUTE) { entry ->
@@ -162,6 +164,11 @@ fun CompassApp() {
                 val leave = { nav.popBackStack(EDIT_ROUTE, inclusive = true); Unit }
                 val id = entry.arguments?.getString("id")?.toLongOrNull()
                 if (id == null) LeaveOnce(leave) else SwipeBack(leave) { EditScreen(vm, id, onDone = leave) }
+            }
+            composable(BACKUP_OFF_ROUTE) {
+                // Leaving changes nothing: the switch is turned off by the one answer and by nothing else.
+                val leave = { nav.popBackStack(BACKUP_OFF_ROUTE, inclusive = true); Unit }
+                SwipeBack(leave) { BackupOffScreen(onTurnOff = { vm.setBackupEnabled(false); leave() }, onKeep = leave) }
             }
             composable(CALIBRATE_ROUTE) {
                 SwipeBack(onLeave = { nav.popBackStack(CALIBRATE_ROUTE, inclusive = true) }) { CalibrationScreen(vm) }
@@ -181,6 +188,7 @@ fun CompassApp() {
 @Composable
 private fun Panes(
     vm: CompassViewModel, panes: PagerState, top: () -> TopScreen, log: LogActions, onEdit: (Long) -> Unit, onCalibrate: () -> Unit,
+    onBackupOff: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     // A move the app makes itself goes to the nearest page that shows the screen, and slides there.
@@ -224,11 +232,11 @@ private fun Panes(
         }
         when (paneOf(page)) {
             // The frames of the settings and waypoints screens hold their pane ticks.
-            Pane.SETTINGS -> SettingsScreen(vm, paneView = view, onCalibrate = onCalibrate)
+            Pane.SETTINGS -> SettingsScreen(vm, paneView = view, onCalibrate = onCalibrate, onBackupOff = onBackupOff)
             Pane.COMPASS -> CompassScreen(
                 vm, paneView = view, onOpenList = { show(Pane.WAYPOINTS) }, onSidePress = log.sidePress, onCalibrate = onCalibrate,
             )
-            Pane.WAYPOINTS -> WaypointsScreen(vm, paneView = view, onEdit = onEdit, onLogHere = log.logHere, onSidePress = log.sidePress)
+            Pane.WAYPOINTS -> WaypointsScreen(vm, paneView = view, onEdit = onEdit, onLogHere = log.logHere, onSidePress = log.sidePress, onDropCrumb = log.dropCrumb)
         }
     }
 }

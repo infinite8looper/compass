@@ -111,8 +111,8 @@ import kotlinx.coroutines.delay
  * empty every crumb is deleted. Letting go, or moving the finger away, before that clears nothing and is no tap. A
  * watch that passes no double press to the app has the whole trail there.
  *
- * While the setting is on, a row `Drop crumb` stands under the trail's row and does what a single press of the side
- * button does ([onSidePress]).
+ * While a trail is being laid, a row `Drop crumb` stands under the trail's row and drops a crumb, as a single press
+ * of the side button does then ([onDropCrumb]).
  *
  * [onEdit] is what a long press on a waypoint's row does, [onLogHere] what `Log here` does, and [onSidePress] what
  * a single press of a side button does.
@@ -120,6 +120,7 @@ import kotlinx.coroutines.delay
 @Composable
 fun WaypointsScreen(
     vm: CompassViewModel, paneView: () -> PaneView, onEdit: (Long) -> Unit, onLogHere: () -> Unit, onSidePress: () -> Unit,
+    onDropCrumb: () -> Unit,
 ) {
     val nav by vm.nav.collectAsStateWithLifecycle()
     val listState = rememberScalingLazyListState()
@@ -291,11 +292,12 @@ fun WaypointsScreen(
                     }
                 }
             }
-            // What a single press of the side button does, for a watch that passes no side button to apps: the
-            // same call, so the same permission question, status, confirming tap and rules. That is a crumb while
-            // a trail is being laid and a waypoint at any other time.
-            if (nav.breadcrumbTrail) item(key = "drop") {
-                InstrumentRow(Modifier.clickable(role = Role.Button) { inView(onSidePress) }, centered = true) {
+            // What a single press of the side button does while a trail is being laid, for a watch that passes no
+            // side button to apps: a crumb, with the same permission question, status, confirming tap and fix rules.
+            // The row is there only while a trail is laid, and its call saves nothing at any other time, so it
+            // never saves a waypoint.
+            if (nav.breadcrumbTrail && trail.mode == TrailMode.LAYING) item(key = "drop") {
+                InstrumentRow(Modifier.clickable(role = Role.Button) { inView(onDropCrumb) }, centered = true) {
                     Text(DROP_CRUMB, color = AccentColor, style = actionStyle, maxLines = 1)
                 }
             }

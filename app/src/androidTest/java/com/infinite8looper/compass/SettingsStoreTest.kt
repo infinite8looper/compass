@@ -207,6 +207,59 @@ class SettingsStoreTest {
             assertTrue(second.settings.first().blindNavigation); assertFalse(second.settings.first().breadcrumbTrail)
         } finally { f.setReadable(true, false); job1.cancelAndJoin(); job2.cancelAndJoin(); f.delete(); ctx.preferencesDataStoreFile("$file-position").delete() }
     }
+    // Who turned the switch off. The backup agent puts a backup without waypoints in the place of the stored one
+    // only for a switch the wearer turned off in the app.
+    @Test fun aSwitchTurnedOffInTheAppIsOnRecordAsTurnedOffByTheWearer() = withStore { s, file ->
+        assertEquals(false, s.readBackupOffByWearer())
+        s.setBackupEnabled(false)
+        assertEquals(false, s.readBackupEnabled()); assertEquals(true, s.readBackupOffByWearer())
+        // It is in the settings file, so it is there for the agent in another process's lifetime.
+        assertTrue(ctx.preferencesDataStoreFile(file).readBytes().toString(Charsets.ISO_8859_1).contains("backup_off_by_wearer"))
+        s.setBackupEnabled(true)
+        assertEquals(true, s.readBackupEnabled()); assertEquals(false, s.readBackupOffByWearer())
+        s.setBackupEnabled(false); s.setTickFeedback(false)
+        assertEquals(true, s.readBackupOffByWearer())
+    }
+    @Test fun aSwitchThatIsOffInADamagedFileIsNotOnRecordAsTurnedOffByTheWearer() = runBlocking {
+        val file = "test-settings-${UUID.randomUUID()}"
+        val f = ctx.preferencesDataStoreFile(file)
+        f.parentFile!!.mkdirs()
+        f.writeBytes(byteArrayOf(0x7f, 0x00, 0x13, -1, -2, 0x55, 0x01, 0x02, 0x03))
+        val job = SupervisorJob()
+        try {
+            val s = SettingsStore(ctx, file, CoroutineScope(Dispatchers.IO + job))
+            assertEquals(false, s.readBackupEnabled())
+            assertEquals(false, s.readBackupOffByWearer())
+        } finally { job.cancelAndJoin(); f.delete(); ctx.preferencesDataStoreFile("$file-position").delete() }
+    }
+    @Test fun aSwitchThatIsOffInAFileFromBeforeTheRecordWasKeptIsNotOnRecordAsTurnedOffByTheWearer() = runBlocking {
+        val file = "test-settings-${UUID.randomUUID()}"
+        val main = ctx.preferencesDataStoreFile(file)
+        val oldJob = SupervisorJob(); val job = SupervisorJob()
+        try {
+            val old = PreferenceDataStoreFactory.create(scope = CoroutineScope(Dispatchers.IO + oldJob)) { main }
+            old.edit { it[booleanPreferencesKey("backup_enabled")] = false }
+            oldJob.cancelAndJoin()
+            val s = SettingsStore(ctx, file, CoroutineScope(Dispatchers.IO + job))
+            assertEquals(false, s.readBackupEnabled())
+            assertEquals(false, s.readBackupOffByWearer())
+        } finally { oldJob.cancelAndJoin(); job.cancelAndJoin(); main.delete(); ctx.preferencesDataStoreFile("$file-position").delete() }
+    }
+    @Test fun whoTurnedTheSwitchOffIsNotKnownWhenTheFileCannotBeRead() = runBlocking {
+        val file = "test-settings-${UUID.randomUUID()}"
+        val f = ctx.preferencesDataStoreFile(file)
+        val job1 = SupervisorJob(); val job2 = SupervisorJob()
+        try {
+            val first = SettingsStore(ctx, file, CoroutineScope(Dispatchers.IO + job1))
+            first.setBackupEnabled(false)
+            job1.cancelAndJoin()
+            assertTrue("could not make the file unreadable", f.setReadable(false, false))
+            assertFalse("the test setup did not make the file unreadable", f.canRead())
+            val second = SettingsStore(ctx, file, CoroutineScope(Dispatchers.IO + job2))
+            assertNull(second.readBackupEnabled())
+            assertNull(second.readBackupOffByWearer())
+        } finally { f.setReadable(true, false); job1.cancelAndJoin(); job2.cancelAndJoin(); f.delete(); ctx.preferencesDataStoreFile("$file-position").delete() }
+    }
     @Test fun lastPositionIsKeptOutOfTheSettingsFileThatIsBackedUp() = withStore { s, file ->
         s.setLastPosition(GeoPoint(43.7022, -72.2896), 160f); s.setNorth(NorthRef.MAGNETIC)
         assertEquals(43.7022, s.settings.first().lastPosition!!.lat, 1e-9)

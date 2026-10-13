@@ -28,7 +28,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * The `Drop crumb` row of the waypoints screen, in the real activity with the real database: the row is found in
+ * The `Drop crumb` row of the waypoints screen, shown while a trail is laid, in the real activity with the real database: the row is found in
  * the system's accessibility tree and clicked through it, and a side button is pressed with real key events, on the
  * same screen. The tests that save need `scripts/geo-feed.sh -72.2896 43.7022` running, as in SideButtonTest.
  */
@@ -107,68 +107,81 @@ class DropCrumbRowTest {
         return name
     }
 
-    @Test fun theRowDoesWhatASinglePressOfTheSideButtonDoesWhateverTheTrailIsDoing() = runBlocking {
+    /** The trail's own row is on screen, so the list has been drawn for what the trail is doing now. */
+    private suspend fun trailRowSays(detail: String) {
+        withTimeout(10_000) { while (withText("Trail").isEmpty() || withText(detail).isEmpty()) delay(100) }
+    }
+
+    @Test fun whileATrailIsLaidTheRowDropsACrumbAsASinglePressOfTheSideButtonDoes() = runBlocking {
         settings.setBreadcrumbTrail(true)
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             val vm = viewModelOf(scenario)
             toWaypoints()
-
-            // Laying: the press drops a crumb, and so does the row.
             vm.trailDoublePress().join()
             assertEquals(TrailMode.LAYING, settings.settings.first().trailMode)
+            trailRowSays("Laying, 0 crumbs")
             press()
             assertEquals("Crumb 1", savedName(vm, 1))
             assertTrue(dropCrumbRow().performAction(AccessibilityNodeInfo.ACTION_CLICK))
             assertEquals("Crumb 2", savedName(vm, 2))
             assertEquals(2, crumbDao.all().size)
             assertTrue(dao.observeAll().first().isEmpty())
-
-            // Retracing: the press saves a waypoint and leaves the trail alone, and so does the row.
-            vm.trailDoublePress().join()
-            assertEquals(TrailMode.RETRACING, settings.settings.first().trailMode)
-            // The number in a waypoint's name goes on from the last one the app gave, on this device.
-            press()
-            val byPress = savedName(vm, 3)
-            assertEquals(listOf(byPress), dao.observeAll().first().map { it.name })
-            assertTrue(dropCrumbRow().performAction(AccessibilityNodeInfo.ACTION_CLICK))
-            val byRow = savedName(vm, 4)
-            assertEquals(listOf(byRow, byPress), dao.observeAll().first().map { it.name })
-            assertTrue("saved $byPress and $byRow", byPress!!.startsWith("Waypoint ") && byRow!!.startsWith("Waypoint ") && byRow != byPress)
-            assertEquals(2, crumbDao.all().size)
-            assertEquals(2, dao.observeAll().first().size)
-            assertEquals(TrailMode.RETRACING, settings.settings.first().trailMode)
+            assertEquals(TrailMode.LAYING, settings.settings.first().trailMode)
         }
     }
 
-    @Test fun withNoTrailTheRowSavesAWaypointAsASinglePressDoes() = runBlocking {
+    @Test fun theRowIsThereOnlyWhileATrailIsLaid() = runBlocking {
+        // Crumbs are stored, so the trail's own row shows whatever the setting and the trail are doing.
+        crumbDao.insert(Crumb(lat = 43.7022, lon = -72.2896, accuracyM = 5f, createdAt = System.currentTimeMillis()))
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            val vm = viewModelOf(scenario)
+            toWaypoints()
+            // The setting off.
+            trailRowSays("Off, 1 crumb")
+            assertTrue("`Drop crumb` shows with the setting off", withText("Drop crumb").isEmpty())
+            // The setting on and the trail off.
+            settings.setBreadcrumbTrail(true)
+            delay(1_500)
+            trailRowSays("Off, 1 crumb")
+            assertEquals(TrailMode.OFF, settings.settings.first().trailMode)
+            assertTrue("`Drop crumb` shows with the trail off", withText("Drop crumb").isEmpty())
+            // Laid: the row is there.
+            vm.trailDoublePress().join()
+            trailRowSays("Laying, 1 crumb")
+            withTimeout(10_000) { while (withText("Drop crumb").isEmpty()) delay(100) }
+            dropCrumbRow()
+            // Retraced: gone again.
+            vm.trailDoublePress().join()
+            trailRowSays("Retracing, 1 left")
+            assertEquals(TrailMode.RETRACING, settings.settings.first().trailMode)
+            assertTrue("`Drop crumb` shows while the trail is retraced", withText("Drop crumb").isEmpty())
+            // Laid again, then the setting off.
+            vm.trailDoublePress().join()
+            trailRowSays("Laying, 1 crumb")
+            withTimeout(10_000) { while (withText("Drop crumb").isEmpty()) delay(100) }
+            settings.setBreadcrumbTrail(false)
+            withTimeout(10_000) { while (withText("Drop crumb").isNotEmpty()) delay(100) }
+        }
+    }
+
+    /** The row's call, made when no trail is being laid (a tap that lands as the trail stops being laid): nothing is saved and no status shows. */
+    @Test fun theRowsCallSavesNothingWhenNoTrailIsBeingLaid() = runBlocking {
         settings.setBreadcrumbTrail(true)
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             val vm = viewModelOf(scenario)
             toWaypoints()
-            assertTrue(dropCrumbRow().performAction(AccessibilityNodeInfo.ACTION_CLICK))
-            val byRow = savedName(vm, 1)
-            assertEquals(listOf(byRow), dao.observeAll().first().map { it.name })
-            press()
-            val byPress = savedName(vm, 2)
-            assertEquals(listOf(byPress, byRow), dao.observeAll().first().map { it.name })
-            assertTrue("saved $byRow and $byPress", byRow!!.startsWith("Waypoint ") && byPress!!.startsWith("Waypoint ") && byRow != byPress)
-            assertTrue(crumbDao.all().isEmpty())
-            assertEquals(TrailMode.OFF, settings.settings.first().trailMode)
-        }
-    }
-
-    @Test fun theRowIsThereOnlyWhileTheSettingIsOn() = runBlocking {
-        // Crumbs are stored, so the trail's own row shows with the setting off, and `Drop crumb` does not.
-        crumbDao.insert(Crumb(lat = 43.7022, lon = -72.2896, accuracyM = 5f, createdAt = System.currentTimeMillis()))
-        ActivityScenario.launch(MainActivity::class.java).use {
-            toWaypoints()
-            withTimeout(10_000) { while (withText("Trail").isEmpty()) delay(100) }
-            assertTrue("`Drop crumb` shows with the setting off", withText("Drop crumb").isEmpty())
-            settings.setBreadcrumbTrail(true)
-            withTimeout(10_000) { while (withText("Drop crumb").isEmpty()) delay(100) }
-            dropCrumbRow()
-            settings.setBreadcrumbTrail(false)
-            withTimeout(10_000) { while (withText("Drop crumb").isNotEmpty()) delay(100) }
+            // The trail off.
+            vm.dropCrumb().join()
+            assertEquals(LogStatus.Idle, vm.logStatus.value); assertEquals(0, vm.logPress.value)
+            // The trail retraced.
+            crumbDao.insert(Crumb(lat = 43.7022, lon = -72.2896, accuracyM = 5f, createdAt = System.currentTimeMillis()))
+            settings.setTrailMode(TrailMode.RETRACING)
+            trailRowSays("Retracing, 1 left")
+            vm.dropCrumb().join()
+            delay(2_000)
+            assertEquals(LogStatus.Idle, vm.logStatus.value); assertEquals(0, vm.logPress.value)
+            assertTrue(dao.observeAll().first().isEmpty())
+            assertEquals(1, crumbDao.all().size)
         }
     }
 }

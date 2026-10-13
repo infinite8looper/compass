@@ -36,6 +36,8 @@ import androidx.wear.compose.material3.Text
 import com.infinite8looper.compass.BuildConfig
 import com.infinite8looper.compass.CompassViewModel
 import com.infinite8looper.compass.SwitchesUi
+import com.infinite8looper.compass.nav.BackupTap
+import com.infinite8looper.compass.nav.backupSwitchTap
 import com.infinite8looper.compass.nav.NEEDS_PRECISE_LOCATION
 import com.infinite8looper.compass.nav.NorthRef
 import com.infinite8looper.compass.nav.Pane
@@ -53,10 +55,11 @@ import com.infinite8looper.compass.nav.accuracyLabel
  * `Calibrate` shows the accuracy the magnetometer last reported while the compass or calibration had it running;
  * this screen does not run the sensor.
  *
- * A side button does nothing here. [onCalibrate] opens the calibration screen.
+ * A side button does nothing here. [onCalibrate] opens the calibration screen, and [onBackupOff] the question asked
+ * before `Back up waypoints` is turned off.
  */
 @Composable
-fun SettingsScreen(vm: CompassViewModel, paneView: () -> PaneView, onCalibrate: () -> Unit) {
+fun SettingsScreen(vm: CompassViewModel, paneView: () -> PaneView, onCalibrate: () -> Unit, onBackupOff: () -> Unit) {
     // The switches come from the settings file alone. The screen state the other screens share can stay unloaded
     // for as long as the crumbs cannot be read with the trail setting on, and a switch does not wait for that: the
     // trail's own switch least of all, since turning it off is what ends that wait.
@@ -151,8 +154,15 @@ fun SettingsScreen(vm: CompassViewModel, paneView: () -> PaneView, onCalibrate: 
                     }
                 }
                 item(key = "backup") {
+                    // Turning it on is one tap. Turning it off also replaces the stored backup, so that is asked first,
+                    // on a screen of its own; the switch stays on until the answer.
                     SwitchRow("Back up waypoints", "With this watch's backup", switches.backupEnabled, ready, styles) {
-                        inView { vm.setBackupEnabled(it) }
+                        inView {
+                            when (backupSwitchTap(switches.backupEnabled)) {
+                                BackupTap.TURN_ON -> vm.setBackupEnabled(true)
+                                BackupTap.ASK_FIRST -> onBackupOff()
+                            }
+                        }
                     }
                 }
                 item(key = "calibrate") {

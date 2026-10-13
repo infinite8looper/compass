@@ -356,10 +356,28 @@ class CompassViewModel(
      */
     fun logHere(): Job = save(byTrail = false)
 
-    private fun save(byTrail: Boolean): Job {
+    /**
+     * The `Drop crumb` row: what [sidePress] does while a breadcrumb trail is being laid, and nothing at any other
+     * time. The row shows only while a trail is laid; a tap that lands just as the trail stops being laid starts no
+     * save and shows no status, so the row never saves a waypoint.
+     */
+    fun dropCrumb(): Job = save(byTrail = true, crumbOnly = true)
+
+    private fun save(byTrail: Boolean, crumbOnly: Boolean = false): Job {
         val pressedAt = SystemClock.elapsedRealtime()
         // On the main thread, where presses are handled one after another, so two of them cannot both start a save.
         return viewModelScope.launch(Dispatchers.Main.immediate) {
+            if (crumbOnly) {
+                val laying = try {
+                    singlePress(trailModeNow()) == SinglePress.CRUMB
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "could not read the trail (" + e.javaClass.simpleName + ")")
+                    false
+                }
+                if (!laying) return@launch
+            }
             if (logState.value is LogStatus.Saving) return@launch
             val refused = when {
                 !locationSource.hasPermission() -> LogStatus.Failed(LogFailure.NO_PERMISSION)
@@ -634,6 +652,11 @@ class CompassViewModel(
     /** Stores the switch. Off also ends laying or retracing; the crumbs stay until the trail is cleared. */
     fun setBreadcrumbTrail(on: Boolean) = launchEdit("set breadcrumb trail") { settingsStore.setBreadcrumbTrail(on) }
 
+    /**
+     * Stores the switch as the wearer set it. Off is on record as the wearer's doing, which is what lets the backup
+     * agent put a backup without waypoints in the place of the stored one; the screens ask before they call this
+     * with off.
+     */
     fun setBackupEnabled(on: Boolean) = launchQuietly("set backup") {
         settingsStore.setBackupEnabled(on)
         // Tells the system the data is worth backing up again; the backup agent decides what is actually saved.

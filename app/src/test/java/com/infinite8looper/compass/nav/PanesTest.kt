@@ -295,4 +295,14 @@ class PanesTest {
         assertEquals(PaneView.HIDDEN, pageViewUnder(TopScreen.EDIT, pageView(start, start, 0f, start, false)))
         assertEquals(PaneView.HIDDEN, pageViewUnder(TopScreen.CALIBRATION, pageView(start, start, 0f, start, false)))
     }
+
+    @Test fun theQuestionBeforeBackupsAreTurnedOffIsAScreenOnTopLikeTheOthers() {
+        assertEquals(TopScreen.BACKUP_OFF, topScreen(BACKUP_OFF_ROUTE))
+        assertEquals("backup-off", BACKUP_OFF_ROUTE)
+        // Under it every page is hidden, and the heading sensor does not run for it.
+        val start = PANE_START_PAGE
+        for (view in PaneView.entries) assertEquals(PaneView.HIDDEN, pageViewUnder(TopScreen.BACKUP_OFF, view))
+        assertEquals(PaneView.HIDDEN, pageViewUnder(TopScreen.BACKUP_OFF, pageView(start, start, 0f, start, false)))
+        for (compass in listOf(true, false)) assertFalse(headingWanted(TopScreen.BACKUP_OFF, compass, appOnScreen = true))
+    }
 }

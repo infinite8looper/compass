@@ -26,7 +26,7 @@ Settings, the compass and the waypoints are three screens side by side in one ro
 | Waypoints | Tap the header | Sets all waypoints as targets, or clears all if all are |
 | Waypoints | Tap the `Trail` row | With `Breadcrumb trail` on: does what a double press does |
 | Waypoints | Hold the `Trail` row | Clears the trail (`Hold to clear`) |
-| Waypoints | Tap `Drop crumb` (shown while `Breadcrumb trail` is on) | Does what a single press of the side button does: drops a crumb while a trail is being laid, saves a waypoint at any other time |
+| Waypoints | Tap `Drop crumb` (shown while a trail is being laid) | Drops a crumb, as a single press of the side button does then |
 | Edit | Drag along the color ring, or turn the crown | Changes the waypoint's color |
 | Edit | Tap the name | Opens the system's text input to rename it |
 | Edit | Tap the `Target` tick | Sets or clears it as a target |
@@ -60,7 +60,7 @@ A single press of the side button on the compass or the waypoints screen saves t
 - A waypoint's color is the color at its place on a ring that fades between three colors: the accent (the pointer), the north color and the error color. On API 35 and newer, while the system's dynamic color setting (`dynamic_color_theme_enabled`) is on, the app reads the system's color scheme; if the scheme's main color is not too pale or gray, those three follow it. Otherwise they are blue, red and red. On the emulators that setting was off until switched on by hand, and no emulator was found on which the watch face changes the scheme. With blue, red and red, a third of the ring is one red.
 - The distance is under the heading, in meters and kilometers or feet and miles. A target under 10 m (30 ft) away shows `Arrived at target` and has no line or arrow; it counts as left again only beyond 12 m (36 ft). A distance from a fix more than 20 seconds old is marked `(old)`.
 - When the heading is within 2 degrees of the focused target (held until it is more than 3 degrees off), its line is drawn thicker at 12 o'clock.
-- While a target exists and the app is on screen, position updates come about every 5 seconds, on any of the three screens. The screen stays awake while a target exists and the compass is in view.
+- While a target exists, the location permission is held and the app is on screen, position updates come about every 5 seconds, on any of the three screens. The screen stays awake while a target exists and the compass is in view, with or without a position.
 - Targets and the focus are stored and survive closing the app.
 
 ## Blind navigation
@@ -72,7 +72,7 @@ On by default. When the heading comes within 2 degrees of the focused target the
 Off by default (`Breadcrumb trail` in settings). With it on:
 
 1. A double press with no trail starts one; the compass shows `Trail` and the crumb count.
-2. While laying, each single press drops a crumb at the current position, with the same fix rules as saving a waypoint, and so does a tap on the `Drop crumb` row of the waypoints screen. Waypoints can still be saved from `Log here`.
+2. While laying, each single press drops a crumb at the current position, with the same fix rules as saving a waypoint, and so does a tap on the `Drop crumb` row, which the waypoints screen shows under the `Trail` row while a trail is being laid. Waypoints can still be saved from `Log here`.
 3. A double press switches to retracing: the newest crumb is shown like a focused target (`Crumb N`) with its direction and distance.
 4. A crumb is deleted and the next newest takes over when a fix of 15 m or better is within 10 m (30 ft) of it while the compass is the screen at rest in view and the app is in front. After the last, `Trail complete` shows and the trail is off.
 5. A double press while retracing returns to laying with the remaining crumbs.
@@ -95,11 +95,13 @@ Crumbs are stored separately from waypoints, are never listed with them except a
 
 The text of the settings, the waypoints list, the edit screen and the calibration screen follows the system's font size (on the emulators the setting has six steps, from 0.94 to 1.24; a scale outside 0.85 to 1.24 is drawn at the nearer end). The compass's text does not: it is sized from the dial.
 
+A tap on `Back up waypoints` while it is on opens a question (`Turn off backup?`, with `Keep on` and `Turn off`); Back and a right swipe leave it on.
+
 Turning on `Show coordinates` without location access asks for it; if precise location is not granted the switch stays off and `Needs access to precise location` shows under it.
 
 ## Backup
 
-The waypoint database (`waypoints.db`, which also holds the crumbs) and the settings file are the only data included in the system's backup and in device-to-device transfer. The last known position is kept in a separate file that is not included. The system does the backing up and the transferring. The `Back up waypoints` switch is checked each time the system asks for a backup; with it off the app hands over nothing. Cloud backup happens only when the watch can encrypt it end to end, which needs a screen lock; device-to-device transfer does not depend on that. When a waypoint is deleted, the app overwrites its content in the database file. Only the emulator's local backup transport was exercised; Google's backup service and a device-to-device transfer were not.
+The waypoint database (`waypoints.db`, which also holds the crumbs) and the settings file are the only data included in the system's backup and in device-to-device transfer. The last known position is kept in a separate file that is not included. The system does the backing up and the transferring. The `Back up waypoints` switch is checked each time the system asks for a backup; with it off the app hands over neither of them. Cloud backup happens only when the watch can encrypt it end to end, which needs a screen lock; device-to-device transfer does not depend on that. When a waypoint is deleted, the app overwrites its content in the database file. A waypoint deleted on the watch is removed from the app's storage. A backup made before the deletion can still contain it until a newer backup replaces it. Only the emulator's local backup transport was exercised; Google's backup service and a device-to-device transfer were not.
 
 ## Versions
 

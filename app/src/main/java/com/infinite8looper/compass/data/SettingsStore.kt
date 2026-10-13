@@ -195,7 +195,20 @@ class SettingsStore(
     } catch (e: Exception) {
         null
     }
-    suspend fun setBackupEnabled(on: Boolean) { store.edit { it[BACKUP_ENABLED] = on } }
+    /**
+     * Whether the switch is off because the wearer turned it off in the app, for the backup agent
+     * ([com.infinite8looper.compass.nav.backupPass]); null when the file cannot be read. A switch that is off in a
+     * damaged file that was reset, or in a file written before this record was kept, is not.
+     */
+    suspend fun readBackupOffByWearer(): Boolean? = try {
+        store.data.first()[BACKUP_OFF_BY_WEARER] ?: false
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        null
+    }
+    /** Stores the switch as the wearer set it in the app, and with it that the wearer was the one who turned it off. */
+    suspend fun setBackupEnabled(on: Boolean) { store.edit { it[BACKUP_ENABLED] = on; it[BACKUP_OFF_BY_WEARER] = !on } }
     suspend fun setFocused(id: Long?) { store.edit { if (id == null) it.remove(FOCUSED) else it[FOCUSED] = id } }
     suspend fun setLastPosition(p: GeoPoint, altitudeM: Float) {
         positionStore.edit { it[LAT] = p.lat; it[LON] = p.lon; it[ALT] = altitudeM }
@@ -212,6 +225,7 @@ class SettingsStore(
         private val TICK_FEEDBACK = booleanPreferencesKey("tick_feedback")
         private val SHOW_COORDINATES = booleanPreferencesKey("show_coordinates")
         private val BACKUP_ENABLED = booleanPreferencesKey("backup_enabled")
+        private val BACKUP_OFF_BY_WEARER = booleanPreferencesKey("backup_off_by_wearer")
         private val BLIND_NAVIGATION = booleanPreferencesKey("blind_navigation")
         private val BREADCRUMB_TRAIL = booleanPreferencesKey("breadcrumb_trail")
         private val TRAIL_MODE = stringPreferencesKey("trail_mode")

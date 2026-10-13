@@ -50,27 +50,33 @@ import kotlinx.coroutines.flow.collectLatest
  */
 @Composable
 internal fun rememberLogHere(vm: CompassViewModel): LogActions {
-    // Which of the two asked, kept across the dialog, which can outlive this activity.
-    var askedBySidePress by rememberSaveable { mutableStateOf(false) }
+    // Which of the three asked, kept across the dialog, which can outlive this activity.
+    var askedBy by rememberSaveable { mutableStateOf(LOG_HERE) }
+    fun save(by: Int) { when (by) { SIDE_PRESS -> vm.sidePress(); DROP_CRUMB_ROW -> vm.dropCrumb(); else -> vm.logHere() } }
     val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         vm.permissionChanged()
-        if (askedBySidePress) vm.sidePress() else vm.logHere()
+        save(askedBy)
     }
     return remember(vm, ask) {
-        fun start(sidePress: Boolean) {
-            if (vm.locationSource.hasPermission()) { if (sidePress) vm.sidePress() else vm.logHere() }
-            else { askedBySidePress = sidePress; ask.launch(LOCATION_PERMISSIONS) }
+        fun start(by: Int) {
+            if (vm.locationSource.hasPermission()) save(by)
+            else { askedBy = by; ask.launch(LOCATION_PERMISSIONS) }
         }
-        LogActions(logHere = { start(sidePress = false) }, sidePress = { start(sidePress = true) })
+        LogActions(logHere = { start(LOG_HERE) }, sidePress = { start(SIDE_PRESS) }, dropCrumb = { start(DROP_CRUMB_ROW) })
     }
 }
 
+private const val LOG_HERE = 0
+private const val SIDE_PRESS = 1
+private const val DROP_CRUMB_ROW = 2
+
 /**
- * The two ways a position is saved, each asking for the permission first where it is not held: [logHere] is the
- * `Log here` row, which always saves a waypoint, and [sidePress] is a single press of the side button, which drops
- * a crumb instead while a breadcrumb trail is being laid.
+ * The ways a position is saved, each asking for the permission first where it is not held: [logHere] is the
+ * `Log here` row, which always saves a waypoint; [sidePress] is a single press of the side button, which drops
+ * a crumb instead while a breadcrumb trail is being laid; and [dropCrumb] is the `Drop crumb` row, which drops a
+ * crumb while a trail is being laid and does nothing otherwise.
  */
-internal class LogActions(val logHere: () -> Unit, val sidePress: () -> Unit)
+internal class LogActions(val logHere: () -> Unit, val sidePress: () -> Unit, val dropCrumb: () -> Unit)
 
 /** Precise and approximate location, which are asked for together wherever the app asks. */
 internal val LOCATION_PERMISSIONS = arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
