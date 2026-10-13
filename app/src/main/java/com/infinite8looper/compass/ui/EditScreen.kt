@@ -1,7 +1,9 @@
 package com.infinite8looper.compass.ui
 
 import android.app.RemoteInput
+import android.content.ActivityNotFoundException
 import android.os.SystemClock
+import android.util.Log
 import android.view.HapticFeedbackConstants
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -107,8 +109,21 @@ fun rememberTextInput(onText: (String) -> Unit): () -> Unit {
     return {
         val intent = RemoteInputIntentHelper.createActionRemoteInputIntent()
         RemoteInputIntentHelper.putRemoteInputsExtra(intent, listOf(RemoteInput.Builder("name").setLabel("Name").build()))
-        launcher.launch(intent)
+        // A watch with no activity for text input refuses the launch by throwing: then nothing opens and the name stays.
+        startedIfPresent { launcher.launch(intent) }
     }
+}
+
+/**
+ * Runs [start], which starts an activity, and says whether there was one to start. False when the system has none
+ * for it ([ActivityNotFoundException]): nothing has been started then. Any other failure is passed on.
+ */
+internal fun startedIfPresent(start: () -> Unit): Boolean = try {
+    start()
+    true
+} catch (e: ActivityNotFoundException) {
+    Log.w("EditScreen", "no activity to start (" + e.javaClass.simpleName + ")")
+    false
 }
 
 /**
