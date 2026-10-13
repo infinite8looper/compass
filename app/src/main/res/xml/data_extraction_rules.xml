@@ -13,7 +13,8 @@
 
   These rules are applied by the system's own copy (BackupAgent.onFullBackup). The marker file that the app's backup
   agent hands over by itself while "Back up waypoints" is off by the wearer's doing does not pass through them: it is
-  handed over whether or not the transport encrypts. It holds no data of the wearer's. The system restores only the
+  handed over whether or not the transport encrypts, and in a device-to-device transfer too. It holds no waypoint, no
+  crumb and no setting other than that the switch is off. The system restores only the
   files named here, so a marker is never restored.
 -->
 <data-extraction-rules>

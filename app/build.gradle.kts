@@ -106,23 +106,36 @@ tasks.named { it.startsWith("lintAnalyze") || it.startsWith("lintVitalAnalyze") 
 
 // The instrumented tests delete the app's waypoints and settings on the device they run on, Gradle uninstalls the
 // app when they end, and without ANDROID_SERIAL Gradle runs them on every device adb lists. They are for emulators.
-// So every task that runs them, and every task that uninstalls, fails before it does anything unless ANDROID_SERIAL
-// names an emulator (emulator-NNNN) and adb lists no device that is not one. Installing is not held back.
+// So every task that runs tests on a device, and every task that uninstalls, fails before it does anything unless
+// ANDROID_SERIAL names an emulator (emulator-NNNN) and adb lists no device that is not one. Installing is not held
+// back. The tasks are taken by what they are (the plugin's task types for tests on a device and for uninstalling)
+// and, so that one the types miss is still caught, by name: anything that starts with `connected`, `device` or
+// `uninstall`.
 val adbForDeviceCheck = androidComponents.sdkComponents.adb
-tasks.named { (it.startsWith("connected") && (it.endsWith("AndroidTest") || it.endsWith("Check"))) || it == "deviceCheck" || it.startsWith("uninstall") }.configureEach {
+val emulatorSerial = Regex("^emulator-\\d+$")
+fun Task.emulatorsOnly() {
     val adb = adbForDeviceCheck
     val serial = providers.environmentVariable("ANDROID_SERIAL")
     doFirst {
         val named = serial.orNull
-        if (named == null || !Regex("^emulator-\\d+$").matches(named)) {
+        if (named == null || !emulatorSerial.matches(named)) {
             throw GradleException(
                 "refusing: this task wipes the app's data on the device it runs on and is for emulators only. " +
                     "Set ANDROID_SERIAL to the emulator's serial (for example ANDROID_SERIAL=emulator-5554); it is ${named ?: "not set"}."
             )
         }
-        val listed = ProcessBuilder(adb.get().asFile.absolutePath, "devices").redirectErrorStream(true).start()
-            .inputStream.bufferedReader().readLines().drop(1).mapNotNull { it.trim().split(Regex("\\s+")).firstOrNull()?.takeIf(String::isNotEmpty) }
-        val others = listed.filterNot { Regex("^emulator-\\d+$").matches(it) }
+        val lines = ProcessBuilder(adb.get().asFile.absolutePath, "devices").redirectErrorStream(true).start()
+            .inputStream.bufferedReader().readLines()
+        // adb can print lines of its own before the list (it does when this call starts its server). The devices
+        // are the lines after the one that heads the list, each a serial, a tab and a state. Anything else there,
+        // or no heading at all, is not understood, and what is not understood is refused.
+        val heading = lines.indexOfFirst { it.startsWith("List of devices") }
+        val listed = if (heading < 0) null else lines.drop(heading + 1).filter { it.isNotBlank() }
+        val serials = listed?.map { Regex("^(\\S+)\\t\\S.*$").matchEntire(it)?.groupValues?.get(1) }
+        if (serials == null || serials.any { it == null }) {
+            throw GradleException("refusing: what `adb devices` printed could not be read as a list of devices, so it is not known that only an emulator is attached: " + lines.joinToString(" | "))
+        }
+        val others = serials.filterNotNull().filterNot { emulatorSerial.matches(it) }
         if (others.isNotEmpty()) {
             throw GradleException(
                 "refusing: a device that is not an emulator is attached (${others.joinToString()}). " +
@@ -131,3 +144,9 @@ tasks.named { (it.startsWith("connected") && (it.endsWith("AndroidTest") || it.e
         }
     }
 }
+val guardedForEmulators = mutableSetOf<String>()
+fun guardOnce(task: Task) { if (guardedForEmulators.add(task.path)) task.emulatorsOnly() }
+tasks.withType(com.android.build.gradle.internal.tasks.DeviceProviderInstrumentTestTask::class.java).configureEach { guardOnce(this) }
+tasks.withType(com.android.build.gradle.internal.tasks.ManagedDeviceInstrumentationTestTask::class.java).configureEach { guardOnce(this) }
+tasks.withType(com.android.build.gradle.internal.tasks.UninstallTask::class.java).configureEach { guardOnce(this) }
+tasks.named { it.startsWith("connected") || it.startsWith("device") || it.startsWith("uninstall") }.configureEach { guardOnce(this) }

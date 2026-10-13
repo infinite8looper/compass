@@ -83,7 +83,9 @@ class DropCrumbRowTest {
         delay(1_000)
         // The row under the trail's row stands at the lower edge of the list when the screen opens, and outside it
         // on a small screen: the list is scrolled one step, through the system's tree, so that row is inside it.
-        nodes().firstOrNull { it.isScrollable && it.isFocused }?.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
+        val list = nodes().firstOrNull { it.isScrollable && it.isFocused }
+        assertNotNull("no list that can be scrolled has the focus on the waypoints screen", list)
+        assertTrue("the list did not take the scroll", list!!.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD))
         delay(1_000)
     }
 

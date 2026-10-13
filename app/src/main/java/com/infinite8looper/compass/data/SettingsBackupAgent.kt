@@ -20,13 +20,14 @@ import kotlinx.coroutines.withTimeout
  * off, nor in a pass in which the waypoint database cannot be shown to be fit to copy: on record as rebuilt, with
  * deleted content being overwritten, and with no journal or log data next to it.
  *
- * With the setting turned off by the wearer, a backup that is stored is handed one small marker file instead of
- * nothing ([handOverMarker]). An app cannot delete its stored backup. A backup that is made takes the place of the
+ * With the setting turned off by the wearer, a backup that is stored and a transfer to another watch are handed one
+ * small marker file instead of nothing ([handOverMarker]). An app cannot delete its stored backup. A backup that is made takes the place of the
  * one stored before, so the marker's backup, which holds no waypoint, is what is stored from then on. Seen with the
  * system's local transport on the API 33, 34 and 35 emulators.
  *
  * A restore of the marker's backup leaves the switch off, turned off by the wearer ([onRestoreFile],
- * [onRestoreFinished]): turning backups off holds across an install on this or another watch. A restore of any
+ * [onRestoreFinished]): turning backups off holds across an install on this watch, and on another that is set up
+ * from the backup or by a transfer. A restore of any
  * other backup changes nothing about the switch, and no restore turns it on.
  */
 class SettingsBackupAgent : BackupAgent() {
@@ -37,7 +38,7 @@ class SettingsBackupAgent : BackupAgent() {
     override fun onFullBackup(data: FullBackupDataOutput) {
         // A marker left by a pass whose process ended before it could delete it.
         File(filesDir, MARKER_FILE).delete()
-        when (pass(data)) {
+        when (pass()) {
             BackupPass.NOTHING -> return
             BackupPass.MARKER -> { handOverMarker(data); return }
             BackupPass.COPY -> Unit
@@ -68,17 +69,29 @@ class SettingsBackupAgent : BackupAgent() {
         }
     }
 
-    private val restoredOptOut by lazy { RestoredOptOut(filesDir) }
+    private val restoredOptOut by lazy { RestoredOptOut(filesDir, noBackupFilesDir) }
 
     /**
      * What this pass hands over ([backupPass]), from the stored switch and who turned it off, taken in one read. A
      * switch still owed off by a restore ([RestoredOptOut]) is written first; if it cannot be, the pass takes the
-     * switch as off by the wearer whatever the file says ([switchForPass]).
+     * switch as off by the wearer whatever the file says ([switchForPass]). And while the app's files folder takes
+     * no write the pass hands over nothing: the records of a switch owed off are files.
      */
-    private fun pass(data: FullBackupDataOutput): BackupPass {
+    private fun pass(): BackupPass {
         val owed = restoredOptOut.owed() && read("the settings to turn the switch off after a restore") { restoredOptOut.settle(it) } != true
         val (enabled, offByWearer) = switchForPass(read("the backup setting") { it.readBackupSwitch() } ?: (null to null), owed)
-        return backupPass(enabled, offByWearer, deviceTransfer = data.transportFlags and FLAG_DEVICE_TO_DEVICE_TRANSFER != 0)
+        return backupPass(enabled, offByWearer, canWrite = storageTakesAWrite())
+    }
+
+    /** Whether a file can be made in the app's files folder now. */
+    private fun storageTakesAWrite(): Boolean = try {
+        val probe = File(filesDir, PROBE_FILE)
+        probe.writeText("\n")
+        probe.delete()
+        true
+    } catch (e: Exception) {
+        Log.w(TAG, "the app's files folder takes no write; backing up nothing (" + e.javaClass.simpleName + ")")
+        false
     }
 
     /**
@@ -104,8 +117,8 @@ class SettingsBackupAgent : BackupAgent() {
      * name, so the marker is not written to the app's files, and the rest is the system's as before.
      */
     override fun onRestoreFile(data: ParcelFileDescriptor?, size: Long, destination: File?, type: Int, mode: Long, mtime: Long) {
-        // The system names the folder by its real path, which is not always the spelling the app is given for it.
-        if (destination != null && destination.name == MARKER_FILE && destination.canonicalFile.parentFile == filesDir.canonicalFile) {
+        // By its name alone: no other file of that name can be in this app's backup, and nothing that can fail is asked.
+        if (destination?.name == MARKER_FILE) {
             try {
                 restoredOptOut.markerCame()
             } catch (e: Exception) {
@@ -153,5 +166,7 @@ class SettingsBackupAgent : BackupAgent() {
         /** The file handed over alone while the switch is off by the wearer's doing, in the app's files folder, and what is in it. */
         const val MARKER_FILE = "backup-switched-off"
         const val MARKER_TEXT = "Back up waypoints is off.\n"
+        /** Written and deleted in the app's files folder at the start of a pass, to see that it takes a write. */
+        const val PROBE_FILE = "backup-write-probe"
     }
 }

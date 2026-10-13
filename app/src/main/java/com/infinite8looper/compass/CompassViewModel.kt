@@ -86,13 +86,23 @@ class CompassViewModel(
     private val sharing = SharingStarted.WhileSubscribed(2_000)
 
     /**
+     * The record of a restore that brought a backup made with `Back up waypoints` off, and whether the switch is
+     * still owed off by it: true from a restore until the settings file has been written ([RestoredOptOut]).
+     */
+    private val restoredOptOut = RestoredOptOut(app.filesDir, app.noBackupFilesDir)
+    private val backupOwedOff = MutableStateFlow(restoredOptOut.owed())
+
+    /**
      * The switches of the settings screen, or null until the settings file has been read. Nothing else is waited
      * for: while [nav] is still [NavUi.EMPTY] because the crumbs cannot be read with the breadcrumb trail setting on,
      * this has the stored values, the trail's switch among them, and the switch can be turned off.
      */
-    val switches: StateFlow<SwitchesUi?> = settingsStore.settings
-        .map<Settings, SwitchesUi?> { s ->
-            SwitchesUi(s.north, s.units, s.tickFeedback, s.blindNavigation, s.breadcrumbTrail, s.showCoordinates, s.backupEnabled)
+    val switches: StateFlow<SwitchesUi?> = combine(settingsStore.settings, backupOwedOff) { s, owedOff ->
+            SwitchesUi(
+                s.north, s.units, s.tickFeedback, s.blindNavigation, s.breadcrumbTrail, s.showCoordinates,
+                // Shown off while it is owed off by a restore, which is what the backup passes then do.
+                backupShownOn(s.backupEnabled, owedOff),
+            ) as SwitchesUi?
         }
         .distinctUntilChanged()
         .catch { Log.w(TAG, "the switches stopped updating (" + it.javaClass.simpleName + ")") }
@@ -270,7 +280,7 @@ class CompassViewModel(
         // made, so that the first press of a process finds them there and does not wait for the file.
         launchQuietly("read the trail's stored mode") { settingsStore.storedTrail() }
         // A switch still owed off by a restore whose settings file could not be written then is written now.
-        launchQuietly("turn the backup switch off after a restore") { RestoredOptOut(app.filesDir).settle(settingsStore) }
+        launchQuietly("turn the backup switch off after a restore") { restoredOptOut.settle(settingsStore); backupOwedOff.value = restoredOptOut.owed() }
         // Rebuilds the database file once, off the main thread, so it holds nothing of rows deleted or changed
         // by an earlier build or on another device. A failure is not fatal: the backup agent tries again.
         viewModelScope.launch(Dispatchers.IO) {
@@ -658,10 +668,11 @@ class CompassViewModel(
     /**
      * Stores the switch as the wearer set it. Off is on record as the wearer's doing, which is what lets the backup
      * agent put a backup without waypoints in the place of the stored one; the screens ask before they call this
-     * with off.
+     * with off. A switch that a restore left owed off is no longer owed once this has been written.
      */
     fun setBackupEnabled(on: Boolean) = launchQuietly("set backup") {
-        settingsStore.setBackupEnabled(on)
+        // The wearer's choice also ends whatever a restore still owed; if it cannot be written, that stays owed.
+        try { restoredOptOut.wearerSet(settingsStore, on) } finally { backupOwedOff.value = restoredOptOut.owed() }
         // Tells the system the data is worth backing up again; the backup agent decides what is actually saved.
         BackupManager.dataChanged(getApplication<Application>().packageName)
     }
