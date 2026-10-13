@@ -100,4 +100,4 @@ scripts/frame-times.sh <label>                # frame times while the heading sw
 
 ## Counts at the time of writing
 
-355 unit tests. 134 instrumented tests, run on each of `Wear_OS_API33`, `Wear_OS_API34`, `Wear_OS_Newest` and `Wear_OS_Large_Round` by `scripts/all-suites.sh` on 2026-10-13: 134 passed, 0 failed and 0 skipped on each, 536 in all. Lint (`./gradlew lintDebug`) reports 0 errors and one warning, `StaticFieldLeak` on the settings store's singleton.
+358 unit tests. 138 instrumented tests, run on each of `Wear_OS_API33`, `Wear_OS_API34`, `Wear_OS_Newest` and `Wear_OS_Large_Round` by `scripts/all-suites.sh` on 2026-10-13: 138 passed, 0 failed and 0 skipped on each, 552 in all. Lint (`./gradlew lintDebug`) reports 0 errors and one warning, `StaticFieldLeak` on the settings store's singleton.
