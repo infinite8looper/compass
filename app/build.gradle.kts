@@ -92,3 +92,13 @@ dependencies {
     androidTestImplementation("androidx.test:rules:1.7.0")
     androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
 }
+
+// Lint's analysis of the debug unit tests and of the debug instrumented tests (lintAnalyzeDebugUnitTest,
+// lintAnalyzeDebugAndroidTest) indexes the Kotlin files KSP generated for the release variant too, though their own
+// lint models name no such folder. When a release build is asked for in the same invocation, kspReleaseKotlin can be
+// remaking those files at that moment, and the analysis then fails on a file that is not there
+// (`./gradlew lintDebug assembleRelease` with debug already built; seen with AGP 9.4.1 and KSP 2.3.12).
+// So where both are to run, lint's analysis runs after the generated sources are made.
+tasks.matching { it.name.startsWith("lintAnalyze") || it.name.startsWith("lintVitalAnalyze") }.configureEach {
+    mustRunAfter(tasks.matching { it.name.startsWith("ksp") })
+}
