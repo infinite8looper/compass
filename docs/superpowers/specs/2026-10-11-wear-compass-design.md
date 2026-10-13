@@ -84,6 +84,8 @@ Fullscreen on a black background, following the mockup:
 - Around the heading: the focused target's color dot and name above it, and the distance below it. The focused target's marker is drawn larger than the others.
 - No on-screen button: a press of the watch's side button logs a waypoint.
 - A small label `MAG` when the dial is showing magnetic north (see North reference).
+- With Show coordinates on: the watch's position as two small lines under the distance, the latitude over the longitude (`43.7022° N`, `72.2896° W`). See "Coordinates, as built" in the v2 document.
+- A name too long for its slot slides back and forth in it.
 
 Gestures on this screen:
 
@@ -104,6 +106,7 @@ When the watch is tilted so steeply that this projection is unstable, the headin
 ### 2. Waypoints list
 
 A scrolling, curved list. Each row shows the color dot, the name, the distance if a location fix exists, and whether the waypoint is a target.
+A name too long for its row slides back and forth in it (see "Scrolling names, as built" in the v2 document).
 Each row has a switch that sets it as a target; tapping the rest of the row opens the edit screen.
 The first item logs a waypoint at the current position.
 Below it, two items set all waypoints as targets or clear all targets.
@@ -112,7 +115,7 @@ With no waypoints saved, the list shows the first item, a line saying there are 
 
 ### 3. Edit waypoint
 
-- Name: opens the system text input (voice or keyboard).
+- Name: opens the system text input (voice or keyboard). A name too long for its place slides back and forth in it.
 - Set target: toggles whether this waypoint is a target.
 - Color: a ring of colors turned with the crown or by touch. As first built it was a hue ring on which only the hue changed; since 2026-10-12 it is the ring described under "Colors".
 - Delete: after confirmation. If the deleted waypoint had the focus, the focus moves to the next target.
@@ -135,7 +138,7 @@ The compass screen also shows a small prompt that leads here when the reported a
 - North: true or magnetic.
 - Units: metric or imperial, defaulting from the watch's locale.
 - Tick feedback (default on): a faint vibration as the heading crosses the dial's minor tick marks.
-- Show coordinates (default off): shows the current GPS position on the compass screen. Turning it on asks for location access with the system dialog if it has not been granted; if the wearer denies it, the switch stays off and two lines under it say "Needs access to precise location". If access is already granted it turns on without asking, and turning it off never asks for anything.
+- Show coordinates (default off): shows the current GPS position on the compass screen, as two small lines under the distance (see "Coordinates, as built" in the v2 document). Turning it on asks for location access with the system dialog if it has not been granted; if the wearer denies it, the switch stays off and two lines under it say "Needs access to precise location". If access is already granted it turns on without asking, and turning it off never asks for anything.
 - Back up waypoints (default on): includes the saved waypoints and settings in the watch's system backup (when the watch can encrypt it) and in device-to-device transfer. See "Backup and transfer" under Behavior for what turning it off does and does not do.
 - Calibrate.
 - About: version and the MIT license.
@@ -195,7 +198,7 @@ The saved waypoints (the `waypoints.db` database) and the settings (the DataStor
 
 - Any number of waypoints, up to all of them, can be targets at the same time. One position update refreshes every target's bearing and distance.
 - While at least one waypoint is a target and the compass screen is in the foreground, the screen stays awake and the position updates about every 5 seconds.
-- With no targets, the screen follows the system timeout and location is used only for logging.
+- With no targets, the screen follows the system timeout and location is used only for logging, for a breadcrumb trail, and, with Show coordinates on, while the compass is on screen (see "Coordinates, as built" in the v2 document).
 - Which waypoints are targets, and which has the focus, are stored, so both survive closing the app.
 - Distance is shown in meters below 1 km and kilometers with one decimal above, or in feet below 1000 ft and miles with one decimal above.
 - When the focused target is under 10 m away (30 ft in imperial), the distance text is replaced by "Arrived at target", since the bearing is not meaningful at that range.
@@ -238,7 +241,7 @@ A crumb of the breadcrumb trail holds: id, latitude, longitude, accuracy at the 
 - No rotation-vector sensor: the manifest requires a compass sensor so Play does not offer the app to such watches; if it is still missing at run time, the app says the device is unsupported.
 - Location permission denied or location turned off: compass works; waypoint features explain what is needed.
 - No fix indoors: logging reports failure as described above; navigating marks the distance as out of date.
-- Empty waypoint list, duplicate names, very long names (truncated in display), deleting the focused target, and many targets with markers that overlap on the ring are all handled without error.
+- Empty waypoint list, duplicate names, very long names (which slide back and forth in their place, or end in an ellipsis when the system's animations are removed), deleting the focused target, and many targets with markers that overlap on the ring are all handled without error.
 
 ## Testing
 

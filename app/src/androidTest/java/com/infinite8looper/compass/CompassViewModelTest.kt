@@ -1265,6 +1265,52 @@ class CompassViewModelTest {
         }
     }
 
+    /**
+     * With `Show coordinates` on and no waypoint a target, position fixes come while the compass is on screen and
+     * only then, and the screen state carries where the watch is. With the setting off none come. Needs the feed
+     * at 43.7022, -72.2896.
+     */
+    @Test fun theCoordinatesBringPositionFixesOnlyWhileTheSettingIsOnAndTheCompassIsOnScreen() = runBlocking {
+        try {
+            ActivityScenario.launch(MainActivity::class.java).use {
+                // A view model of the test's own: no screen tells it where the compass is.
+                val vm = viewModel()
+                settings.setShowCoordinates(true)
+                withTimeout(10_000) { vm.nav.first { it.loaded && it.showCoordinates } }
+                withTimeoutOrNull(4_000) { vm.nav.collect { assertNull(it.position); assertNull(it.fixElapsedMs) } }
+                withContext(Dispatchers.Main) { vm.setCompassOnScreen(true) }
+                val live = withTimeout(60_000) { vm.nav.first { it.position != null } }
+                assertTrue(live.targets.isEmpty())
+                assertEquals("43.7022° N", com.infinite8looper.compass.nav.formatLatitude(live.position!!.lat))
+                assertEquals("72.2896° W", com.infinite8looper.compass.nav.formatLongitude(live.position.lon))
+                assertNotNull(live.fixElapsedMs)
+                withContext(Dispatchers.Main) { vm.setCompassOnScreen(false) }
+                withTimeout(10_000) { vm.nav.first { it.position == null } }
+                withContext(Dispatchers.Main) { vm.setCompassOnScreen(true) }
+                withTimeout(60_000) { vm.nav.first { it.position != null } }
+                settings.setShowCoordinates(false)
+                withTimeout(10_000) { vm.nav.first { it.position == null && !it.showCoordinates } }
+                withTimeoutOrNull(4_000) { vm.nav.collect { assertNull(it.position) } }
+                Unit
+            }
+        } finally { settings.setShowCoordinates(false) }
+    }
+
+    /** The switch is stored on and the permission is not held: no position comes, and the screen state says why. */
+    @Test fun withoutThePermissionTheCoordinatesBringNoPosition() = runBlocking {
+        try {
+            settings.setShowCoordinates(true)
+            ActivityScenario.launch(MainActivity::class.java).use {
+                val vm = viewModelWithoutPermission()
+                withContext(Dispatchers.Main) { vm.setCompassOnScreen(true) }
+                val ui = withTimeout(10_000) { vm.nav.first { it.loaded && it.showCoordinates } }
+                assertEquals(LogFailure.NO_PERMISSION, ui.noPosition)
+                withTimeoutOrNull(6_000) { vm.nav.collect { assertNull(it.position); assertNull(it.fixElapsedMs) } }
+                assertNull(com.infinite8looper.compass.nav.coordinatesReadout(true, vm.nav.value.position, false, vm.nav.value.noPosition, false, false))
+            }
+        } finally { settings.setShowCoordinates(false) }
+    }
+
     @Test fun aTargetTheWearerStandsOnHasArrivedAndHasNoBearing() = runBlocking {
         ActivityScenario.launch(MainActivity::class.java).use {
             val vm = viewModel()

@@ -68,8 +68,10 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -256,6 +258,15 @@ private fun EditWaypoint(vm: CompassViewModel, w: Waypoint, leave: () -> Unit) {
         val density = LocalDensity.current
         val labelStyle = remember(r, density) { density.instrumentText(r * 0.105f, align = TextAlign.Center) }
         val nameStyle = remember(r, density) { density.instrumentText(r * 0.17f, FontWeight.Light, TextAlign.Center) }
+        val smallNameStyle = remember(nameStyle) { nameStyle.copy(fontSize = nameStyle.fontSize * NAME_SMALLEST) }
+        // Whether the name is too long for two lines at the smallest size, measured the way it would be drawn in the
+        // width the row leaves it.
+        val measurer = rememberTextMeasurer()
+        val nameRoom = with(density) { (r * (NAME_ROW_WIDTH - NAME_DOT - NAME_DOT_GAP)).roundToPx() }
+        // With the system's animations removed nothing slides, and the name stays on its two lines, cut short.
+        val nameSlides = marqueeSlides() && remember(w.name, smallNameStyle, nameRoom) {
+            measurer.measure(w.name, smallNameStyle, maxLines = 2, constraints = Constraints(maxWidth = nameRoom)).hasVisualOverflow
+        }
 
         // While `Hold to delete` is held the wheel gives its place to a ring in the color of deleting, which
         // drains as the hold goes on; the frame's ticks are what is left behind it.
@@ -269,15 +280,18 @@ private fun EditWaypoint(vm: CompassViewModel, w: Waypoint, leave: () -> Unit) {
                 .toggleable(w.isTarget, role = Role.Switch) { vm.setTarget(id, it) },
         )
         Row(
-            Modifier.width(r * 1.36f).height(HitHeight)
+            Modifier.width(r * NAME_ROW_WIDTH).height(HitHeight)
                 .clickable(role = Role.Button, onClickLabel = "Rename", onClick = rename),
             Arrangement.Center, Alignment.CenterVertically,
         ) {
-            ColorDot({ hue.floatValue }, Modifier.size(r * 0.075f))
-            Spacer(Modifier.width(r * 0.05f))
-            BasicText(
+            ColorDot({ hue.floatValue }, Modifier.size(r * NAME_DOT))
+            Spacer(Modifier.width(r * NAME_DOT_GAP))
+            // The name is drawn smaller, on up to two lines, until it fits. One that does not fit even so is on one
+            // line at the smallest size and slides back and forth there. The row around it is what is tapped.
+            if (nameSlides) MarqueeText(w.name, smallNameStyle, { Ink }, Modifier.weight(1f, fill = false))
+            else BasicText(
                 w.name, Modifier.weight(1f, fill = false), nameStyle, maxLines = 2, overflow = TextOverflow.Ellipsis, color = { Ink },
-                autoSize = TextAutoSize.StepBased(minFontSize = nameStyle.fontSize * 0.62f, maxFontSize = nameStyle.fontSize, stepSize = 0.5.sp),
+                autoSize = TextAutoSize.StepBased(minFontSize = smallNameStyle.fontSize, maxFontSize = nameStyle.fontSize, stepSize = 0.5.sp),
             )
         }
         var place by remember { mutableStateOf<LayoutCoordinates?>(null) }
@@ -407,6 +421,16 @@ private const val CROWN_DEG_PER_PIXEL = 0.25f
 
 /** Where the target row and `Hold to delete` stand, in radii above and below the name. */
 private const val ROW_Y = 0.5f
+
+/**
+ * The name's row, in fractions of the screen's radius: how wide it is, the dot beside the name, and the gap between
+ * the two. The rest of the width is the name's.
+ */
+private const val NAME_ROW_WIDTH = 1.36f
+private const val NAME_DOT = 0.075f
+private const val NAME_DOT_GAP = 0.05f
+/** How small the name is drawn, as a share of its full size, before it is put on one line that slides. */
+private const val NAME_SMALLEST = 0.62f
 
 /** How long the frame takes to fill again when a hold is let go. */
 internal const val HOLD_REFILL_MS = 180

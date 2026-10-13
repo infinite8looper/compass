@@ -303,9 +303,10 @@ fun WaypointsScreen(
                     trailing = { TickToggle(w.isTarget, color = { waypointColor(w.hue) }) },
                 ) {
                     Column {
-                        Text(
-                            w.name, color = if (w.isTarget) Ink else Dim, style = if (w.isTarget) nameOnStyle else nameStyle,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        // A name too long for the row slides back and forth in it, while this screen is in view.
+                        MarqueeText(
+                            w.name, if (w.isTarget) nameOnStyle else nameStyle, { if (w.isTarget) Ink else Dim },
+                            running = { paneView() == PaneView.IN_VIEW },
                         )
                         nav.distances[w.id]?.let { d ->
                             Text(
@@ -328,7 +329,7 @@ fun WaypointsScreen(
                     .padding(top = r * STATUS_TOP),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                StatusLine(words, logStatusColor(current), headerStyle, Modifier.width(r * STATUS_WIDTH))
+                StatusLine(words, logStatusColor(current), headerStyle, Modifier.width(r * STATUS_WIDTH), running = { paneView() == PaneView.IN_VIEW })
                 // A note under the status is dim; a second line that carries the status's words on has its color.
                 if (detail != null) Text(
                     detail, color = if (statusDetailContinues(current)) logStatusColor(current) else Dim, style = detailStyle,

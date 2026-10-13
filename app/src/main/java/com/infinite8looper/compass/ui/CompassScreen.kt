@@ -389,7 +389,8 @@ fun CompassScreen(
                     // The crumb of a trail that is walked to stands here as a focused target does, in the trail's color.
                     Box(Modifier.size(r * 0.062f).background(if (focused.isCrumb) CrumbColor else waypointColor(focused.hue), CircleShape))
                     Spacer(Modifier.width(r * 0.035f))
-                    Text(focused.name, color = Ink, style = bodyStyle, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    // A name too long for the slot slides back and forth in it, while the compass is in view.
+                    MarqueeText(focused.name, bodyStyle, { Ink }, running = { paneView() == PaneView.IN_VIEW })
                 }
                 val d = focused.distanceM
                 if (status == null) {
@@ -419,8 +420,34 @@ fun CompassScreen(
         }
 
         if (status != null) {
-            StatusLine(status.text, status.color, bodyStyle, Modifier.slot(0.195f, 0.78f))
+            StatusLine(status.text, status.color, bodyStyle, Modifier.slot(0.195f, 0.78f), running = { paneView() == PaneView.IN_VIEW })
             status.detail?.let { StatusLine(it, status.detailColor, style(0.079f), Modifier.slot(STATUS_DETAIL_Y, 0.62f)) }
+        }
+
+        // The watch's own position, when the setting asks for it: two small, quiet lines under the distance, the
+        // latitude over the longitude. They stand where the prompts' words and a status's second line do, and give
+        // that place up to them: while the hold-flat hint, the calibrate prompt or such a line shows, there are no
+        // coordinates.
+        if (vm.supported) {
+            val coordinates = coordinatesReadout(
+                nav.showCoordinates, nav.position, stale, nav.noPosition,
+                distanceLocating = focused != null && status == null && focused.distanceM == null,
+                slotTaken = holdFlat || calibrate || status?.detail != null,
+            )
+            if (coordinates != null) {
+                val coordinateStyle = style(COORDINATES_SIZE)
+                val color = if (coordinates.old) Faint else Dim
+                Text(
+                    coordinates.first, color = color, style = coordinateStyle, maxLines = 1, softWrap = false,
+                    modifier = Modifier.slot(COORDINATES_Y, 0.66f),
+                )
+                coordinates.second?.let {
+                    Text(
+                        it, color = color, style = coordinateStyle, maxLines = 1, softWrap = false,
+                        modifier = Modifier.slot(COORDINATES_Y + COORDINATES_STEP, 0.5f),
+                    )
+                }
+            }
         }
 
         // At the bottom of the readout's own circle, under the lowest line of text: the one place at 6 o'clock
@@ -437,17 +464,26 @@ private data class StatusLines(val text: String, val detail: String?, val color:
 
 /**
  * One line of the logging status, on the compass and on the waypoints screen. It starts at the size of [style] and, when the words are wider than the slot,
- * steps down to three quarters of it before it cuts them short: the longest of the fixed messages and a waypoint
+ * steps down to three quarters of it before it cuts them short or, where things may move, slides them: the longest of the fixed messages and a waypoint
  * number of several digits do not fit the slot at full size, and the width a font gives them differs by watch.
  */
 @Composable
-internal fun StatusLine(text: String, color: Color, style: TextStyle, modifier: Modifier) {
-    BasicText(
-        text, modifier.semantics { liveRegion = LiveRegionMode.Polite }, style, maxLines = 1, softWrap = false,
-        overflow = TextOverflow.Ellipsis, color = { color },
-        autoSize = TextAutoSize.StepBased(minFontSize = style.fontSize * 0.75f, maxFontSize = style.fontSize, stepSize = 0.25.sp),
+internal fun StatusLine(text: String, color: Color, style: TextStyle, modifier: Modifier, running: () -> Boolean = { true }) {
+    // Words that are too wide even at three quarters (`Saved Waypoint` with a number of many digits) slide back and
+    // forth at that size, as a name does, while [running] says so. Whether they are is known once they have been
+    // laid out at that size, so they are drawn cut short for one frame first.
+    var tooWide by remember(text, style) { mutableStateOf(false) }
+    val live = modifier.semantics { liveRegion = LiveRegionMode.Polite }
+    if (tooWide) MarqueeText(text, style.copy(fontSize = style.fontSize * STATUS_SMALLEST), { color }, live, running)
+    else BasicText(
+        text, live, style, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis, color = { color },
+        onTextLayout = { if (it.hasVisualOverflow) tooWide = true },
+        autoSize = TextAutoSize.StepBased(minFontSize = style.fontSize * STATUS_SMALLEST, maxFontSize = style.fontSize, stepSize = 0.25.sp),
     )
 }
+
+/** How small a line of the logging status is drawn, as a share of its full size, before it is cut short or slides. */
+private const val STATUS_SMALLEST = 0.75f
 
 /** Stands for the focused target's id in the frame loop while no target is focused. Row ids start at 1. */
 private const val NO_TARGET = 0L
@@ -457,6 +493,14 @@ private const val PROMPT_Y = 0.31f
 
 /** Where the second line of the logging status sits: under the distance slot, where the prompts' words are. */
 private const val STATUS_DETAIL_Y = 0.30f
+
+/**
+ * The coordinates readout: where its first line sits, in dial radii below the center, how far under it the second
+ * is, and the size of its text. The second line ends above the pane ticks.
+ */
+private const val COORDINATES_Y = 0.288f
+private const val COORDINATES_STEP = 0.076f
+private const val COORDINATES_SIZE = 0.074f
 
 /** Where the outer ends of the pane ticks are on the compass, just inside [READOUT_RADIUS], and their size there. */
 private const val PANE_TICKS_ON_COMPASS = 0.465f

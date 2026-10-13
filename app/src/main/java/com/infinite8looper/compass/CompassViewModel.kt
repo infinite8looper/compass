@@ -53,6 +53,8 @@ data class NavUi(
     val noPosition: LogFailure? = null,
     /** The reported accuracy of the live fix, in meters; null while no fix is live. */
     val fixAccuracyM: Float? = null,
+    /** Where the live fix puts the watch, for the coordinates readout; null while no fix is live. */
+    val position: GeoPoint? = null,
 ) {
     companion object {
         val EMPTY = NavUi(emptyList(), null, Units.METRIC, NorthRef.TRUE, null, null, emptyList(), emptyMap(), loaded = false)
@@ -172,7 +174,8 @@ class CompassViewModel(
 
     /**
      * The screens say here whether the compass is on screen: one of the three screens is on top and the compass is
-     * the one at rest in view, or is passing during a swipe. A trail asks for location only then.
+     * the one at rest in view, or is passing during a swipe. A trail asks for location only then, and so does the
+     * coordinates readout.
      */
     fun setCompassOnScreen(on: Boolean) { compassOnScreen.value = on }
 
@@ -195,15 +198,19 @@ class CompassViewModel(
      */
     fun refreshLocationState() { noPosition.value = noPositionReason(locationSource.hasPermission(), isLocationOn()) }
 
+    private val showCoordinates = settingsStore.settings.map { it.showCoordinates }.distinctUntilChanged()
+
     /**
      * Whether location should be running right now. This is the one place that decides it: while at least one
-     * waypoint is a target, or while a breadcrumb trail is being laid or retraced and the compass is on screen
-     * ([trailWantsLocation]); in either case only with the permission held.
+     * waypoint is a target; or while a breadcrumb trail is being laid or retraced and the compass is on screen
+     * ([trailWantsLocation]); or while the coordinates are to be shown and the compass is on screen
+     * ([coordinatesWantLocation]). In every case only with the permission held.
      */
     private val locationWanted: Flow<Boolean> =
-        combine(hasTargets, trailMode, compassOnScreen, permissionTick) { hasTargets, mode, compass, _ ->
+        combine(hasTargets, trailMode, compassOnScreen, showCoordinates, permissionTick) { hasTargets, mode, compass, coordinates, _ ->
             // While the trail is not known the screens show nothing, and location does not run for them.
-            mode != null && (hasTargets || trailWantsLocation(mode, compass)) && locationSource.hasPermission()
+            mode != null && (hasTargets || trailWantsLocation(mode, compass) || coordinatesWantLocation(coordinates, compass)) &&
+                locationSource.hasPermission()
         }.distinctUntilChanged()
 
     /** The live fix, or null when location is not wanted, so a fix never outlives the updates that made it. */
@@ -250,7 +257,7 @@ class CompassViewModel(
         NavUi(targets, focused, s.units, s.north, declination, f?.elapsedMs, ws, distances,
             tickFeedback = s.tickFeedback, showCoordinates = s.showCoordinates, backupEnabled = s.backupEnabled,
             blindNavigation = s.blindNavigation, breadcrumbTrail = s.breadcrumbTrail, trail = trail, noPosition = noPosition,
-            fixAccuracyM = f?.accuracyM)
+            fixAccuracyM = f?.accuracyM, position = f?.point)
     }
         .catch { Log.w(TAG, "screen state stopped updating", it) }
         .stateIn(viewModelScope, sharing, NavUi.EMPTY)

@@ -3,6 +3,8 @@ package com.infinite8looper.compass.nav
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.withTimeoutOrNull
+import java.math.BigDecimal
+import java.math.RoundingMode
 import java.util.Locale
 import kotlin.math.*
 
@@ -431,3 +433,68 @@ data class MagnetReport(val accuracy: Int?, val fieldMicroTesla: Float?)
  */
 fun carriedOver(last: MagnetReport?, now: MagnetReport): MagnetReport =
     MagnetReport(now.accuracy ?: last?.accuracy, now.fieldMicroTesla ?: last?.fieldMicroTesla)
+
+// The watch's own position, for the compass's coordinates readout.
+
+/**
+ * A latitude as the compass shows it: degrees to four decimal places (one step is about 11 m) and the hemisphere's
+ * letter, with no sign, as in `43.7022° N`. The fourth place is rounded half up on the number as it is written in
+ * decimal, so 43.70225 is `43.7023° N`. The letter is the rounded number's: what rounds to zero is `0.0000° N`. A
+ * latitude beyond a pole is the pole. The text does not depend on the device's language. Null for what is not a number.
+ */
+fun formatLatitude(deg: Double): String? =
+    if (!deg.isFinite()) null else formatDegrees(deg.coerceIn(-90.0, 90.0), 'N', 'S')
+
+/**
+ * A longitude, written like [formatLatitude]: `72.2896° W`. A longitude beyond 180 degrees either way is brought
+ * round. The antimeridian is `180.0000° E`, from whichever side it is reached. Null for what is not a number.
+ */
+fun formatLongitude(deg: Double): String? {
+    if (!deg.isFinite()) return null
+    val round = deg % 360.0
+    val text = formatDegrees(if (round > 180.0) round - 360.0 else if (round < -180.0) round + 360.0 else round, 'E', 'W')
+    return if (text == "180.0000° W") "180.0000° E" else text
+}
+
+private fun formatDegrees(deg: Double, positive: Char, negative: Char): String {
+    // The shortest decimal that stands for the number, rounded there: no locale has a part in it.
+    val rounded = BigDecimal.valueOf(abs(deg)).setScale(4, RoundingMode.HALF_UP)
+    return rounded.toPlainString() + "° " + if (deg < 0.0 && rounded.signum() != 0) negative else positive
+}
+
+/**
+ * What the compass shows of the watch's position: one line, or two. [old] says the fix it comes from is old, and
+ * the lines are drawn fainter.
+ */
+data class CoordinatesReadout(val first: String, val second: String?, val old: Boolean)
+
+/**
+ * The coordinates readout, or null when there is none to show.
+ * - Nothing with the setting off ([show]), and nothing without the location permission, which can be taken away
+ *   while the setting is stored on.
+ * - Nothing while the lines' place is taken ([slotTaken]): by the words of the hold-flat hint, by the calibrate
+ *   prompt, or by the second line of a status.
+ * - With a live [position]: the latitude over the longitude. When that fix is old ([stale]) the first line ends in
+ *   ` (old)`, as the distance does.
+ * - Before the first fix: `Locating…`, unless the distance, right above, says the same ([distanceLocating]); or
+ *   `Location is off` when location is switched off, where no fix will come.
+ */
+fun coordinatesReadout(
+    show: Boolean, position: GeoPoint?, stale: Boolean, noPosition: LogFailure?, distanceLocating: Boolean, slotTaken: Boolean,
+): CoordinatesReadout? {
+    if (!show || slotTaken || noPosition == LogFailure.NO_PERMISSION) return null
+    if (position == null) return when {
+        noPosition == LogFailure.LOCATION_OFF -> CoordinatesReadout(statusText(LogStatus.Failed(LogFailure.LOCATION_OFF), Units.METRIC).first, null, old = false)
+        distanceLocating -> null
+        else -> CoordinatesReadout("Locating…", null, old = false)
+    }
+    val lat = formatLatitude(position.lat) ?: return null
+    val lon = formatLongitude(position.lon) ?: return null
+    return CoordinatesReadout(if (stale) "$lat (old)" else lat, lon, old = stale)
+}
+
+/**
+ * Whether the coordinates readout is a reason for location to run: with the setting on, while the compass is on
+ * screen. It is no reason to keep the screen awake.
+ */
+fun coordinatesWantLocation(show: Boolean, compassOnScreen: Boolean): Boolean = show && compassOnScreen
