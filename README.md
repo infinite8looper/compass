@@ -26,6 +26,7 @@ Settings, the compass and the waypoints are three screens side by side in one ro
 | Waypoints | Tap the header | Sets all waypoints as targets, or clears all if all are |
 | Waypoints | Tap the `Trail` row | With `Breadcrumb trail` on: does what a double press does |
 | Waypoints | Hold the `Trail` row | Clears the trail (`Hold to clear`) |
+| Waypoints | Tap `Drop crumb` (shown while `Breadcrumb trail` is on) | Does what a single press of the side button does: drops a crumb while a trail is being laid, saves a waypoint at any other time |
 | Edit | Drag along the color ring, or turn the crown | Changes the waypoint's color |
 | Edit | Tap the name | Opens the system's text input to rename it |
 | Edit | Tap the `Target` tick | Sets or clears it as a target |
@@ -33,7 +34,7 @@ Settings, the compass and the waypoints are three screens side by side in one ro
 | Edit, calibration | Right swipe, or Back | Returns to the screen it was opened from |
 | Settings | Tap a row | Switches it |
 
-The side button does nothing on settings, edit and calibration. Whether a physical watch delivers a single or a double press of its side button to an app was not tested; `Log here` and the `Trail` row do the same things from the waypoints screen.
+The side button does nothing on settings, edit and calibration. Whether a physical watch delivers a single or a double press of its side button to an app was not tested; `Log here`, the `Trail` row and the `Drop crumb` row do the same things from the waypoints screen.
 
 ## Compass
 
@@ -71,7 +72,7 @@ On by default. When the heading comes within 2 degrees of the focused target the
 Off by default (`Breadcrumb trail` in settings). With it on:
 
 1. A double press with no trail starts one; the compass shows `Trail` and the crumb count.
-2. While laying, each single press drops a crumb at the current position, with the same fix rules as saving a waypoint. Waypoints can still be saved from `Log here`.
+2. While laying, each single press drops a crumb at the current position, with the same fix rules as saving a waypoint, and so does a tap on the `Drop crumb` row of the waypoints screen. Waypoints can still be saved from `Log here`.
 3. A double press switches to retracing: the newest crumb is shown like a focused target (`Crumb N`) with its direction and distance.
 4. A crumb is deleted and the next newest takes over when a fix of 15 m or better is within 10 m (30 ft) of it while the compass is the screen at rest in view and the app is in front. After the last, `Trail complete` shows and the trail is off.
 5. A double press while retracing returns to laying with the remaining crumbs.
