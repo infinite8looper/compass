@@ -4,7 +4,7 @@ Every picture here is a capture from an emulator, taken on 2026-10-13 from the d
 
 - `<state>-large.png` is from `Wear_OS_Large_Round` (API 35, 454 x 454) and `<state>-small.png` from `Wear_OS_Small_Round` (API 35, 384 x 384). Both were made by `scripts/screenshot-matrix.sh large` and `scripts/screenshot-matrix.sh small`; the section named in each row is the argument that makes that row's pictures again (`scripts/screenshot-matrix.sh large trail`).
 - The position fed is 43.7022, -72.2896 (`scripts/geo-feed.sh`). Waypoints are put in the app's database with `scripts/seed-targets.sh <bearing>:<place on the color ring>:<meters>`. "Three targets" is `60:137.5:400 200:275:1500 300:52.5:5000`. A heading is set with the emulator's magnetic-field sensor and corrected until the compass shows it.
-- The emulators give no color scheme, so the accent is blue and north and the error color are red, except in the two `accent-` pictures.
+- The emulators give no color scheme, so the accent is blue and north and the error color are red, except in the `accent-` pictures.
 - The emulators report only high magnetometer accuracy and a position accuracy of 5 m; what that leaves unseen is listed at the end.
 
 ## Compass
@@ -110,15 +110,18 @@ Every picture here is a capture from an emulator, taken on 2026-10-13 from the d
 |-|-|-|
 | Compass on API 33 | `compass-api33.png` | `Wear_OS_API33`: three targets, heading 290 |
 | Compass on API 34 | `compass-api34.png` | `Wear_OS_API34`: the same |
-| A color scheme, seed `2F8BFF` | `accent-a-large.png` | `Wear_OS_Newest` (API 37): see below |
-| A color scheme, seed `00AA55` | `accent-b-large.png` | `Wear_OS_Newest`: see below |
+| A color scheme, seed `2F8BFF`, eight waypoints 45 apart on the ring | `accent-a-large.png` | `Wear_OS_Newest` (API 37): the `compass-ring8` scene, heading 20; see below |
+| A color scheme, seed `00AA55`, the same scene | `accent-b-large.png` | `Wear_OS_Newest`: see below |
+| The edit screen's ring under that scheme | `accent-b-edit-large.png` | `Wear_OS_Newest`: a long press on the row `Waypoint 8` (place 315) |
 
-The two `accent-` pictures need the system's color scheme switched on through `adb`, since no image does it from the watch face:
+The `accent-` pictures need the system's color scheme switched on through `adb`, since no image does it from the watch face:
 
 ```
 adb shell settings put global dynamic_color_theme_enabled 1
-adb shell settings put secure theme_customization_overlay_packages '{"android.theme.customization.system_palette":"00AA55","android.theme.customization.accent_color":"00AA55","android.theme.customization.color_source":"preset"}'
+adb shell settings put secure theme_customization_overlay_packages '{"android.theme.customization.system_palette":"00AA55","android.theme.customization.accent_color":"00AA55","android.theme.customization.color_source":"preset","android.theme.customization.theme_style":"TONAL_SPOT"}'
 ```
+
+The app follows when it next comes back on screen (Home, then open it again). `settings delete global dynamic_color_theme_enabled` switches the scheme off; this image also reads the setting as unset after every boot.
 
 ## Not shown, because an emulator cannot produce it
 
