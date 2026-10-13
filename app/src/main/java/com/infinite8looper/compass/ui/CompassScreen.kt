@@ -442,9 +442,11 @@ fun CompassScreen(
                     modifier = Modifier.slot(COORDINATES_Y, 0.66f),
                 )
                 coordinates.second?.let {
+                    // The pane ticks come up through this line's place around a swipe. It steps back as they show
+                    // and returns as they fade, read while drawing.
                     Text(
                         it, color = color, style = coordinateStyle, maxLines = 1, softWrap = false,
-                        modifier = Modifier.slot(COORDINATES_Y + COORDINATES_STEP, 0.5f),
+                        modifier = Modifier.slot(COORDINATES_Y + COORDINATES_STEP, 0.5f).graphicsLayer { alpha = 1f - paneTicks.value },
                     )
                 }
             }
@@ -496,7 +498,7 @@ private const val STATUS_DETAIL_Y = 0.30f
 
 /**
  * The coordinates readout: where its first line sits, in dial radii below the center, how far under it the second
- * is, and the size of its text. The second line ends above the pane ticks.
+ * is, and the size of its text. The pane ticks reach into the second line's place, which is why it steps back for them.
  */
 private const val COORDINATES_Y = 0.288f
 private const val COORDINATES_STEP = 0.076f
