@@ -1,15 +1,22 @@
 #!/bin/zsh
 # Usage: scripts/test-counts.sh unit|device|all
+#        scripts/test-counts.sh device <folder>     the device results in <folder> instead (a copy kept from an earlier run)
 # Prints, from the result XML of the last run, how many tests each class has, each failure, and the totals.
 #   unit    app/build/test-results/                              (./gradlew testDebugUnitTest)
 #   device  app/build/outputs/androidTest-results/connected/     (./gradlew connectedDebugAndroidTest)
 # Exits 1 if a test failed or no result file was found, so it can end a chain of commands.
 if [ "$1" != "unit" ] && [ "$1" != "device" ] && [ "$1" != "all" ]; then
-  echo "usage: scripts/test-counts.sh unit|device|all" >&2
+  echo "usage: scripts/test-counts.sh unit|device|all   or   scripts/test-counts.sh device <folder>" >&2
   exit 1
 fi
+if [ -n "$2" ] && { [ "$1" != "device" ] || [ ! -d "$2" ]; }; then
+  echo "a folder can be given only with device, and it has to exist: $2" >&2
+  exit 1
+fi
+folder=""
+if [ -n "$2" ]; then folder="$(cd "$2" && pwd)" || exit 1; fi
 cd "$(dirname "$0")/.." || exit 1
-python3 - "$1" <<'PY'
+python3 - "$1" "$folder" <<'PY'
 import collections, glob, sys
 import xml.etree.ElementTree as ET
 
@@ -17,6 +24,8 @@ WHERE = {
     "unit": "app/build/test-results/**/*.xml",
     "device": "app/build/outputs/androidTest-results/connected/**/*.xml",
 }
+if len(sys.argv) > 2 and sys.argv[2]:
+    WHERE["device"] = sys.argv[2] + "/**/*.xml"
 bad = False
 for kind in (["unit", "device"] if sys.argv[1] == "all" else [sys.argv[1]]):
     files = sorted(glob.glob(WHERE[kind], recursive=True))
