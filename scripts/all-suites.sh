@@ -8,6 +8,8 @@
 # 43.7022,-72.2896 (the position some of the tests need, and the one the tests compare against), runs the suite,
 # stops the feed, and keeps a copy of the result files.
 # The tests wipe the app's data and Gradle uninstalls the app when a run ends. Use emulators only.
+# It first stops every running scripts/geo-feed.sh, including one started by hand, since a feed left over would
+# run against the wrong emulator.
 # Output goes to app/build/all-suites/ (ignored by git): suite-<avd>.log (Gradle's output) and results-<avd>/ (the
 # result XML, readable with `scripts/test-counts.sh device app/build/all-suites/results-<avd>`).
 # Deadlines: the switch has the deadlines of scripts/switch-emulator.sh (90 s for the old emulator to stop, 300 s
