@@ -2,9 +2,9 @@
 
 A compass for Wear OS that also saves GPS positions as waypoints and shows the direction and distance to each one on the dial.
 
-![The compass screen on the Wear_OS_Large_Round emulator, with waypoints as lines on the ring and the focused one named in the middle](docs/screenshots/targets-large.png)
+![The compass screen on the Wear_OS_Large_Round emulator, with waypoints as lines on the ring and the focused one named in the middle](docs/screenshots/compass-targets-large.png)
 
-The picture is the compass screen on an emulator with several waypoints, a simulated position, and the heading at 346 degrees. Everything in this file was seen on emulators; the app has not been run on a physical watch.
+The picture is the compass screen on an emulator with three waypoints, a simulated position, and the heading at 290 degrees. Every screen and state is pictured in [docs/screenshots](docs/screenshots/README.md). Everything in this file was seen on emulators; the app has not been run on a physical watch.
 
 ## The three screens
 

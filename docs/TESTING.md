@@ -86,6 +86,15 @@ scripts/record.sh <out.mp4> 10      # a 10-second screen recording; not kept in 
 
 Screenshots are taken on `Wear_OS_Large_Round` and `Wear_OS_Small_Round` and read by eye. `scripts/screenshot.sh` checks that the bytes are a PNG before it replaces a file.
 
+```
+scripts/screenshot-matrix.sh large            # every screen and state, into docs/screenshots/<state>-large.png (about 25 minutes)
+scripts/screenshot-matrix.sh small trail      # one section, on whichever emulator is attached
+scripts/ui-dump.sh                            # what the screen gives accessibility services: texts, descriptions, flags
+scripts/frame-times.sh <label>                # frame times while the heading sweeps a full circle
+```
+
+`scripts/screenshot-matrix.sh` wipes the app's data and drives the app through its states; its header lists the sections, and [docs/screenshots/README.md](screenshots/README.md) lists each picture and how it was made. A status that shows for two or three seconds is caught by taking pictures until its color appears, so every picture still has to be looked at.
+
 ## Counts at the time of writing
 
 347 unit tests. 131 instrumented tests, run on each of `Wear_OS_API33`, `Wear_OS_API34`, `Wear_OS_Newest` and `Wear_OS_Large_Round` by `scripts/all-suites.sh` on 2026-10-13: 131 passed, 0 failed and 0 skipped on each, 524 in all. Lint (`./gradlew lintDebug`) reports 0 errors and one warning, `StaticFieldLeak` on the settings store's singleton.
