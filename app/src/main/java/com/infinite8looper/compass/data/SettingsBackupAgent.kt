@@ -8,6 +8,7 @@ import android.os.ParcelFileDescriptor
 import android.util.Log
 import com.infinite8looper.compass.nav.BackupPass
 import com.infinite8looper.compass.nav.backupPass
+import com.infinite8looper.compass.nav.switchForPass
 import java.io.File
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -23,6 +24,10 @@ import kotlinx.coroutines.withTimeout
  * nothing ([handOverMarker]). An app cannot delete its stored backup. A backup that is made takes the place of the
  * one stored before, so the marker's backup, which holds no waypoint, is what is stored from then on. Seen with the
  * system's local transport on the API 33, 34 and 35 emulators.
+ *
+ * A restore of the marker's backup leaves the switch off, turned off by the wearer ([onRestoreFile],
+ * [onRestoreFinished]): turning backups off holds across an install on this or another watch. A restore of any
+ * other backup changes nothing about the switch, and no restore turns it on.
  */
 class SettingsBackupAgent : BackupAgent() {
     // The manifest says fullBackupOnly, so the system never calls the key/value pair of methods.
@@ -63,9 +68,16 @@ class SettingsBackupAgent : BackupAgent() {
         }
     }
 
-    /** What this pass hands over ([backupPass]), from the stored switch and who turned it off, taken in one read. */
+    private val restoredOptOut by lazy { RestoredOptOut(filesDir) }
+
+    /**
+     * What this pass hands over ([backupPass]), from the stored switch and who turned it off, taken in one read. A
+     * switch still owed off by a restore ([RestoredOptOut]) is written first; if it cannot be, the pass takes the
+     * switch as off by the wearer whatever the file says ([switchForPass]).
+     */
     private fun pass(data: FullBackupDataOutput): BackupPass {
-        val (enabled, offByWearer) = read("the backup setting") { it.readBackupSwitch() } ?: (null to null)
+        val owed = restoredOptOut.owed() && read("the settings to turn the switch off after a restore") { restoredOptOut.settle(it) } != true
+        val (enabled, offByWearer) = switchForPass(read("the backup setting") { it.readBackupSwitch() } ?: (null to null), owed)
         return backupPass(enabled, offByWearer, deviceTransfer = data.transportFlags and FLAG_DEVICE_TO_DEVICE_TRANSFER != 0)
     }
 
@@ -87,14 +99,31 @@ class SettingsBackupAgent : BackupAgent() {
     }
 
     /**
-     * After a restore the switch is on ([SettingsStore.backupOnAfterRestore]): no settings file that a restore
-     * brings turns backups off. The system restores only the files the backup rules name, so no marker comes back.
+     * Every file of a restore comes through here. The marker of a backup made with the switch off by the wearer is
+     * noted as it comes ([RestoredOptOut.markerCame]); the system itself restores only the files the backup rules
+     * name, so the marker is not written to the app's files, and the rest is the system's as before.
+     */
+    override fun onRestoreFile(data: ParcelFileDescriptor?, size: Long, destination: File?, type: Int, mode: Long, mtime: Long) {
+        // The system names the folder by its real path, which is not always the spelling the app is given for it.
+        if (destination != null && destination.name == MARKER_FILE && destination.canonicalFile.parentFile == filesDir.canonicalFile) {
+            try {
+                restoredOptOut.markerCame()
+            } catch (e: Exception) {
+                Log.w(TAG, "could not put the restored marker on record (" + e.javaClass.simpleName + ")")
+            }
+        }
+        super.onRestoreFile(data, size, destination, type, mode, mtime)
+    }
+
+    /**
+     * A restore never turns the switch on. If it brought the marker, the switch is written off, turned off by the
+     * wearer, so the next pass is a marker pass again. If that cannot be written the record of the marker's coming
+     * stays, and the switch is owed off until it can ([pass]).
      */
     override fun onRestoreFinished() {
-        try {
-            runBlocking { withTimeout(5_000) { SettingsStore.get(applicationContext).backupOnAfterRestore() } }
-        } catch (e: Exception) {
-            Log.w(TAG, "could not look at the backup setting after a restore (" + e.javaClass.simpleName + ")")
+        File(filesDir, MARKER_FILE).delete()
+        if (restoredOptOut.owed() && read("the settings to turn the switch off after a restore") { restoredOptOut.settle(it) } != true) {
+            Log.w(TAG, "the switch could not be written off after a restore; it stays owed off")
         }
     }
 

@@ -10,12 +10,17 @@
 #      and the stored archive has to hold the waypoint database with the waypoint's name in it.
 #   2b. the same with the transport told to say the pass is a transfer to another device (`is_device_transfer=true`):
 #      the transfer has to succeed with the waypoint's name in what was handed over.
-#   3b. after 3, a pass that says it is a transfer: nothing may be handed over.
+#   4. after 3, the app is uninstalled and installed again, which restores the marker's backup: the switch has to be
+#      off without the question having been asked, no database may have come back, and the next backup has to hold
+#      the marker alone again.
+#   5. the switch is tapped on (no question), a backup is made with the transport saying it encrypts, and the app is
+#      installed again: the waypoint has to be back and the switch on.
+#   3b. the switch turned off again, then a pass that says it is a transfer: nothing may be handed over.
 #   3. `Back up waypoints` turned off in the app through its question (`Turn off`), the transport not saying it
 #      encrypts: the backup has to succeed, the stored archive has to hold the manifest and the marker
 #      `backup-switched-off` and nothing else, the waypoint's name must not be in it, and no marker may be left in
 #      the app's files.
-# Exit status 0 if every requirement of 2, 2b, 3 and 3b holds, 1 otherwise.
+# Exit status 0 if every requirement of 2, 2b, 3, 4, 5 and 3b holds, 1 otherwise.
 # It wipes the app's data (it installs the app afresh), puts one waypoint in its database with the device's sqlite3,
 # switches the Backup Manager on with the local transport and empties that transport, and reads the transport's
 # files as root. All of that is put back when it ends, also when it is stopped: the transport and the Backup Manager
@@ -63,6 +68,40 @@ read_transport() {
   $ADB unroot > /dev/null; sleep 3
   echo "  the transport holds: ${entries:-nothing}; '$NAME' in it: $names time(s)"
 }
+# Where the `Back up waypoints` row is and whether it is checked, as the accessibility tree has it: "x y true|false",
+# or nothing when the row is not on screen.
+switch_row() {
+  $ADB exec-out uiautomator dump /dev/tty 2>/dev/null | python3 -c '
+import re, sys
+import xml.etree.ElementTree as ET
+doc = sys.stdin.read()
+if "<hierarchy" not in doc: sys.exit(0)
+root = ET.fromstring(doc[doc.index("<hierarchy"):doc.rindex("</hierarchy>") + len("</hierarchy>")])
+parent = {c: p for p in root.iter() for c in p}
+for n in root.iter("node"):
+    if n.get("text") == "Back up waypoints":
+        l, t, r, b = map(int, re.findall(r"-?\d+", n.get("bounds")))
+        p = n
+        while p in parent and p.get("checkable") != "true": p = parent[p]
+        print((l + r) // 2, (t + b) // 2, p.get("checked"))
+        break
+'
+}
+# Opens the app on its settings and scrolls until the row is whole on screen; leaves "x y checked" in $row.
+row=()
+to_switch() {
+  $ADB shell am force-stop $PKG; $ADB shell input keyevent KEYCODE_WAKEUP; $ADB shell am start -n $PKG/.MainActivity > /dev/null; sleep 6
+  $ADB shell input keyevent KEYCODE_WAKEUP; sleep 1; $ADB shell input keyevent KEYCODE_BACK; sleep 2      # the compass -> settings
+  local size=$($ADB shell wm size | tr -d '\r' | sed 's/.*x//'); local mid=$(( size / 2 ))
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
+    row=($(switch_row))
+    if [ ${#row} -eq 3 ] && [ $row[2] -gt $(( size / 4 )) ] && [ $row[2] -lt $(( size * 3 / 4 )) ]; then return 0; fi
+    $ADB shell input swipe $mid $(( size * 60 / 100 )) $mid $(( size * 42 / 100 )) 600; sleep 1
+  done
+  row=(); return 1
+}
+fresh_install() { $ADB uninstall $PKG > /dev/null 2>&1; $ADB install $APK | tail -1; sleep 4; $ADB shell pm grant $PKG android.permission.ACCESS_FINE_LOCATION; }
+add_waypoint() { $ADB shell am force-stop $PKG; sleep 1; $ADB shell "run-as $PKG sqlite3 databases/waypoints.db \"INSERT INTO waypoints(name,lat,lon,accuracyM,createdAt,hue,isTarget) VALUES('$NAME',43.7058,-72.2896,5.0,1760000000001,0,1);\""; }
 home_and_end() { $ADB shell input keyevent KEYCODE_HOME; sleep 2; $ADB shell am kill $PKG; sleep 1; }
 
 echo "== $($ADB shell getprop ro.boot.qemu.avd_name | tr -d '\r'), API $($ADB shell getprop ro.build.version.sdk | tr -d '\r'), $APK"
@@ -94,18 +133,8 @@ need "the waypoint's name is in what was handed over" '[ "$names" -ge 1 ]'
 $ADB shell settings delete secure backup_local_transport_parameters > /dev/null; sleep 1
 
 echo "3. the switch turned off through the app's question, the transport does not say it encrypts:"
-$ADB shell input keyevent KEYCODE_WAKEUP; $ADB shell am start -n $PKG/.MainActivity > /dev/null; sleep 6
-$ADB shell input keyevent KEYCODE_WAKEUP; sleep 1; $ADB shell input keyevent KEYCODE_BACK; sleep 2      # the compass -> settings
-size=$($ADB shell wm size | tr -d '\r' | sed 's/.*x//'); mid=$(( size / 2 ))
-tapped=1
-for i in 1 2 3 4 5 6 7 8 9 10; do
-  spot=($(scripts/tap-text.sh "Back up waypoints" 2>/dev/null | sed -n "s/.* at \([0-9]*\) \([0-9]*\)$/\1 \2/p"))
-  # Tapped where the row is whole: between a quarter and three quarters of the way down. Otherwise scrolled on.
-  if [ ${#spot} -eq 2 ] && [ $spot[2] -gt $(( size / 4 )) ] && [ $spot[2] -lt $(( size * 3 / 4 )) ]; then tapped=0; break; fi
-  [ ${#spot} -eq 2 ] && { sleep 1.5; $ADB shell input keyevent KEYCODE_BACK; sleep 1.5; }    # tapped at the edge: leave the question if it opened
-  $ADB shell input swipe $mid $(( size * 60 / 100 )) $mid $(( size * 42 / 100 )) 600; sleep 1
-done
-sleep 2
+to_switch; need "the switch is on before the question (${row[3]})" '[ "$row[3]" = "true" ]'
+$ADB shell input tap $row[1] $row[2]; sleep 2.5
 need "the question opened" 'scripts/ui-dump.sh 2>/dev/null | grep -q "Turn off backup?"'
 scripts/tap-text.sh "Turn off" > /dev/null 2>&1; sleep 2
 settings_file=$($ADB shell "run-as $PKG cat files/datastore/settings.preferences_pb" | strings | tr '\n' ' ')
@@ -117,6 +146,36 @@ need "the archive holds the manifest and the marker and nothing else" '[ "${${=e
 need "the waypoint's name is not in the archive" '[ "$names" = "0" ]'
 left=$($ADB shell "run-as $PKG ls files" | tr -d '\r' | tr '\n' ' ')
 need "no marker is left in the app's files ($left)" '[[ "$left" != *backup-switched-off* ]]'
+
+echo "4. the app uninstalled and installed again, which restores that backup:"
+fresh_install
+left=$($ADB shell "run-as $PKG ls files" | tr -d '\r' | tr '\n' ' ')
+need "no marker and no record is left in the app's files ($left)" '[[ "$left" != *backup-switched-off* ]] && [[ "$left" != *backup-off-owed* ]]'
+need "no database came back" '! $ADB shell "run-as $PKG ls databases 2>/dev/null" | grep -q waypoints.db'
+to_switch; need "the switch is off after the restore, with no question asked (${row[3]})" '[ "$row[3]" = "false" ]'
+settings_file=$($ADB shell "run-as $PKG cat files/datastore/settings.preferences_pb" | strings | tr '\n' ' ')
+need "the settings file records that the wearer turned it off" '[[ "$settings_file" == *backup_off_by_wearer* ]]'
+add_waypoint; $ADB shell am start -n $PKG/.MainActivity > /dev/null; sleep 6; home_and_end
+r=$(backup); echo "  the next backup: $r"; read_transport
+need "the next backup succeeded" '[ "$r" = "Success" ]'
+need "it holds the manifest and the marker and nothing else" '[ "${${=entries}[*]}" = "apps/$PKG/_manifest apps/$PKG/f/backup-switched-off" ]'
+need "the waypoint's name is not in it" '[ "$names" = "0" ]'
+
+echo "5. the switch turned on again, a backup, and the app uninstalled and installed again (the transport says it encrypts):"
+to_switch; $ADB shell input tap $row[1] $row[2]; sleep 2
+need "a tap turned it on with no question" '! scripts/ui-dump.sh 2>/dev/null | grep -q "Turn off backup?"'
+row=($(switch_row)); need "the switch is on (${row[3]})" '[ "$row[3]" = "true" ]'
+home_and_end
+$ADB shell settings put secure backup_local_transport_parameters is_encrypted=true; sleep 1
+r=$(backup); echo "  backup: $r"; read_transport
+need "the backup succeeded" '[ "$r" = "Success" ]'
+need "the waypoint's name is in the archive" '[ "$names" -ge 1 ]'
+fresh_install
+back=$($ADB shell "run-as $PKG sqlite3 databases/waypoints.db 'select name from waypoints'" 2>&1 | tr -d '\r' | tr '\n' ' ')
+need "the waypoint came back ($back)" '[[ "$back" == *$NAME* ]]'
+to_switch; need "the switch is on after that restore (${row[3]})" '[ "$row[3]" = "true" ]'
+$ADB shell settings delete secure backup_local_transport_parameters > /dev/null; sleep 1
+$ADB shell input tap $row[1] $row[2]; sleep 2.5; scripts/tap-text.sh "Turn off" > /dev/null 2>&1; sleep 2; home_and_end
 
 echo "3b. the switch off by the wearer, the transport says the pass is a transfer to another device:"
 $ADB shell settings put secure backup_local_transport_parameters is_device_transfer=true; sleep 1

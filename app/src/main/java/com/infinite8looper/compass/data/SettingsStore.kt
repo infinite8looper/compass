@@ -219,14 +219,6 @@ class SettingsStore(
     } catch (e: Exception) {
         null to null
     }
-    /**
-     * Called by the backup agent when a restore has ended: a switch that came back off is turned on, and the record
-     * of who turned it off is cleared. The settings file is handed over only in a pass made with the switch on, so
-     * a restored file says on; this holds that also for a file the wearer changed in the moment it was being copied.
-     */
-    suspend fun backupOnAfterRestore() {
-        store.edit { if (it[BACKUP_ENABLED] == false) { it[BACKUP_ENABLED] = true; it[BACKUP_OFF_BY_WEARER] = false } }
-    }
     /** Stores the switch as the wearer set it in the app, and with it that the wearer was the one who turned it off. */
     suspend fun setBackupEnabled(on: Boolean) { store.edit { it[BACKUP_ENABLED] = on; it[BACKUP_OFF_BY_WEARER] = !on } }
     suspend fun setFocused(id: Long?) { store.edit { if (id == null) it.remove(FOCUSED) else it[FOCUSED] = id } }

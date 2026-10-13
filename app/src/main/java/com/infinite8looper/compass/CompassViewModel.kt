@@ -8,6 +8,7 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.infinite8looper.compass.data.Crumb
+import com.infinite8looper.compass.data.RestoredOptOut
 import com.infinite8looper.compass.data.Settings
 import com.infinite8looper.compass.data.SettingsStore
 import com.infinite8looper.compass.data.Waypoint
@@ -268,6 +269,8 @@ class CompassViewModel(
         // once it has read the two values ([SettingsStore.storedTrail]). They are read here, as the view model is
         // made, so that the first press of a process finds them there and does not wait for the file.
         launchQuietly("read the trail's stored mode") { settingsStore.storedTrail() }
+        // A switch still owed off by a restore whose settings file could not be written then is written now.
+        launchQuietly("turn the backup switch off after a restore") { RestoredOptOut(app.filesDir).settle(settingsStore) }
         // Rebuilds the database file once, off the main thread, so it holds nothing of rows deleted or changed
         // by an earlier build or on another device. A failure is not fatal: the backup agent tries again.
         viewModelScope.launch(Dispatchers.IO) {

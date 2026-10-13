@@ -36,3 +36,12 @@ enum class BackupTap { TURN_ON, ASK_FIRST }
 
 /** A tap turns the switch on at once. Turning it off also replaces the stored backup, so the wearer is asked first. */
 fun backupSwitchTap(on: Boolean): BackupTap = if (on) BackupTap.ASK_FIRST else BackupTap.TURN_ON
+
+/**
+ * The switch and who turned it off, as a pass takes them. [read] is what the settings file gives (each null when it
+ * cannot be read). [offOwedByRestore] is set when a restore brought the marker of a backup made with the switch off
+ * by the wearer and the settings file has not been written since: the switch then counts as off by the wearer,
+ * whatever the file says or fails to say, so the pass is a marker pass again and hands over no waypoint.
+ */
+fun switchForPass(read: Pair<Boolean?, Boolean?>, offOwedByRestore: Boolean): Pair<Boolean?, Boolean?> =
+    if (offOwedByRestore) false to true else read

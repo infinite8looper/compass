@@ -36,4 +36,14 @@ class BackupTest {
         assertEquals(BackupTap.TURN_ON, backupSwitchTap(on = false))
         assertEquals(BackupTap.ASK_FIRST, backupSwitchTap(on = true))
     }
+
+    @Test fun aSwitchOwedOffByARestoreCountsAsTurnedOffByTheWearerWhateverTheFileSays() {
+        // A restore brought the marker and the settings file could not be written since: the pass is a marker pass.
+        for (read in listOf(true to false, false to false, false to true, null to null, true to null)) {
+            assertEquals(false to true, switchForPass(read, offOwedByRestore = true))
+            assertEquals(BackupPass.MARKER, switchForPass(read, offOwedByRestore = true).let { backupPass(it.first, it.second, deviceTransfer = false) })
+        }
+        // Nothing owed: the file is what counts.
+        for (read in listOf(true to false, false to false, false to true, null to null)) assertEquals(read, switchForPass(read, offOwedByRestore = false))
+    }
 }
