@@ -59,6 +59,7 @@ For each emulator it switches to it, starts the position feed, runs `connectedDe
 ## Emulator-only behavior
 
 - `DeletedWaypointTest` has tests that set the device-wide debug property `debug.sqlite.journalmode` to check the database under the platform's other journal mode; they are skipped anywhere that is not an emulator (the test recognizes one by `Build.HARDWARE` being `ranchu` or `goldfish`, or `Build.PRODUCT` starting with `sdk_`).
+- `AccessibilityTreeTest.theHeadingIsDescribedWithItsNameAndUnit` checks the heading's description only where the heading number is on screen. An emulator in its default pose is upright and shows the hold-flat hint in its place, and there the test passes having checked only that; lay the virtual watch flat first (`scripts/set-heading.sh 40`) to have it check the description.
 - `WatchColorsDeviceTest` reads what the watch gives: with the system setting `dynamic_color_theme_enabled` at 1 on API 35 or newer one branch of each test runs, anywhere else the other.
 - `scripts/seed-targets.sh` and `scripts/raw-swipe.sh` refuse to run on anything but an emulator; `scripts/set-heading.sh` and `scripts/geo-feed.sh` use `adb emu` commands, which exist only for emulators.
 
@@ -97,4 +98,4 @@ scripts/frame-times.sh <label>                # frame times while the heading sw
 
 ## Counts at the time of writing
 
-347 unit tests. 131 instrumented tests, run on each of `Wear_OS_API33`, `Wear_OS_API34`, `Wear_OS_Newest` and `Wear_OS_Large_Round` by `scripts/all-suites.sh` on 2026-10-13: 131 passed, 0 failed and 0 skipped on each, 524 in all. Lint (`./gradlew lintDebug`) reports 0 errors and one warning, `StaticFieldLeak` on the settings store's singleton.
+354 unit tests. 133 instrumented tests, run on each of `Wear_OS_API33`, `Wear_OS_API34`, `Wear_OS_Newest` and `Wear_OS_Large_Round` by `scripts/all-suites.sh` on 2026-10-13: 133 passed, 0 failed and 0 skipped on each, 532 in all. Lint (`./gradlew lintDebug`) reports 0 errors and one warning, `StaticFieldLeak` on the settings store's singleton.

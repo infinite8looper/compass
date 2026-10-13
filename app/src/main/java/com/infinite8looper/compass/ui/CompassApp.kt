@@ -26,6 +26,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.wear.compose.foundation.BasicSwipeToDismissBox
 import androidx.wear.compose.foundation.GestureInclusion
+import androidx.compose.ui.semantics.CollectionInfo
+import androidx.compose.ui.semantics.collectionInfo
+import androidx.compose.ui.semantics.semantics
 import androidx.wear.compose.foundation.pager.HorizontalPager
 import androidx.wear.compose.foundation.pager.PagerState
 import androidx.wear.compose.material3.AppScaffold
@@ -208,7 +211,7 @@ private fun Panes(
         }
     }
 
-    HorizontalPager(state = panes, beyondViewportPageCount = 1, gestureInclusion = EveryTouchPages) { page ->
+    HorizontalPager(state = panes, modifier = Modifier.semantics { collectionInfo = CollectionInfo(rowCount = 1, columnCount = Pane.entries.size) }, beyondViewportPageCount = 1, gestureInclusion = EveryTouchPages) { page ->
         // How much of this page the wearer has. The pager can have two pages of one pane built at a time (the one
         // on screen and one it has prepared further along the row), so each page is told about itself. The
         // navigation host can also draw the three screens behind a screen opened from a row, while that screen is

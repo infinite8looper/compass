@@ -27,6 +27,7 @@ import androidx.compose.ui.input.rotary.onRotaryScrollEvent
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
@@ -300,12 +301,12 @@ fun CompassScreen(
                 lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None),
             )
         }
-        val bodyStyle = style(0.097f)
+        val bodyStyle = style(READOUT_BODY_SIZE)
         fun Modifier.slot(y: Float, width: Float) = align(Alignment.Center).offset(y = r * y).width(r * width)
         // Where the rows stand. With the coordinates switched on there are two rows more, the latitude at the top
         // and the longitude at the bottom, and the rows between stand a little closer to the heading to make room.
         // Which set it is depends on the setting alone, so no row moves while the compass is in use.
-        val rows = if (nav.showCoordinates) ROWS_WITH_COORDINATES else ROWS
+        val rows = readoutRows(nav.showCoordinates)
 
         // The dial steps back while the hint asks for something: its value is the last one taken, not a live one.
         val dialAlpha = animateFloatAsState(if (holdFlat) DIAL_DIMMED else 1f, tween(250), label = "dial")
@@ -354,9 +355,9 @@ fun CompassScreen(
             val laying = nav.trail.mode == TrailMode.LAYING
             if (showingMagnetic || laying) {
                 Row(Modifier.slot(rows.top, 0.6f), Arrangement.Center, Alignment.CenterVertically) {
-                    if (showingMagnetic) Text("MAG", color = Dim, style = style(0.079f), maxLines = 1)
+                    if (showingMagnetic) Text("MAG", color = Dim, style = style(READOUT_DETAIL_SIZE), maxLines = 1)
                     if (showingMagnetic && laying) Spacer(Modifier.width(r * 0.06f))
-                    if (laying) Text(trailLabel(nav.trail.count), color = CrumbColor, style = style(0.079f), maxLines = 1, softWrap = false)
+                    if (laying) Text(trailLabel(nav.trail.count), color = CrumbColor, style = style(READOUT_DETAIL_SIZE), maxLines = 1, softWrap = false)
                 }
             }
             // The middle slot holds the heading, or, while the heading cannot be trusted, the hint that says why.
@@ -370,7 +371,7 @@ fun CompassScreen(
                     running = { paneView() != PaneView.HIDDEN },
                 )
                 else -> {
-                    HeadingNumber({ headingText }, style(0.30f, FontWeight.Light), Modifier.slot(0f, 2 * READOUT_RADIUS))
+                    HeadingNumber({ headingText }, showingMagnetic, style(READOUT_HEADING_SIZE, FontWeight.Light), Modifier.slot(0f, 2 * READOUT_RADIUS))
                     if (calibrate) Text("Calibrate", color = Dim, style = bodyStyle, maxLines = 1, modifier = Modifier.slot(rows.prompt, 0.6f))
                 }
             }
@@ -399,7 +400,7 @@ fun CompassScreen(
                 color = color, style = bodyStyle, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.slot(rows.main, 0.78f),
             )
         }
-        lines.detail?.let { StatusLine(it.words, toneColor(it.tone), style(0.079f), Modifier.slot(rows.detail, 0.62f), view = paneView) }
+        lines.detail?.let { StatusLine(it.words, toneColor(it.tone), style(READOUT_DETAIL_SIZE), Modifier.slot(rows.detail, 0.62f), view = paneView) }
 
         // The watch's own position, when the setting asks for it: two small, quiet lines, the latitude above
         // everything else in the readout and the longitude below it. They stay through a save, a failure, the
@@ -454,34 +455,11 @@ private fun toneColor(tone: ReadoutTone): Color = when (tone) {
 private const val NO_TARGET = 0L
 
 /**
- * Where the readout's rows stand, in dial radii from the center (negative is above it): the row of `MAG` and the
- * trail's label, the name, the row under the heading, the smaller row under that, and the calibrate prompt and the
- * words of the hold-flat hint, which share that place. The two coordinate rows are used only by the second set.
- */
-private class ReadoutRows(
-    val latitude: Float, val top: Float, val name: Float, val main: Float, val detail: Float, val prompt: Float, val longitude: Float,
-)
-
-/** The rows as they stand with the coordinates switched off. */
-private val ROWS = ReadoutRows(latitude = 0f, top = -0.31f, name = -0.195f, main = 0.195f, detail = 0.30f, prompt = 0.31f, longitude = 0f)
-
-/**
- * The rows with the coordinates switched on: the latitude above the top row and the longitude below the prompts,
- * each far enough inside the circle the letters sweep to be whole at its widest (`179.9999° W`), and the rows
- * between a little closer to the heading. The longitude ends above the pane ticks.
- */
-private val ROWS_WITH_COORDINATES =
-    ReadoutRows(latitude = -0.345f, top = -0.27f, name = -0.185f, main = 0.170f, detail = 0.258f, prompt = 0.262f, longitude = 0.348f)
-
-/**
  * The calibrate prompt's tap area, in dial radii: how far above the middle of its word it starts, which is half the
  * word's line, and how far down it reaches from there.
  */
 private const val PROMPT_TAP_ABOVE = 0.055f
 private const val PROMPT_TAP_HEIGHT = 0.52f
-
-/** The size of the coordinates' text, in dial radii. */
-private const val COORDINATES_SIZE = 0.070f
 
 /** Where the outer ends of the pane ticks are on the compass, just inside [READOUT_RADIUS], and their size there. */
 private const val PANE_TICKS_ON_COMPASS = 0.465f
@@ -513,8 +491,14 @@ private val TICK_HAPTIC =
 private const val LOCK_HAPTIC = HapticFeedbackConstants.CONFIRM
 private const val HEARTBEAT_HAPTIC = HapticFeedbackConstants.CONTEXT_CLICK
 
-/** The heading number. The text is read here, not in [CompassScreen], so a new whole degree recomposes only this. */
+/**
+ * The heading number. The text is read here, not in [CompassScreen], so a new whole degree recomposes only this.
+ * A screen reader is given the number with its name and unit ([headingSpoken]) in place of the bare text; those
+ * words are made when the text changes, once for each whole degree, and not while the dial turns between two.
+ */
 @Composable
-private fun HeadingNumber(text: () -> String, style: TextStyle, modifier: Modifier) {
-    Text(text(), color = Ink, style = style, maxLines = 1, softWrap = false, modifier = modifier)
+private fun HeadingNumber(text: () -> String, magnetic: Boolean, style: TextStyle, modifier: Modifier) {
+    val shown = text()
+    val spoken = remember(shown, magnetic) { headingSpoken(shown, magnetic) }
+    Text(shown, color = Ink, style = style, maxLines = 1, softWrap = false, modifier = modifier.semantics { contentDescription = spoken })
 }
