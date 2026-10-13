@@ -66,8 +66,11 @@ fun distanceMeters(from: GeoPoint, to: GeoPoint): Double {
 
 /** Declination is positive east: true = magnetic + declination. */
 fun displayHeading(magneticDeg: Float, declination: Float?, north: NorthRef): DisplayHeading =
-    if (north == NorthRef.TRUE && declination != null) DisplayHeading(normalizeDeg(magneticDeg + declination), false)
-    else DisplayHeading(normalizeDeg(magneticDeg), true)
+    DisplayHeading(displayHeadingDeg(magneticDeg, declination, north), !(north == NorthRef.TRUE && declination != null))
+
+/** The degrees of [displayHeading] alone, as a number: for the frame loop, which asks on every frame and is to make nothing. */
+fun displayHeadingDeg(magneticDeg: Float, declination: Float?, north: NorthRef): Float =
+    if (north == NorthRef.TRUE && declination != null) normalizeDeg(magneticDeg + declination) else normalizeDeg(magneticDeg)
 
 /** Where a true bearing sits on a dial whose zero is the displayed north. */
 fun dialAngle(trueBearing: Float, declination: Float?, north: NorthRef): Float =

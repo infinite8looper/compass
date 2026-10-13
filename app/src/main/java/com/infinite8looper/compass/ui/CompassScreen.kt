@@ -55,7 +55,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlin.math.abs
-import kotlin.math.roundToInt
 
 /**
  * The compass, one of the three screens that sit side by side. [paneView] says how much of it the wearer has in
@@ -90,6 +89,9 @@ fun CompassScreen(
     val nav by vm.nav.collectAsStateWithLifecycle()
     val navState = rememberUpdatedState(nav)
     val shown = remember { mutableFloatStateOf(Float.NaN) }
+    // The whole degree the heading number shows ([shownDegree]). Written in the frame loop when it changes, so the
+    // number's text is made once for each whole degree and nothing is made for it while the dial turns between two.
+    val shownWhole = remember { mutableIntStateOf(NO_DEGREE) }
     // Written every frame and read where the screen is composed: only a change of value recomposes.
     var holdFlat by remember { mutableStateOf(false) }
     // Whether the wearer faces the focused target. Written in the frame loop when it changes and read only where
@@ -112,6 +114,87 @@ fun CompassScreen(
         var lastPulse: Pulse? = null
         var lastPulseNanos = 0L
         facingState.value = false
+        // One function for every frame, made here: a frame makes nothing new.
+        val frame: (Long) -> Unit = { now ->
+            val reading = readingState.value
+            if (reading != null) {
+                val n = navState.value
+                val wasHold = holdFlat
+                val hold = nextHoldFlat(wasHold, reading.pitchDeg)
+                holdFlat = hold
+                val first = shown.floatValue.isNaN()
+                val gap = if (last == 0L) 0L else now - last
+                val target = displayHeadingDeg(reading.magneticDeg, n.declination, n.north)
+                // While the watch is tilted too far the heading is not taken, so the dial keeps its last value.
+                if (!hold) shown.floatValue = if (first) target else smoothAngle(shown.floatValue, target, gap / 1e9f)
+                // The number is given its whole degree here, and only when that is another one.
+                val degree = shownDegree(shown.floatValue)
+                if (degree != shownWhole.intValue) shownWhole.intValue = degree
+
+                // After a pause the reading in hand is the one from before it, until the sensor sends another.
+                if (gap > TICK_GAP_NANOS) stale = reading else if (reading !== stale) stale = null
+                // How far the dial's north is from magnetic north: it moves when the declination or the setting does.
+                val newReference = shortestDelta(reading.magneticDeg, target)
+                val disturbed = isTickDisturbance(
+                    firstHeading = first, staleReading = stale != null, frameGapNanos = gap, leftHoldFlat = wasHold && !hold,
+                    referenceShiftDeg = if (reference.isNaN()) 0f else shortestDelta(reference, newReference),
+                )
+                reference = newReference
+
+                // Both cells are followed on every frame, so nothing is owed when the taps are allowed again.
+                val next = nextTickCell(cell, shown.floatValue)
+                targetCell = nextTickCell(targetCell, target)
+                val wasSettling = settling.active
+                settling = nextTickSettling(settling, disturbed, now, next, targetCell)
+
+                // Facing is decided from the heading the dial shows, and only while that heading is live: not
+                // while the dial is frozen by the hold-flat state, and not while it is catching up.
+                // A focus that has moved to another target starts from not facing.
+                val wasFacing = facing
+                val focusedId = n.focused?.id ?: NO_TARGET
+                val targetChanged = focusedId != facingId
+                facingId = focusedId
+                facing = nextFacing(
+                    wasFacing, shown.floatValue, n.focused?.dialAngleDeg, headingLive = !hold && !settling.active,
+                    targetChanged = targetChanged,
+                )
+                if (facing != wasFacing) facingState.value = facing
+
+                // A compass that is sliding past, or stands behind a screen that is being swiped away, is
+                // drawn and gives no tap and no pulse.
+                val inView = paneView() == PaneView.IN_VIEW && lifecycle.currentState == Lifecycle.State.RESUMED
+
+                // Blind navigation: the strong pulse on turning onto the focused target, the soft one each
+                // second while still facing it. Not from an old position: the mark on the distance that says
+                // so is for the eye, and the same condition keeps the pulses silent.
+                val nextBlind = nextBlindPulses(
+                    blind, facing, n.blindNavigation, inView, now, targetChanged,
+                    positionStale = isStale(SystemClock.elapsedRealtime(), n.fixElapsedMs),
+                )
+                val pulse = pulseBetween(blind, nextBlind, targetChanged)
+                blind = nextBlind
+                if (pulse != null) {
+                    view.performHapticFeedback(if (pulse == Pulse.LOCK) LOCK_HAPTIC else HEARTBEAT_HAPTIC)
+                    lastPulse = pulse
+                    lastPulseNanos = now
+                }
+
+                // The frame on which the dial arrives is still part of the catch-up. A tick that falls on a
+                // pulse, or just after one, is dropped: the pulse is the one the wearer is to feel.
+                if (isTickCrossing(cell, next) && !wasSettling && !settling.active && !hold && n.tickFeedback &&
+                    inView && tickTapDue(now, lastTap) && tickClearOfPulse(now, lastPulse, lastPulseNanos)
+                ) {
+                    view.performHapticFeedback(TICK_HAPTIC)
+                    lastTap = now
+                }
+                cell = next
+            } else {
+                // Without a heading nothing is faced.
+                if (facing) { facing = false; facingState.value = false }
+                blind = BlindPulses.Silent
+            }
+            last = now
+        }
         while (true) {
             // Hidden, the loop waits here and asks for no frame. Its state is kept, so the first frame back sees
             // the whole time away as one long gap, which is handled like any other pause: the dial catches up
@@ -121,83 +204,7 @@ fun CompassScreen(
                 blind = BlindPulses.Silent
                 snapshotFlow { paneView() }.first { it != PaneView.HIDDEN }
             }
-            withFrameNanos { now ->
-                val reading = readingState.value
-                if (reading != null) {
-                    val n = navState.value
-                    val wasHold = holdFlat
-                    val hold = nextHoldFlat(wasHold, reading.pitchDeg)
-                    holdFlat = hold
-                    val first = shown.floatValue.isNaN()
-                    val gap = if (last == 0L) 0L else now - last
-                    val target = displayHeading(reading.magneticDeg, n.declination, n.north).deg
-                    // While the watch is tilted too far the heading is not taken, so the dial keeps its last value.
-                    if (!hold) shown.floatValue = if (first) target else smoothAngle(shown.floatValue, target, gap / 1e9f)
-
-                    // After a pause the reading in hand is the one from before it, until the sensor sends another.
-                    if (gap > TICK_GAP_NANOS) stale = reading else if (reading !== stale) stale = null
-                    // How far the dial's north is from magnetic north: it moves when the declination or the setting does.
-                    val newReference = shortestDelta(reading.magneticDeg, target)
-                    val disturbed = isTickDisturbance(
-                        firstHeading = first, staleReading = stale != null, frameGapNanos = gap, leftHoldFlat = wasHold && !hold,
-                        referenceShiftDeg = if (reference.isNaN()) 0f else shortestDelta(reference, newReference),
-                    )
-                    reference = newReference
-
-                    // Both cells are followed on every frame, so nothing is owed when the taps are allowed again.
-                    val next = nextTickCell(cell, shown.floatValue)
-                    targetCell = nextTickCell(targetCell, target)
-                    val wasSettling = settling.active
-                    settling = nextTickSettling(settling, disturbed, now, next, targetCell)
-
-                    // Facing is decided from the heading the dial shows, and only while that heading is live: not
-                    // while the dial is frozen by the hold-flat state, and not while it is catching up.
-                    // A focus that has moved to another target starts from not facing.
-                    val wasFacing = facing
-                    val focusedId = n.focused?.id ?: NO_TARGET
-                    val targetChanged = focusedId != facingId
-                    facingId = focusedId
-                    facing = nextFacing(
-                        wasFacing, shown.floatValue, n.focused?.dialAngleDeg, headingLive = !hold && !settling.active,
-                        targetChanged = targetChanged,
-                    )
-                    if (facing != wasFacing) facingState.value = facing
-
-                    // A compass that is sliding past, or stands behind a screen that is being swiped away, is
-                    // drawn and gives no tap and no pulse.
-                    val inView = paneView() == PaneView.IN_VIEW && lifecycle.currentState == Lifecycle.State.RESUMED
-
-                    // Blind navigation: the strong pulse on turning onto the focused target, the soft one each
-                    // second while still facing it. Not from an old position: the mark on the distance that says
-                    // so is for the eye, and the same condition keeps the pulses silent.
-                    val nextBlind = nextBlindPulses(
-                        blind, facing, n.blindNavigation, inView, now, targetChanged,
-                        positionStale = isStale(SystemClock.elapsedRealtime(), n.fixElapsedMs),
-                    )
-                    val pulse = pulseBetween(blind, nextBlind, targetChanged)
-                    blind = nextBlind
-                    if (pulse != null) {
-                        view.performHapticFeedback(if (pulse == Pulse.LOCK) LOCK_HAPTIC else HEARTBEAT_HAPTIC)
-                        lastPulse = pulse
-                        lastPulseNanos = now
-                    }
-
-                    // The frame on which the dial arrives is still part of the catch-up. A tick that falls on a
-                    // pulse, or just after one, is dropped: the pulse is the one the wearer is to feel.
-                    if (isTickCrossing(cell, next) && !wasSettling && !settling.active && !hold && n.tickFeedback &&
-                        inView && tickTapDue(now, lastTap) && tickClearOfPulse(now, lastPulse, lastPulseNanos)
-                    ) {
-                        view.performHapticFeedback(TICK_HAPTIC)
-                        lastTap = now
-                    }
-                    cell = next
-                } else {
-                    // Without a heading nothing is faced.
-                    if (facing) { facing = false; facingState.value = false }
-                    blind = BlindPulses.Silent
-                }
-                last = now
-            }
+            withFrameNanos(frame)
         }
     }
 
@@ -208,7 +215,7 @@ fun CompassScreen(
 
     LogResultTimer(vm, paneView)
 
-    val headingText by remember { derivedStateOf { if (shown.floatValue.isNaN()) "--" else "${shown.floatValue.roundToInt() % 360}°" } }
+    val headingShown by remember { derivedStateOf { headingText(shownWhole.intValue) } }
     val lowAccuracy by remember {
         derivedStateOf { readingState.value?.accuracy?.let { it <= SensorManager.SENSOR_STATUS_ACCURACY_LOW } ?: false }
     }
@@ -371,7 +378,7 @@ fun CompassScreen(
                     running = { paneView() != PaneView.HIDDEN },
                 )
                 else -> {
-                    HeadingNumber({ headingText }, showingMagnetic, style(READOUT_HEADING_SIZE, FontWeight.Light), Modifier.slot(0f, 2 * READOUT_RADIUS))
+                    HeadingNumber({ headingShown }, showingMagnetic, style(READOUT_HEADING_SIZE, FontWeight.Light), Modifier.slot(0f, 2 * READOUT_RADIUS))
                     if (calibrate) Text("Calibrate", color = Dim, style = bodyStyle, maxLines = 1, modifier = Modifier.slot(rows.prompt, 0.6f))
                 }
             }

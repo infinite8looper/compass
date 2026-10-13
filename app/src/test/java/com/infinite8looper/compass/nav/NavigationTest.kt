@@ -64,6 +64,14 @@ class NavigationTest {
         assertEquals(DisplayHeading(0f, true), displayHeading(0f, -14f, NorthRef.MAGNETIC))
         assertEquals(DisplayHeading(0f, true), displayHeading(0f, null, NorthRef.TRUE))
     }
+    @Test fun theDisplayedDegreesAloneAreThoseOfDisplayHeading() {
+        assertEquals(346f, displayHeadingDeg(0f, -14f, NorthRef.TRUE), 0f)
+        assertEquals(0f, displayHeadingDeg(0f, -14f, NorthRef.MAGNETIC), 0f)
+        assertEquals(0f, displayHeadingDeg(0f, null, NorthRef.TRUE), 0f)
+        for (north in NorthRef.entries) for (declination in listOf(null, -14f, 0f, 9.5f)) for (magnetic in listOf(0f, 7f, 180f, 355f, 359.9f)) {
+            assertEquals(displayHeading(magnetic, declination, north).deg, displayHeadingDeg(magnetic, declination, north), 0f)
+        }
+    }
     @Test fun dialAngleMatchesReference() {
         assertEquals(90f, dialAngle(90f, -14f, NorthRef.TRUE), 1e-4f)
         assertEquals(104f, dialAngle(90f, -14f, NorthRef.MAGNETIC), 1e-4f)
@@ -654,7 +662,7 @@ class NavigationTest {
         f.frame(tickCrossing = true)
         assertEquals(2, f.ticks)
         // The heartbeat's frame and the shorter time after it.
-        while (f.frame() != Pulse.HEARTBEAT) Unit
+        while (f.frame() != Pulse.HEARTBEAT) { }
         val beatAt = f.nowNanos
         assertFalse(tickClearOfPulse(beatAt, Pulse.HEARTBEAT, beatAt))
         assertFalse(tickClearOfPulse(beatAt + TICK_QUIET_AFTER_HEARTBEAT_NANOS - 1, Pulse.HEARTBEAT, beatAt))

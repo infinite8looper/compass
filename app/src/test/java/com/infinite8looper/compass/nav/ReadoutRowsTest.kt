@@ -34,13 +34,13 @@ class ReadoutRowsTest {
         assertTrue("MAG over the name", rowGap(rows.top, READOUT_DETAIL_SIZE, false, rows.name, READOUT_BODY_SIZE, true) >= air)
     }
 
-    @Test fun theRowsAboveTheHeadingAndTheRowsWithTheCoordinatesOffStayWhereTheyWere() {
+    @Test fun theRowsAboveTheHeadingStayWhereTheyWereWithTheCoordinatesOn() {
         val rows = readoutRows(coordinates = true)
         assertEquals(-0.345f, rows.latitude, 0f); assertEquals(-0.27f, rows.top, 0f); assertEquals(-0.185f, rows.name, 0f)
     }
 
     /** The pane ticks show under the longitude for about a second around a swipe. Their places are the ones the screen draws them at. */
-    @Test fun theLongitudesRowEndsAboveThePaneTicks() {
+    @Test fun theLongitudesRowEndsAboveThePaneTicksAndTheRowsWithTheCoordinatesOffStayWhereTheyWere() {
         val rows = readoutRows(coordinates = true)
         val ticksTop = paneTicksTopOnCompass()
         assertEquals(PANE_TICKS_ON_COMPASS - PANE_TICK_LENGTH_CURRENT * PANE_TICKS_SCALE, ticksTop, 0f)
@@ -61,6 +61,24 @@ class ReadoutRowsTest {
         assertEquals(1f - 0.058f - 0.042f, rowGap(0f, 0.1f, true, 1f, 0.1f, true), 1e-6f)
         // Without a descender the upper row ends at its baseline; digits are a little lower than a tall letter.
         assertEquals(1f - 0.040f - 0.0375f, rowGap(0f, 0.1f, false, 1f, 0.1f, false), 1e-6f)
+    }
+
+    @Test fun theShownDegreeIsTheHeadingRoundedAndThereIsNoneWithoutAHeading() {
+        assertEquals(NO_DEGREE, shownDegree(Float.NaN))
+        assertEquals(0, shownDegree(0f)); assertEquals(0, shownDegree(0.49f)); assertEquals(1, shownDegree(0.51f))
+        assertEquals(236, shownDegree(236.4f)); assertEquals(359, shownDegree(359.49f))
+        // The last half degree before north is north: the number never reads 360.
+        assertEquals(0, shownDegree(359.5f)); assertEquals(0, shownDegree(359.99f)); assertEquals(0, shownDegree(360f))
+        // No degree that can be shown is taken for none.
+        for (tenth in 0..3600) assertTrue("${tenth / 10f}", shownDegree(tenth / 10f) in 0..359)
+    }
+
+    @Test fun theHeadingsTextIsTheDegreeWithItsSignAndTwoDashesWithoutOne() {
+        assertEquals("--", headingText(NO_DEGREE))
+        assertEquals("0°", headingText(0)); assertEquals("7°", headingText(7)); assertEquals("236°", headingText(236)); assertEquals("359°", headingText(359))
+        // What is shown is what is spoken.
+        assertEquals("Heading 236 degrees", headingSpoken(headingText(shownDegree(236.4f)), magnetic = false))
+        assertEquals("Heading unknown", headingSpoken(headingText(shownDegree(Float.NaN)), magnetic = false))
     }
 
     @Test fun theHeadingIsSpokenWithItsNameAndItsUnit() {

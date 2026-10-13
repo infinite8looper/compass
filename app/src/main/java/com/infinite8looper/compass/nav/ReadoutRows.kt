@@ -1,5 +1,7 @@
 package com.infinite8looper.compass.nav
 
+import kotlin.math.roundToInt
+
 // Where the rows of the compass's readout stand, and how far apart their ink is. Everything is in dial radii,
 // as the readout is laid out: a row's place is the middle of its line, measured from the center of the dial
 // (negative is above it), and a size is the size of its text.
@@ -72,6 +74,18 @@ fun paneTicksTopOnCompass(): Float = PANE_TICKS_ON_COMPASS - PANE_TICK_LENGTH_CU
 
 /** The air between the heading's digits, which stand in the middle, and a row of words under them. */
 fun headingGap(row: Float, rowSize: Float): Float = (row - TALL_TOP * rowSize) - HEADING_BASELINE * READOUT_HEADING_SIZE
+
+/** Stands for no whole degree: there is no heading to show. */
+const val NO_DEGREE = -1
+
+/**
+ * The whole degree the heading number shows for the heading [shownDeg] the dial is drawn at, 0 to 359, or
+ * [NO_DEGREE] while there is none (NaN). The last half degree before north reads 0, never 360.
+ */
+fun shownDegree(shownDeg: Float): Int = if (shownDeg.isNaN()) NO_DEGREE else shownDeg.roundToInt().mod(360)
+
+/** The heading number's text for a whole [degree]: `236°`, or `--` for [NO_DEGREE]. */
+fun headingText(degree: Int): String = if (degree == NO_DEGREE) "--" else "$degree°"
 
 /**
  * What a screen reader says for the heading, from the text the compass shows for it (`236°`, or `--` while there
