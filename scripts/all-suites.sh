@@ -23,7 +23,12 @@
 # laid flat no test of this suite is skipped, so a skipped one means a test did not check its subject.
 # The last emulator in the list is left running with the debug app installed again, and every emulator the suite
 # ran on is left lying flat at the magnetic heading of 40: the pose is not put back to upright.
+# Emulators only (scripts/emulator-only.sh): it refuses to start while any device that is not an emulator is attached,
+# looks again right before each Gradle run, and gives Gradle the emulator's serial (ANDROID_SERIAL) so the tests run
+# on that device alone. A run that is refused counts as not run, and the exit status is 1.
 # Needs JDK 17 (found with /usr/libexec/java_home) and python3.
+EMULATOR_ONLY_MAY_BE_NONE=1   # this script boots the emulator, so none may be attached yet
+source "$(dirname "$0")/emulator-only.sh" || exit 1
 ADB=~/Library/Android/sdk/platform-tools/adb
 cd "$(dirname "$0")/.." || exit 1
 if [ -z "$JAVA_HOME" ]; then export JAVA_HOME=$(/usr/libexec/java_home -v 17) || exit 1; fi
@@ -46,6 +51,11 @@ for avd in $avds; do
   echo "== $avd"
   rm -rf $out/results-$avd $out/suite-$avd.log
   scripts/switch-emulator.sh $avd 2>&1 | tail -3
+  # Only the one emulator is addressed from here: by adb, and by Gradle, which takes ANDROID_SERIAL too.
+  if ! emulator_only || [ -z "$ANDROID_SERIAL" ]; then
+    echo "$avd: not run (the attached devices are not one emulator and nothing else)"
+    summary+=("$avd: not run"); bad=1; continue
+  fi
   running=$($ADB shell getprop ro.boot.qemu.avd_name 2>/dev/null | tr -d '\r')
   if [ "$running" != "$avd" ]; then
     echo "$avd: not running after the switch, skipped"
@@ -74,9 +84,15 @@ for avd in $avds; do
     echo "$avd: the screen would not stay awake after the watch was laid flat ($awake), not run"
     summary+=("$avd: not run"); bad=1; continue
   fi
+  # Looked at again at the last moment: the suite wipes the app's data and must run on the emulator alone.
+  if ! emulator_only || [ -z "$ANDROID_SERIAL" ]; then
+    echo "$avd: not run (a device that is not this emulator is attached)"
+    summary+=("$avd: not run"); bad=1; continue
+  fi
+  echo "$avd: running on $ANDROID_SERIAL"
   scripts/geo-feed.sh -72.2896 43.7022 $(( gradle_seconds + 120 )) > /dev/null 2>&1 &
   feed_pid=$!
-  ./gradlew connectedDebugAndroidTest > $out/suite-$avd.log 2>&1 &
+  ANDROID_SERIAL=$ANDROID_SERIAL ./gradlew connectedDebugAndroidTest > $out/suite-$avd.log 2>&1 &
   gradle_pid=$!
   deadline=$(( $(date +%s) + gradle_seconds ))
   timed_out=0

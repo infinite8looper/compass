@@ -14,6 +14,7 @@
 # passed half the width or is faster than about 2000 px a second, and this one is neither. A check that depends on
 # going back should look, and swipe again, or use scripts/raw-swipe.sh, which writes the touch to the emulator's
 # touch screen as raw events that do not wait for the app (it needs an image that allows `adb root`).
+source "$(dirname "$0")/emulator-only.sh" || exit 1
 ADB=~/Library/Android/sdk/platform-tools/adb
 usage() { echo "usage: scripts/swipe.sh left|right|up|down|diagonal [milliseconds] [fraction] | hold [milliseconds]" >&2; exit 1; }
 [[ "$1" == (left|right|up|down|diagonal|hold) ]] || usage

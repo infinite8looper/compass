@@ -2,6 +2,7 @@
 # Usage: scripts/screenshot.sh <name>   ->  docs/screenshots/<name>.png
 # The picture is taken into a temporary file and moved into place only if it is a PNG, so a failed capture
 # (no device, the screen service not answering) leaves no empty or broken file behind and exits 1.
+source "$(dirname "$0")/emulator-only.sh" || exit 1
 if [ -z "$1" ]; then
   echo "usage: scripts/screenshot.sh <name>" >&2
   exit 1

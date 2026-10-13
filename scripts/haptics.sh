@@ -16,6 +16,7 @@
 # played as the tick effect, which only the constant tells from a heartbeat.
 # The system keeps a limited number of entries per kind of use and later folds old ones together, so read soon
 # after the thing happened: a long run of tick taps pushes older entries out (20 are kept on API 33).
+source "$(dirname "$0")/emulator-only.sh" || exit 1
 ADB=~/Library/Android/sdk/platform-tools/adb
 PKG=com.infinite8looper.compass
 if [ "$1" = "mark" ] && [ $# -eq 1 ]; then

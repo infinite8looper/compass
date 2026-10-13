@@ -4,6 +4,7 @@
 # three a second) or with the given pause between them, and joins them side by side, first on the left, into
 # <out.png>. For catching something that moves: start it in the background, then make the move.
 # The single pictures are taken into a temporary folder that is removed afterwards. Needs ffmpeg.
+source "$(dirname "$0")/emulator-only.sh" || exit 1
 ADB=~/Library/Android/sdk/platform-tools/adb
 FFMPEG=/opt/homebrew/bin/ffmpeg
 if [ $# -lt 2 ] || [[ "$2" != <-> ]] || [ "$2" -lt 1 ] || [[ -n "$3" && "$3" != <->(|.<->) ]]; then

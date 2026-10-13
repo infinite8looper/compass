@@ -6,6 +6,7 @@
 # the emulators' screens). The API 33 image does not have that command, so there the turn is written to the
 # crown's input device, in that device's own units, 72 of which scroll as far as one click. That needs adbd
 # running as root: the script switches it to root and says so. Run `adb unroot` when done.
+source "$(dirname "$0")/emulator-only.sh" || exit 1
 ADB=~/Library/Android/sdk/platform-tools/adb
 if [[ "$1" != (|-)<-> ]] || [[ -n "$2" && "$2" != <-> ]] || [[ -n "$2" && "$2" -lt 1 ]]; then
   echo "usage: scripts/crown.sh <clicks> [times]" >&2

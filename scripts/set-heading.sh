@@ -2,6 +2,7 @@
 # Usage: scripts/set-heading.sh <degrees>
 # Lays the emulator's virtual watch flat and points it at the given magnetic heading.
 # The emulator's sensor fusion is slow: the reading takes about 20 seconds to settle.
+source "$(dirname "$0")/emulator-only.sh" || exit 1
 if [ -z "$1" ]; then
   echo "usage: scripts/set-heading.sh <degrees>" >&2
   exit 1

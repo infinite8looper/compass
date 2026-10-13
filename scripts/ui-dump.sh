@@ -6,6 +6,7 @@
 # and its bounds, indented by depth. With `all`, every node is printed.
 # For reading a screen's words in a script, and for judging what a screen reader is given.
 # Exits 1 if the tree cannot be read (it cannot while the screen keeps animating, as the hold-flat hint does).
+source "$(dirname "$0")/emulator-only.sh" || exit 1
 ADB=~/Library/Android/sdk/platform-tools/adb
 $ADB exec-out uiautomator dump /dev/tty 2>/dev/null | python3 -c '
 import sys

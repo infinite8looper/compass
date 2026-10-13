@@ -15,6 +15,7 @@
 # Rows are named Waypoint 1, 2, ... in the order given and the last one is the newest, so it has the focus unless
 # the focus stored in the app's settings names another row that exists. The settings are not touched, so the
 # number the app gives its next waypoint does not follow these names.
+source "$(dirname "$0")/emulator-only.sh" || exit 1
 ADB=~/Library/Android/sdk/platform-tools/adb
 PKG=com.infinite8looper.compass
 at=43.7022,-72.2896

@@ -4,6 +4,8 @@
 # AVDs: Wear_OS_Large_Round (API 35, the default), Wear_OS_Small_Round (API 35), Wear_OS_API34, Wear_OS_API33,
 # Wear_OS_Newest (Wear OS 7.0, API 37, large round; a signed image: no `adb root` and no sqlite3 on it).
 # The other scripts assume one attached device: stop a running emulator with `adb emu kill` before booting another.
+EMULATOR_ONLY_MAY_BE_NONE=1   # this script boots the emulator, so none may be attached yet
+source "$(dirname "$0")/emulator-only.sh" || exit 1
 ADB=~/Library/Android/sdk/platform-tools/adb
 EMU=~/Library/Android/sdk/emulator/emulator
 AVD=${1:-Wear_OS_Large_Round}
@@ -11,7 +13,10 @@ if ! $ADB devices | grep -q "emulator-.*device"; then
   nohup $EMU -avd "$AVD" -no-snapshot-save > /tmp/compass-emulator.log 2>&1 &
 fi
 deadline=$(( $(date +%s) + 300 ))
-until [ "$($ADB shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; do
+# Each look at the device list is checked: a device that is not an emulator ends this, and adb is called only once
+# the emulator is listed and is the one device addressed.
+until emulator_only && [ -n "$ANDROID_SERIAL" ] && [ "$($ADB shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; do
+  if $ADB devices | tail -n +2 | awk 'NF { print $1 }' | grep -v -q -E '^emulator-[0-9]+$'; then exit 1; fi
   if [ $(date +%s) -gt $deadline ]; then echo "emulator did not boot in 300 s"; exit 1; fi
   sleep 3
 done

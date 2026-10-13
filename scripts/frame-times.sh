@@ -9,6 +9,7 @@
 #   (ui: input to sync queued; issue: issuing draw commands; swap: swap buffers to frame completed).
 # The compass has to be the screen in view, with whatever is to be measured already on it.
 # The emulator draws through the host's graphics; these numbers say how the stages compare, not what a watch does.
+source "$(dirname "$0")/emulator-only.sh" || exit 1
 ADB=~/Library/Android/sdk/platform-tools/adb
 PKG=com.infinite8looper.compass
 if [ -z "$1" ]; then echo "usage: scripts/frame-times.sh <label> [from] [to] [step] [pause-seconds]" >&2; exit 1; fi

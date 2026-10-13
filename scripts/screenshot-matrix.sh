@@ -26,6 +26,7 @@
 # it never is, the last picture is kept and the script says so. Every picture has to be looked at afterwards.
 # Needs python3 with Pillow, ImageMagick (`magick`) and the scripts beside it. Takes about 25 minutes for all sections.
 # It leaves the app's data wiped, the app in front, location on, the watch flat and no position feed running.
+source "$(dirname "$0")/emulator-only.sh" || exit 1
 ADB=~/Library/Android/sdk/platform-tools/adb
 PKG=com.infinite8looper.compass
 cd "$(dirname "$0")/.." || exit 1

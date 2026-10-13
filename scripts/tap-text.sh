@@ -5,6 +5,7 @@
 # tree cannot be read (it cannot while the screen keeps animating, which the compass does while the hold-flat
 # hint loops).
 # The system's own dialogs use a typographic apostrophe: the permission dialog's button is "Don’t allow".
+source "$(dirname "$0")/emulator-only.sh" || exit 1
 ADB=~/Library/Android/sdk/platform-tools/adb
 if [ -z "$1" ]; then
   echo "usage: scripts/tap-text.sh <text>" >&2

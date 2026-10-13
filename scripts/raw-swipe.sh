@@ -22,6 +22,7 @@
 # However it ends (finished, a wrong argument, Ctrl-C, a kill), it lifts the finger if it had put one down, removes
 # its files from the device and from this machine, and unroots adbd, once, and exits with the status it had.
 # A sample count must be a whole number from 1 to 500, and every other number finite.
+source "$(dirname "$0")/emulator-only.sh" || exit 1
 ADB=~/Library/Android/sdk/platform-tools/adb
 usage() {
   echo "usage: scripts/raw-swipe.sh line <x1> <y1> <x2> <y2> [samples] | arc <angle1> <angle2> <fraction> [samples] | path <samples-per-leg> <x,y> <x,y> ..." >&2

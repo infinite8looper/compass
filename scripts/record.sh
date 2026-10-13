@@ -5,6 +5,7 @@
 #   scripts/record.sh /some/folder/press.mp4 12 'sleep 2; ~/Library/Android/sdk/platform-tools/adb shell input keyevent KEYCODE_STEM_1'
 # Extra options for the device's screenrecord can be given in RECORD_OPTS, such as RECORD_OPTS="--bit-rate 2000000".
 # Recordings are for review and do not belong in the repository.
+source "$(dirname "$0")/emulator-only.sh" || exit 1
 ADB=~/Library/Android/sdk/platform-tools/adb
 if [ $# -lt 2 ] || [[ "$2" != <-> ]]; then
   echo "usage: scripts/record.sh <out.mp4> <seconds> [command ...]" >&2
