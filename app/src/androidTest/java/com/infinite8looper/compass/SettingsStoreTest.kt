@@ -328,6 +328,28 @@ class SettingsStoreTest {
         assertEquals(StoredTrail(held.trailMode, held.breadcrumbTrail), answeredAtOnce())
     }
 
+    /**
+     * A change to the trail's switch whose caller is cancelled while the change is under way: whether or not the
+     * write was made, the answer from memory is what the file holds afterwards. The caller is cancelled at a
+     * different moment each round, from before the write begins to after it has ended, and in some rounds the file
+     * has changed although the caller was cancelled.
+     */
+    @Test fun aChangeWhoseCallerIsCancelledLeavesTheStoredTrailWhatTheFileHolds() = withStore { s, _ ->
+        s.setBreadcrumbTrail(false)
+        var writtenThoughCancelled = 0
+        coroutineScope { repeat(480) { round ->
+            val before = s.settings.first().breadcrumbTrail
+            val change = launch(Dispatchers.IO) { s.setBreadcrumbTrail(!before) }
+            val until = System.nanoTime() + (round % 80) * 50_000L
+            while (System.nanoTime() < until) Thread.onSpinWait()
+            change.cancelAndJoin()
+            val file = s.settings.first()
+            if (change.isCancelled && file.breadcrumbTrail != before) writtenThoughCancelled++
+            assertEquals("round $round", StoredTrail(file.trailMode, file.breadcrumbTrail), s.storedTrail())
+        } }
+        assertTrue("no round had a cancelled caller and a changed file", writtenThoughCancelled > 0)
+    }
+
     @Test fun theTrailsModeSurvivesANewStoreOnTheSameFile() = runBlocking {
         val file = "test-settings-${UUID.randomUUID()}"
         try {

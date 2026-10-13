@@ -35,6 +35,7 @@ import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
 import androidx.wear.compose.material3.Text
 import com.infinite8looper.compass.BuildConfig
 import com.infinite8looper.compass.CompassViewModel
+import com.infinite8looper.compass.SwitchesUi
 import com.infinite8looper.compass.nav.NEEDS_PRECISE_LOCATION
 import com.infinite8looper.compass.nav.NorthRef
 import com.infinite8looper.compass.nav.Pane
@@ -56,7 +57,11 @@ import com.infinite8looper.compass.nav.accuracyLabel
  */
 @Composable
 fun SettingsScreen(vm: CompassViewModel, paneView: () -> PaneView, onCalibrate: () -> Unit) {
-    val nav by vm.nav.collectAsStateWithLifecycle()
+    // The switches come from the settings file alone. The screen state the other screens share can stay unloaded
+    // for as long as the crumbs cannot be read with the trail setting on, and a switch does not wait for that: the
+    // trail's own switch least of all, since turning it off is what ends that wait.
+    val stored by vm.switches.collectAsStateWithLifecycle()
+    val switches = stored ?: UnreadSwitches
     var needsAccess by remember { mutableStateOf(false) }
     val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         vm.permissionChanged()
@@ -83,8 +88,8 @@ fun SettingsScreen(vm: CompassViewModel, paneView: () -> PaneView, onCalibrate: 
             footer = density.instrumentText(r * 0.085f, align = TextAlign.Center),
         )
     }
-    // Until the stores have answered the rows show defaults, which a tap would then store.
-    val ready = nav.loaded
+    // Until the settings file has been read the rows show defaults, which a tap would then store.
+    val ready = stored != null
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         // The list is cut off at one circle inside the frame.
@@ -103,27 +108,27 @@ fun SettingsScreen(vm: CompassViewModel, paneView: () -> PaneView, onCalibrate: 
                     InstrumentRow(centered = true) { Text("Settings", color = Dim, style = styles.header, maxLines = 1) }
                 }
                 item(key = "north") {
-                    SwitchRow("True north", "Off: magnetic north", nav.north == NorthRef.TRUE, ready, styles) {
+                    SwitchRow("True north", "Off: magnetic north", switches.north == NorthRef.TRUE, ready, styles) {
                         inView { vm.setNorth(if (it) NorthRef.TRUE else NorthRef.MAGNETIC) }
                     }
                 }
                 item(key = "units") {
-                    SwitchRow("Feet and miles", "Off: meters and km", nav.units == Units.IMPERIAL, ready, styles) {
+                    SwitchRow("Feet and miles", "Off: meters and km", switches.units == Units.IMPERIAL, ready, styles) {
                         inView { vm.setUnits(if (it) Units.IMPERIAL else Units.METRIC) }
                     }
                 }
                 item(key = "ticks") {
-                    SwitchRow("Tick feedback", "Faint tap at each tick mark", nav.tickFeedback, ready, styles) {
+                    SwitchRow("Tick feedback", "Faint tap at each tick mark", switches.tickFeedback, ready, styles) {
                         inView { vm.setTickFeedback(it) }
                     }
                 }
                 item(key = "blind") {
-                    SwitchRow("Blind navigation", "Pulses when facing the target", nav.blindNavigation, ready, styles) {
+                    SwitchRow("Blind navigation", "Pulses when facing the target", switches.blindNavigation, ready, styles) {
                         inView { vm.setBlindNavigation(it) }
                     }
                 }
                 item(key = "trail") {
-                    SwitchRow("Breadcrumb trail", "Double press starts a trail", nav.breadcrumbTrail, ready, styles) {
+                    SwitchRow("Breadcrumb trail", "Double press starts a trail", switches.breadcrumbTrail, ready, styles) {
                         inView { vm.setBreadcrumbTrail(it) }
                     }
                 }
@@ -134,7 +139,7 @@ fun SettingsScreen(vm: CompassViewModel, paneView: () -> PaneView, onCalibrate: 
                     SwitchRow(
                         "Show coordinates",
                         if (needsAccess) NEEDS_PRECISE_LOCATION.let { (first, second) -> "$first\n$second" } else "GPS position on the compass",
-                        nav.showCoordinates, ready, styles, detailColor = if (needsAccess) ErrorColor else Dim,
+                        switches.showCoordinates, ready, styles, detailColor = if (needsAccess) ErrorColor else Dim,
                         detailLines = if (needsAccess) 2 else 1,
                     ) { on ->
                         inView {
@@ -146,7 +151,7 @@ fun SettingsScreen(vm: CompassViewModel, paneView: () -> PaneView, onCalibrate: 
                     }
                 }
                 item(key = "backup") {
-                    SwitchRow("Back up waypoints", "With this watch's backup", nav.backupEnabled, ready, styles) {
+                    SwitchRow("Back up waypoints", "With this watch's backup", switches.backupEnabled, ready, styles) {
                         inView { vm.setBackupEnabled(it) }
                     }
                 }
@@ -175,6 +180,9 @@ fun SettingsScreen(vm: CompassViewModel, paneView: () -> PaneView, onCalibrate: 
         FrameRing(paneIndex = Pane.SETTINGS.ordinal, scroll = { listScrollArc(listState) })
     }
 }
+
+/** What the rows show before the settings file has been read; no row takes a tap then. */
+private val UnreadSwitches = SwitchesUi()
 
 private class SettingsStyles(
     val header: TextStyle, val label: TextStyle, val labelOn: TextStyle, val detail: TextStyle, val footer: TextStyle,

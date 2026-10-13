@@ -25,6 +25,7 @@ import com.infinite8looper.compass.nav.distanceMeters
 import com.infinite8looper.compass.nav.logStatusShowMs
 import com.infinite8looper.compass.sensors.LocationSource
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.joinAll
@@ -1014,6 +1015,100 @@ class CompassViewModelTest {
             assertEquals(listOf(id), withTimeout(5_000) { vm.nav.first { it.loaded } }.waypoints.map { it.id })
             watching.cancel()
         } } finally { settings.setTrailMode(TrailMode.OFF) }
+    }
+
+    /** The settings screen's rows, as an accessibility service is given them by the real activity. */
+    private val automation = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation
+
+    private fun allNodes(): List<android.view.accessibility.AccessibilityNodeInfo> = buildList {
+        fun walk(n: android.view.accessibility.AccessibilityNodeInfo?) {
+            if (n == null) return
+            add(n)
+            for (i in 0 until n.childCount) walk(n.getChild(i))
+        }
+        walk(automation.rootInActiveWindow)
+    }
+
+    private fun wordsUnder(n: android.view.accessibility.AccessibilityNodeInfo?): List<String> =
+        if (n == null) emptyList() else listOfNotNull(n.text?.toString()) + (0 until n.childCount).flatMap { wordsUnder(n.getChild(it)) }
+
+    /** The row of the settings list that carries [label], scrolling the list toward its end until the row is on screen. */
+    private suspend fun settingsRow(label: String): android.view.accessibility.AccessibilityNodeInfo {
+        // What each step had on screen, for the message of a failure.
+        val seen = ArrayList<String>()
+        repeat(12) {
+            // A row is the switch, and its two lines of words are under it.
+            allNodes().firstOrNull { n -> n.isCheckable && wordsUnder(n).any { it.contains(label) } }?.let { return it }
+            seen += allNodes().filter { it.isCheckable }.joinToString("|") { wordsUnder(it).firstOrNull().orEmpty() }
+            // The row of three screens scrolls too, sideways; the list is the scrolling thing inside it.
+            val list = allNodes().lastOrNull { it.isScrollable && it.isVisibleToUser } ?: throw AssertionError("no list on screen")
+            list.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
+            delay(700)
+        }
+        throw AssertionError("no row '$label' in $seen")
+    }
+
+    /**
+     * The crumbs cannot be read and the breadcrumb trail setting is on, so the screens the trail belongs to wait. The
+     * settings do not: the trail's row shows the stored value, on, and takes a tap, which switches the setting off
+     * and with that ends the wait. The tap is the row's own click, made the way an accessibility service makes it,
+     * on the real activity with the settings in view.
+     */
+    @Test fun withTheCrumbsUnreadableTheTrailSwitchShowsItsStoredValueAndATapOnItSwitchesItOff() = runBlocking {
+        val id = dao.insert(com.infinite8looper.compass.data.Waypoint(name = "A", lat = farNorth.lat, lon = farNorth.lon, accuracyM = 5f, createdAt = 1, hue = 0f, isTarget = true))
+        settings.setBreadcrumbTrail(true)
+        settings.setTrailMode(TrailMode.LAYING)
+        try { whileTheCrumbsCannotBeRead {
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                val vm = viewModelOf(scenario)
+                delay(1_500)
+                // The read really fails, and the screens that show the trail are waiting for it.
+                assertNotNull(runCatching { crumbDao.all() }.exceptionOrNull())
+                assertFalse(vm.nav.value.loaded)
+                // The switches are there all the same, with what is stored.
+                assertEquals(true, withTimeout(5_000) { vm.switches.first { it != null } }?.breadcrumbTrail)
+                back()   // the settings
+                val row = settingsRow("Breadcrumb trail")
+                assertTrue("the row takes no tap", row.isEnabled)
+                assertTrue("the row shows off", row.isChecked)
+                // Another row is live too.
+                assertTrue(settingsRow("Blind navigation").isEnabled)
+                assertTrue(settingsRow("Breadcrumb trail").performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK))
+                withTimeout(5_000) { while (settings.settings.first().breadcrumbTrail) delay(20) }
+                assertEquals(TrailMode.OFF, settings.settings.first().trailMode)
+                // The crumbs are still unreadable; with the setting off nothing waits for them.
+                assertNotNull(runCatching { crumbDao.all() }.exceptionOrNull())
+                assertEquals(listOf(id), withTimeout(5_000) { vm.nav.first { it.loaded } }.waypoints.map { it.id })
+                withTimeout(5_000) { while (settingsRow("Breadcrumb trail").isChecked) delay(50) }
+            }
+        } } finally { settings.setTrailMode(TrailMode.OFF) }
+    }
+
+    /**
+     * A view model reads the trail's stored mode and switch as it is made, with no screen watching it and no press
+     * made: a little later the store answers from memory, at once, which is what the first press of a process needs.
+     * The store here is a new one on a file an earlier store wrote, so nothing of it has been read before.
+     */
+    @Test fun aNewViewModelHasTheStoredTrailReadBeforeTheFirstPress() = runBlocking {
+        val file = "test-settings-${java.util.UUID.randomUUID()}"
+        val files = listOf(file, "$file-position").map { java.io.File(app.filesDir, "datastore/$it.preferences_pb") }
+        val writerJob = kotlinx.coroutines.SupervisorJob()
+        val readerJob = kotlinx.coroutines.SupervisorJob()
+        try {
+            SettingsStore(app, file, kotlinx.coroutines.CoroutineScope(Dispatchers.IO + writerJob)).run { setBreadcrumbTrail(true); setTrailMode(TrailMode.LAYING) }
+            writerJob.cancel(); writerJob.join()
+            val store = SettingsStore(app, file, kotlinx.coroutines.CoroutineScope(Dispatchers.IO + readerJob))
+            withContext(Dispatchers.Main) { CompassViewModel(app, LocationSource(app), store) }
+            // Nothing is asked of the store meanwhile.
+            delay(2_000)
+            val answer = withContext(Dispatchers.Main) {
+                async(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) { store.storedTrail() }.also { assertTrue("the answer had to be waited for", it.isCompleted) }
+            }
+            assertEquals(com.infinite8looper.compass.data.StoredTrail(TrailMode.LAYING, settingOn = true), answer.await())
+        } finally {
+            writerJob.cancel(); readerJob.cancel(); readerJob.join()
+            files.forEach { it.delete() }
+        }
     }
 
     /**

@@ -15,6 +15,7 @@ import com.infinite8looper.compass.nav.Units
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
@@ -25,6 +26,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.util.Locale
 
 data class Settings(
@@ -104,7 +106,7 @@ class SettingsStore(
 
     // The breadcrumb trail's stored mode and its switch are also held here, in memory, as this store last read or
     // wrote them. The two are changed only by [setBreadcrumbTrail] and [setTrailMode], which are run one at a time
-    // and each put what the file holds after its write here before it returns.
+    // and each put what the file holds after its write here before it returns ([writeTrail]).
     private val trailWrites = Mutex()
     @Volatile private var trailHeld: StoredTrail? = null
 
@@ -115,13 +117,15 @@ class SettingsStore(
      * when it was made.
      *
      * Once this store has read or written the two, the answer comes from memory without waiting, so whoever asks on
-     * the main thread has it before anything else can run there. What is guaranteed: the answer is what the last
-     * change that had returned to its caller left, and a change that returns later is not in it. [settings] cannot
-     * promise that: it joins two files and gives its reader the newest contents there are by the time the reader
-     * gets to run.
+     * the main thread has it before anything else can run there. The answer is what this store last read from the
+     * file or wrote to it. Every change ([setBreadcrumbTrail], [setTrailMode]) that has returned to its caller is in
+     * it. A change that is under way when this is asked is in it or not: its value is put here just before it
+     * returns. A change that has begun its write is not stopped by its caller being cancelled, so the file and the
+     * value here do not part. [settings] gives no answer at once: it joins two files and gives its reader the newest
+     * contents there are by the time the reader gets to run.
      *
-     * Before the first read or write (for a moment after the process starts) this reads the settings file and
-     * waits for it. A file that cannot be read answers off, and the answer is not kept, so the next call reads again.
+     * Before the first read or write this reads the settings file and waits for it. A file that cannot be read
+     * answers off, and the answer is not kept, so the next call reads again.
      */
     suspend fun storedTrail(): StoredTrail = trailHeld ?: trailWrites.withLock {
         trailHeld ?: try {
@@ -160,14 +164,24 @@ class SettingsStore(
     suspend fun setBlindNavigation(on: Boolean) { store.edit { it[BLIND_NAVIGATION] = on } }
     /** Switching the breadcrumb trail off also ends laying or retracing, in the same write. The crumbs are not touched. */
     suspend fun setBreadcrumbTrail(on: Boolean) {
-        trailWrites.withLock { trailHeld = trailIn(store.edit { it[BREADCRUMB_TRAIL] = on; if (!on) it.remove(TRAIL_MODE) }) }
+        writeTrail { it[BREADCRUMB_TRAIL] = on; if (!on) it.remove(TRAIL_MODE) }
     }
     /**
      * Whether a trail is being laid or retraced. It is kept in the settings file, with the switch it depends on, so
      * it survives closing the app and is backed up and restored with the settings.
      */
     suspend fun setTrailMode(mode: TrailMode) {
-        trailWrites.withLock { trailHeld = trailIn(store.edit { if (mode == TrailMode.OFF) it.remove(TRAIL_MODE) else it[TRAIL_MODE] = mode.name }) }
+        writeTrail { if (mode == TrailMode.OFF) it.remove(TRAIL_MODE) else it[TRAIL_MODE] = mode.name }
+    }
+
+    /**
+     * One change to the trail's stored mode or switch: the write to the file and the value held in memory, as one
+     * step that a cancellation of the caller does not divide. DataStore writes on its own scope and the caller only
+     * waits for the result (`DataStoreImpl.updateData`, 1.2.1), so a caller cancelled while its write was being
+     * made would otherwise leave with the file changed and [trailHeld] as it was.
+     */
+    private suspend fun writeTrail(change: (MutablePreferences) -> Unit) {
+        trailWrites.withLock { withContext(NonCancellable) { trailHeld = trailIn(store.edit { change(it) }) } }
     }
     /**
      * What the backup agent asks, and the only answer that allows a backup is `true`. Unlike [settings] this does

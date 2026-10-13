@@ -8,6 +8,7 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.infinite8looper.compass.data.Crumb
+import com.infinite8looper.compass.data.Settings
 import com.infinite8looper.compass.data.SettingsStore
 import com.infinite8looper.compass.data.Waypoint
 import com.infinite8looper.compass.data.WaypointDatabase
@@ -58,17 +59,41 @@ data class NavUi(
     }
 }
 
+/**
+ * The settings screen's switches, as the settings file holds them. They come from the settings file alone: not from
+ * the waypoints, the crumbs or a position, so nothing that holds up [NavUi] holds up a switch.
+ */
+data class SwitchesUi(
+    val north: NorthRef = NorthRef.TRUE, val units: Units = Units.METRIC, val tickFeedback: Boolean = true,
+    val blindNavigation: Boolean = true, val breadcrumbTrail: Boolean = false, val showCoordinates: Boolean = false,
+    val backupEnabled: Boolean = true,
+)
+
 @OptIn(ExperimentalCoroutinesApi::class)
-class CompassViewModel(app: Application, val locationSource: LocationSource) : AndroidViewModel(app) {
+class CompassViewModel(
+    app: Application, val locationSource: LocationSource, private val settingsStore: SettingsStore = SettingsStore.get(app),
+) : AndroidViewModel(app) {
     constructor(app: Application) : this(app, LocationSource(app))
 
     private val database = WaypointDatabase.get(app)
     private val dao = database.waypoints()
-    private val settingsStore = SettingsStore.get(app)
     private val headingSource = HeadingSource(app)
     val supported: Boolean = headingSource.isSupported
 
     private val sharing = SharingStarted.WhileSubscribed(2_000)
+
+    /**
+     * The switches of the settings screen, or null until the settings file has been read. Nothing else is waited
+     * for: while [nav] is still [NavUi.EMPTY] because the crumbs cannot be read with the breadcrumb trail setting on,
+     * this has the stored values, the trail's switch among them, and the switch can be turned off.
+     */
+    val switches: StateFlow<SwitchesUi?> = settingsStore.settings
+        .map<Settings, SwitchesUi?> { s ->
+            SwitchesUi(s.north, s.units, s.tickFeedback, s.blindNavigation, s.breadcrumbTrail, s.showCoordinates, s.backupEnabled)
+        }
+        .distinctUntilChanged()
+        .catch { Log.w(TAG, "the switches stopped updating (" + it.javaClass.simpleName + ")") }
+        .stateIn(viewModelScope, sharing, null)
     private val permissionTick = MutableStateFlow(0)
 
     private val headingOn = MutableStateFlow(false)
@@ -232,6 +257,10 @@ class CompassViewModel(app: Application, val locationSource: LocationSource) : A
 
     init {
         refreshLocationState()
+        // A press acts on what the trail was doing when it was made, which the settings store answers from memory
+        // once it has read the two values ([SettingsStore.storedTrail]). They are read here, as the view model is
+        // made, so that the first press of a process finds them there and does not wait for the file.
+        launchQuietly("read the trail's stored mode") { settingsStore.storedTrail() }
         // Rebuilds the database file once, off the main thread, so it holds nothing of rows deleted or changed
         // by an earlier build or on another device. A failure is not fatal: the backup agent tries again.
         viewModelScope.launch(Dispatchers.IO) {
