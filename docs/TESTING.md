@@ -110,4 +110,4 @@ scripts/frame-times.sh <label>                # frame times while the heading sw
 
 ## Counts at the time of writing
 
-374 unit tests. 155 instrumented tests, run on each of `Wear_OS_API33`, `Wear_OS_API34`, `Wear_OS_Newest` and `Wear_OS_Large_Round` by `scripts/all-suites.sh` on 2026-10-13: 155 passed, 0 failed and 0 skipped on each, 620 in all. `scripts/backup-off-check.sh` on the same day, API 33, 34 and 35: 64 requirements, all held, on each.
+374 unit tests. 156 instrumented tests, run on each of `Wear_OS_API33`, `Wear_OS_API34`, `Wear_OS_Newest` and `Wear_OS_Large_Round` by `scripts/all-suites.sh` on 2026-10-13: 156 passed, 0 failed and 0 skipped on each, 624 in all. `scripts/backup-off-check.sh` on the same day, API 33, 34 and 35: 65 requirements, all held, on each.
