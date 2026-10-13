@@ -224,7 +224,9 @@ fun CompassScreen(
         while (onScreen) { value = isStale(SystemClock.elapsedRealtime(), nav.fixElapsedMs); delay(1_000) }
     }
 
+    // What the crown has scrolled toward the next step of the focus, and how far a step is on this screen's density.
     var crown by remember { mutableFloatStateOf(0f) }
+    val crownStepPx = with(LocalDensity.current) { CROWN_STEP_DP.dp.toPx() }
     val pressScope = rememberCoroutineScope()
     val sideButton = remember(pressScope) { SideButton(pressScope) }
     val sidePress by rememberUpdatedState(onSidePress)
@@ -250,8 +252,9 @@ fun CompassScreen(
             // until then a turn or a press is taken and dropped, so it reaches nothing else either.
             .onRotaryScrollEvent { e ->
                 if (paneView() == PaneView.IN_VIEW) {
-                    crown += e.verticalScrollPixels
-                    if (abs(crown) > 80f) { vm.moveFocus(if (crown > 0) 1 else -1); crown = 0f }
+                    val turn = crownTurn(crown, e.verticalScrollPixels, crownStepPx)
+                    crown = turn.carried
+                    if (turn.steps != 0) vm.moveFocus(turn.steps)
                 } else crown = 0f
                 true
             }

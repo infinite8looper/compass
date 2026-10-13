@@ -392,4 +392,33 @@ class ControlsTest {
         assertFalse(wheelTapPicks(WheelTouch.NOT_THE_WHEELS, 120, 400))
         assertFalse(wheelTapPicks(WheelTouch.UNDECIDED, -5, 400))
     }
+
+    @Test fun aCrownTurnStepsTheFocusOnceItHasGoneFurtherThanTheStep() {
+        // Small scrolls add up; nothing steps until they have gone further than the step.
+        assertEquals(CrownTurn(0, 30f), crownTurn(0f, 30f, 80f))
+        assertEquals(CrownTurn(0, 80f), crownTurn(30f, 50f, 80f))
+        assertEquals(CrownTurn(1, 0f), crownTurn(80f, 1f, 80f))
+        assertEquals(CrownTurn(-1, 0f), crownTurn(-60f, -30f, 80f))
+        // One click of a crown with detents is more than a step and is one step, with nothing left over for the next.
+        assertEquals(CrownTurn(1, 0f), crownTurn(0f, 128f, 80f))
+        assertEquals(CrownTurn(-1, 0f), crownTurn(0f, -128f, 80f))
+        assertEquals(CrownTurn(1, 0f), crownTurn(0f, 500f, 80f))
+    }
+
+    @Test fun aCrownTurnedBackStartsOverFromWhereItTurned() {
+        // 70 one way and then back: what was gathered the first way is dropped, so the turn back steps after going
+        // further than one step, not after undoing the 70 first.
+        assertEquals(CrownTurn(0, -30f), crownTurn(70f, -30f, 80f))
+        assertEquals(CrownTurn(-1, 0f), crownTurn(-30f, -51f, 80f))
+        assertEquals(CrownTurn(0, 20f), crownTurn(-79f, 20f, 80f))
+        assertEquals(CrownTurn(-1, 0f), crownTurn(70f, -81f, 80f))
+        // A scroll of nothing changes nothing.
+        assertEquals(CrownTurn(0, 70f), crownTurn(70f, 0f, 80f))
+        assertEquals(CrownTurn(0, -70f), crownTurn(-70f, 0f, 80f))
+    }
+
+    @Test fun aCrownTurnThatIsNotANumberIsDropped() {
+        assertEquals(CrownTurn(0, 40f), crownTurn(40f, Float.NaN, 80f))
+        assertEquals(CrownTurn(0, 10f), crownTurn(Float.NaN, 10f, 80f))
+    }
 }

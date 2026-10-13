@@ -1,5 +1,6 @@
 package com.infinite8looper.compass.nav
 
+import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.hypot
 import kotlin.math.sqrt
@@ -201,3 +202,27 @@ fun rowInset(yFromCenter: Float, ringRadius: Float): Float {
     val y = kotlin.math.abs(yFromCenter).coerceAtMost(ROW_INSET_MAX_Y * ringRadius)
     return ringRadius - sqrt(ringRadius * ringRadius - y * y)
 }
+
+/** What a scroll of the crown comes to on the compass: [steps] to move the focus by (1, -1 or 0), and what is [carried] to the next scroll. */
+data class CrownTurn(val steps: Int, val carried: Float)
+
+/**
+ * Takes one scroll of the crown on the compass. [carried] is what earlier scrolls have gathered without making a
+ * step, [scrolled] is this scroll and [step] is how far the crown has to go for the focus to move by one, all in the
+ * same unit and signed the same way.
+ *
+ * Scrolls the same way add up, and once they have gone further than [step] the focus moves one, that way, and the
+ * count starts again from nothing: what is left over is dropped, so one click of a crown with detents, which is
+ * more than a step, is one step however much more. A scroll the other way from what is carried drops what was
+ * carried and starts from itself: a crown that is turned back answers after one step's turn, not after first undoing
+ * the turn before. A scroll that is not a number is dropped, and so is a carried value that is not one.
+ */
+fun crownTurn(carried: Float, scrolled: Float, step: Float): CrownTurn {
+    val held = if (carried.isNaN()) 0f else carried
+    if (scrolled.isNaN() || scrolled == 0f) return CrownTurn(0, held)
+    val sum = if (held != 0f && (held > 0f) != (scrolled > 0f)) scrolled else held + scrolled
+    return if (abs(sum) > step) CrownTurn(if (sum > 0f) 1 else -1, 0f) else CrownTurn(0, sum)
+}
+
+/** How far the crown scrolls for the compass to move the focus by one target. One click of the emulators' crown is 64 dp. */
+const val CROWN_STEP_DP = 40f
