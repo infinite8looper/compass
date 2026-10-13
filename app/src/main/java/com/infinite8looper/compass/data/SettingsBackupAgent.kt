@@ -26,8 +26,10 @@ import kotlinx.coroutines.withTimeout
  * system's local transport on the API 33, 34 and 35 emulators.
  *
  * A restore of the marker's backup leaves the switch off, turned off by the wearer ([onRestoreFile],
- * [onRestoreFinished]): turning backups off holds across an install on this watch, and on another that is set up
- * from the backup or by a transfer. A restore of any
+ * [onRestoreFinished]): the switch is off after the app is installed again from that backup, or from a transfer
+ * pass made with the switch off (seen with the local transport's backup and transfer passes on one emulator at a
+ * time; no second watch was used). If the app is uninstalled before the system has made a backup with the switch
+ * off, the backup that is restored is the earlier one, with its waypoints and the switch on. A restore of any
  * other backup changes nothing about the switch, and no restore turns it on.
  */
 class SettingsBackupAgent : BackupAgent() {
@@ -81,8 +83,15 @@ class SettingsBackupAgent : BackupAgent() {
      * no write the pass hands over nothing: the records of a switch owed off are files.
      */
     private fun pass(): BackupPass {
-        val owed = restoredOptOut.owed() && read("the settings to turn the switch off after a restore") { restoredOptOut.settle(it) } != true
-        val (enabled, offByWearer) = switchForPass(read("the backup setting") { it.readBackupSwitch() } ?: (null to null), owed)
+        // One wait of at most 5 seconds for both: the settling of what a restore owes, and the read. The second
+        // decision of a pass is made with the database's transaction held, so this is also the longest that is held
+        // for it. A wait that runs out leaves what was owed owed and the switch unread, which hands over nothing.
+        var owed = restoredOptOut.owed()
+        val switch = read("the backup setting") { store ->
+            if (owed) owed = !restoredOptOut.settle(store)
+            store.readBackupSwitch()
+        } ?: (null to null)
+        val (enabled, offByWearer) = switchForPass(switch, owed)
         return backupPass(enabled, offByWearer, canWrite = storageTakesAWrite())
     }
 

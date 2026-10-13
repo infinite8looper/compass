@@ -2,6 +2,8 @@ package com.infinite8looper.compass.data
 
 import android.content.Context
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -23,7 +25,8 @@ import java.io.File
  * later choice does ([wearerSet]): once it is written, nothing is owed.
  *
  * The app has one of these for the process ([get]): the backup agent and the screens ask the same object, so they
- * cannot hold different answers, and [owedState] lets the screens follow it. [settle] and [wearerSet] run one at a
+ * ask the same records, and [owedState] lets the screens follow it; it is set where the records change and under the
+ * lock of [settle], not by [owed]. [settle] and [wearerSet] run one at a
  * time, each from start to end, so whichever comes later decides: a settling that began before the wearer's choice
  * cannot write over it. The constructor is for tests, which give it folders of their own.
  */
@@ -53,7 +56,7 @@ class RestoredOptOut(folder: File, second: File) {
     }
 
     /** Whether the switch is owed off: the marker came and the settings file has not been written since. */
-    fun owed(): Boolean = (came || records.any { it.exists() }).also { owedNow.value = it }
+    fun owed(): Boolean = came || records.any { it.exists() }
 
     /**
      * Writes what is owed to the settings file through [store]. True when nothing is owed any more; false when the
@@ -61,11 +64,17 @@ class RestoredOptOut(folder: File, second: File) {
      * only to pass a cancellation on.
      */
     suspend fun settle(store: SettingsStore): Boolean = changes.withLock {
-        // Asked with the lock held: a choice of the wearer's that came first has left nothing owed.
-        if (!owed()) return@withLock true
+        // Asked with the lock held: a choice of the wearer's that came first has left nothing owed. The watched
+        // state is set from what the records say here, under the lock, and nowhere outside it.
+        val owedHere = owed()
+        owedNow.value = owedHere
+        if (!owedHere) return@withLock true
         try {
-            store.setBackupEnabled(false)
-            clear()
+            // The write and the removing of the records are one step that a cancellation of the caller does not divide.
+            withContext(NonCancellable) {
+                store.setBackupEnabled(false)
+                clear()
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -78,8 +87,12 @@ class RestoredOptOut(folder: File, second: File) {
      * more, whichever way it was set. Throws if the write fails, and what was owed then stays owed.
      */
     suspend fun wearerSet(store: SettingsStore, on: Boolean) = changes.withLock {
-        store.setBackupEnabled(on)
-        clear()
+        // One step that a cancellation of the caller does not divide: a switch written on with the records left
+        // behind would be written off again at the next start, after the wearer's choice.
+        withContext(NonCancellable) {
+            store.setBackupEnabled(on)
+            clear()
+        }
         Unit
     }
 

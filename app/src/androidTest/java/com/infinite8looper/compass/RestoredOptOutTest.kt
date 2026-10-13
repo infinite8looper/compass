@@ -169,6 +169,29 @@ class RestoredOptOutTest {
             settling.join(); choosing.join()
             assertEquals("round $round", true to false, store.readBackupSwitch())
             assertFalse("round $round: still owed", restored.owed())
+            assertFalse("round $round: the watched state says owed with nothing owed", restored.owedState.value)
+        }
+    }
+
+    /**
+     * The wearer's turning on, cut off by a cancellation of its caller at every moment it can be, many times: the
+     * switch and the record are changed together or not at all. A switch written on with the record left behind
+     * would be written off again at the next start, after the wearer's choice.
+     */
+    @Test fun aCancellationDoesNotDivideTheWearersChoiceFromTheClearingOfTheRecord() = runBlocking {
+        val restored = RestoredOptOut(dir, second)
+        repeat(300) { round ->
+            store.setBackupEnabled(false)
+            restored.markerCame()
+            val choosing = launch(Dispatchers.Default) { restored.wearerSet(store, on = true) }
+            // Cancelled a little later each round, from at once to about three milliseconds in.
+            if (round % 30 != 0) kotlinx.coroutines.delay((round % 30) / 10L)
+            choosing.cancel(); choosing.join()
+            // A write that was under way when the caller left still lands; it is waited for by asking through the store.
+            val on = store.readBackupSwitch().first == true
+            kotlinx.coroutines.delay(20)
+            val onAfter = store.readBackupSwitch().first == true
+            assertFalse("round $round: the switch is on and the record was left (on then: $on)", onAfter && restored.owed())
         }
     }
 }

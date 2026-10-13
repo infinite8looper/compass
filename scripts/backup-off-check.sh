@@ -31,7 +31,7 @@
 # Exit status 0 if every requirement holds, 1 otherwise.
 # It wipes the app's data (it installs the app afresh several times), puts a waypoint in its database with the
 # device's sqlite3, switches the Backup Manager on with the local transport and empties that transport, and reads
-# the transport's files as root. All of that is put back when it ends, however it ends: the transport and the Backup
+# the transport's files as root. All of that is put back when it ends, and when it is stopped by INT, TERM or HUP: the transport and the Backup
 # Manager as they were, the transport's parameter removed, adbd not rooted, the app installed with its data cleared.
 # Emulators only (scripts/emulator-only.sh), and only images with `adb root` and sqlite3: API 33, 34 and 35.
 source "$(dirname "$0")/emulator-only.sh" || exit 1
@@ -234,7 +234,8 @@ need "the switch is stored off, turned off by the wearer ($(stored))" '[ "$(stor
 echo "7. the switch on again; the settings folder takes no write; the marker's backup is restored over the app:"
 with_kind none; turn_on; home_and_end
 $ADB shell "run-as $PKG chmod 500 files/datastore"
-need "the settings folder takes no write" '! $ADB shell "run-as $PKG sh -c \"echo x > files/datastore/probe\"" > /dev/null 2>&1 || ! $ADB shell "run-as $PKG ls files/datastore" | grep -q probe'
+mode=$($ADB shell "run-as $PKG ls -ld files/datastore" | tr -d '\r' | awk '{ print $1 }')
+need "the settings folder takes no write ($mode)" '[ "$mode" = "dr-x------" ]'
 token=$($ADB shell bmgr list sets 2>&1 | tr -d '\r' | grep -o '[0-9a-f]* *:' | head -1 | tr -d ' :')
 echo "  bmgr restore $token: $($ADB shell bmgr restore $token $PKG 2>&1 | tr -d '\r' | tr '\n' ' ')"; sleep 6
 left=$(listing)
@@ -251,6 +252,8 @@ need "and the record is gone ($(listing))" '[[ "$(listing)" == *LISTED* ]] && [[
 echo "8. the switch on; the app's files folder takes no write; an encrypted backup:"
 with_kind none; turn_on; home_and_end
 $ADB shell "run-as $PKG chmod 500 files"
+mode=$($ADB shell "run-as $PKG ls -ld files" | tr -d '\r' | awk '{ print $1 }')
+need "the files folder takes no write ($mode)" '[ "$mode" = "dr-x------" ]'
 with_kind encrypted; r=$(backup); echo "  backup: $r"; read_transport
 need "nothing was handed over" '[ "$r" != "Success" ] && [ "$names" = "0" ] && [[ "$entries" != *waypoints.db* ]]'
 $ADB shell "run-as $PKG chmod 700 files"
