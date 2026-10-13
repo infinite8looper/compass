@@ -93,6 +93,8 @@ Crumbs are stored separately from waypoints, are never listed with them except a
 
 `Calibrate` shows the accuracy the magnetometer last reported (`High`, `Medium`, `Low`, `Unreliable`) and opens the calibration screen: a figure-8 guide, the accuracy level, the field strength in microtesla, a frame that fills by quarters as accuracy improves, and a warning with the frame filled in the error color while the field is below 25 or above 65 microtesla. The last line shows the version and `MIT License`.
 
+The text of the settings, the waypoints list, the edit screen and the calibration screen follows the system's font size (on the emulators the setting has six steps, from 0.94 to 1.24; a scale outside 0.85 to 1.24 is drawn at the nearer end). The compass's text does not: it is sized from the dial.
+
 Turning on `Show coordinates` without location access asks for it; if precise location is not granted the switch stays off and `Needs access to precise location` shows under it.
 
 ## Backup

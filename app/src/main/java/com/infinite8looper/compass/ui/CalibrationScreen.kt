@@ -8,11 +8,14 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -30,7 +33,10 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.wear.compose.material3.LocalTextStyle
 import androidx.wear.compose.material3.Text
 import com.infinite8looper.compass.CompassViewModel
 import com.infinite8looper.compass.nav.accuracyLabel
@@ -80,15 +86,19 @@ fun CalibrationScreen(vm: CompassViewModel) {
         val density = LocalDensity.current
         val smallStyle = remember(r, density) { density.instrumentText(r * 0.09f, align = TextAlign.Center) }
         val wordStyle = remember(r, density) { density.instrumentText(r * 0.24f, FontWeight.Light, TextAlign.Center) }
-        val warningStyle = remember(r, density) { density.instrumentText(r * 0.085f, align = TextAlign.Center) }
+        // The warning is drawn by the text that can make itself smaller, which takes nothing from the theme; given
+        // the theme's style under its own, its lines break where the other lines' do.
+        val themeStyle = LocalTextStyle.current
+        val warningStyle = remember(r, density, themeStyle) { themeStyle.merge(density.instrumentText(r * 0.085f, align = TextAlign.Center)) }
 
         // The level and the interference change about once a second at most, and the ring with them.
         FrameRing(fill = { filled.value }, fillColor = if (ring.role == RingRole.ERROR) ErrorColor else ConfirmColor, fillInner = FILL_INNER)
 
-        Text(
-            "Move your wrist in a figure 8", color = Dim, style = smallStyle, maxLines = 2,
-            modifier = Modifier.offset(y = r * GUIDE_TEXT_Y).width(r * 1.2f),
-        )
+        // The line stands on its lower edge: where a larger font size puts it on two lines, the second line is
+        // where the one line was and the first is above it, clear of the figure 8 below.
+        Box(Modifier.offset(y = r * (GUIDE_TEXT_BOTTOM - GUIDE_TEXT_ROOM / 2f)).width(r * 1.2f).height(r * GUIDE_TEXT_ROOM), Alignment.BottomCenter) {
+            Text("Move your wrist in a figure 8", color = Dim, style = smallStyle, maxLines = 2)
+        }
         Canvas(Modifier.offset(y = r * GUIDE_Y).width(r * 0.84f).height(r * 0.26f)) {
             // A lemniscate traced as x = sin t, y = sin t cos t.
             fun at(t: Float) = Offset(center.x + size.width * 0.45f * sin(t), center.y + size.height * 0.85f * sin(t) * cos(t))
@@ -111,22 +121,29 @@ fun CalibrationScreen(vm: CompassViewModel) {
             Text("Field: $field µT", color = Dim, style = smallStyle, maxLines = 1, modifier = Modifier.offset(y = r * FIELD_Y))
         }
         if (shown.interference) {
-            Text(
+            // The warning has three lines' room where it stands. At a font size where its words need a fourth it
+            // is drawn smaller, until the three hold it.
+            BasicText(
                 "Magnetic interference nearby. Move away from chargers, magnets and steel.",
-                color = ErrorColor, style = warningStyle, maxLines = 3,
-                modifier = Modifier.offset(y = r * WARNING_Y).width(r * WARNING_WIDTH).semantics { liveRegion = LiveRegionMode.Polite },
+                Modifier.offset(y = r * WARNING_Y).width(r * WARNING_WIDTH).semantics { liveRegion = LiveRegionMode.Polite },
+                remember(warningStyle, density) { density.autoSizeStyle(warningStyle) }, maxLines = 3, overflow = TextOverflow.Ellipsis, color = { ErrorColor },
+                autoSize = with(density) { TextAutoSize.StepBased(autoSizeUnit(warningStyle.fontSize.toDp() * WARNING_SMALLEST), autoSizeUnit(warningStyle.fontSize.toDp()), stepSize = autoSizeUnit(0.25.dp)) },
             )
         }
     }
 }
 
 // Where things stand, in radii below the center (negative: above it), each by its middle.
-private const val GUIDE_TEXT_Y = -0.54f
+/** The lower edge of the line that says what to do, and the height kept for its one or two lines above that. */
+private const val GUIDE_TEXT_BOTTOM = -0.488f
+private const val GUIDE_TEXT_ROOM = 0.30f
 private const val GUIDE_Y = -0.30f
 private const val WORD_Y = 0.01f
 private const val FIELD_Y = 0.22f
 private const val WARNING_Y = 0.49f
 private const val WARNING_WIDTH = 1.3f
+/** How small the warning is drawn, as a share of its size, to keep it on its three lines. */
+private const val WARNING_SMALLEST = 0.75f
 
 /** The accuracy's fill reaches in from the frame's outer edge to this fraction of the radius. */
 private const val FILL_INNER = 0.92f

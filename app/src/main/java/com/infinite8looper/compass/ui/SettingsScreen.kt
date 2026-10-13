@@ -181,6 +181,10 @@ fun SettingsScreen(vm: CompassViewModel, paneView: () -> PaneView, onCalibrate: 
     }
 }
 
+/** How many lines a switch's label may take, and how many more its smaller line may take than it has at the default font size. */
+private const val LABEL_LINES = 2
+private const val DETAIL_SPARE_LINES = 1
+
 /** What the rows show before the settings file has been read; no row takes a tap then. */
 private val UnreadSwitches = SwitchesUi()
 
@@ -203,11 +207,13 @@ private fun SwitchRow(
         fitContent = true, trailing = { TickToggle(on) },
     ) {
         Column {
+            // At the default font size each of these is one line in the width a row has in the middle of the
+            // screen. At a larger one a line that no longer fits goes on to the next, and the row is taller for it.
             Text(
                 label, color = if (on) Ink else Dim, style = if (on) styles.labelOn else styles.label,
-                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                maxLines = LABEL_LINES, overflow = TextOverflow.Ellipsis,
             )
-            Text(detail, color = detailColor, style = styles.detail, maxLines = detailLines, overflow = TextOverflow.Ellipsis)
+            Text(detail, color = detailColor, style = styles.detail, maxLines = detailLines + DETAIL_SPARE_LINES, overflow = TextOverflow.Ellipsis)
         }
     }
 }

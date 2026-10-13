@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -75,7 +76,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.wear.compose.foundation.requestFocusOnHierarchyActive
 import androidx.wear.compose.material3.Text
@@ -273,7 +273,7 @@ private fun EditWaypoint(vm: CompassViewModel, w: Waypoint, leave: () -> Unit) {
         val density = LocalDensity.current
         val labelStyle = remember(r, density) { density.instrumentText(r * 0.105f, align = TextAlign.Center) }
         val nameStyle = remember(r, density) { density.instrumentText(r * 0.17f, FontWeight.Light, TextAlign.Center) }
-        val smallNameStyle = remember(nameStyle) { nameStyle.copy(fontSize = nameStyle.fontSize * NAME_SMALLEST) }
+        val smallNameStyle = remember(r, density) { density.instrumentText(r * 0.17f * NAME_SMALLEST, FontWeight.Light, TextAlign.Center) }
         // Whether the name is too long for two lines at the smallest size, measured the way it would be drawn in the
         // width the row leaves it.
         val measurer = rememberTextMeasurer()
@@ -295,7 +295,9 @@ private fun EditWaypoint(vm: CompassViewModel, w: Waypoint, leave: () -> Unit) {
                 .toggleable(w.isTarget, role = Role.Switch) { vm.setTarget(id, it) },
         )
         Row(
-            Modifier.width(r * NAME_ROW_WIDTH).height(HitHeight)
+            // As tall as a touch needs, and taller for a name whose two lines need more at a large font size: up to
+            // the room between the two rows above and below it.
+            Modifier.width(r * NAME_ROW_WIDTH).heightIn(min = HitHeight, max = maxOf(HitHeight, r * (2f * ROW_Y) - HitHeight))
                 .clickable(role = Role.Button, onClickLabel = "Rename", onClick = rename),
             Arrangement.Center, Alignment.CenterVertically,
         ) {
@@ -305,8 +307,10 @@ private fun EditWaypoint(vm: CompassViewModel, w: Waypoint, leave: () -> Unit) {
             // line at the smallest size and slides back and forth there. The row around it is what is tapped.
             if (nameSlides) MarqueeText(w.name, smallNameStyle, { Ink }, Modifier.weight(1f, fill = false))
             else BasicText(
-                w.name, Modifier.weight(1f, fill = false), nameStyle, maxLines = 2, overflow = TextOverflow.Ellipsis, color = { Ink },
-                autoSize = TextAutoSize.StepBased(minFontSize = smallNameStyle.fontSize, maxFontSize = nameStyle.fontSize, stepSize = 0.5.sp),
+                w.name, Modifier.weight(1f, fill = false), remember(nameStyle, density) { density.autoSizeStyle(nameStyle) }, maxLines = 2, overflow = TextOverflow.Ellipsis, color = { Ink },
+                autoSize = with(density) {
+                    TextAutoSize.StepBased(autoSizeUnit(smallNameStyle.fontSize.toDp()), autoSizeUnit(nameStyle.fontSize.toDp()), stepSize = autoSizeUnit(0.5.dp))
+                },
             )
         }
         var place by remember { mutableStateOf<LayoutCoordinates?>(null) }
