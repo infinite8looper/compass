@@ -44,7 +44,7 @@ names = {"16": "CONFIRM", "6": "CONTEXT_CLICK", "27": "SEGMENT_FREQUENT_TICK", "
 kinds = {"16": "lock", "6": "heartbeat", "27": "tick", "4": "tick"}
 def kind(constant, what):
     if constant: return kinds.get(constant, "other")
-    played = re.findall(r"Primitive[={](?:primitive=)?([A-Z_]+)", what)
+    played = re.findall(r"Primitive[={](?:primitive=)?(?:PRIMITIVE_)?([A-Z_]+)", what)
     if played == ["TICK"]: return "thin"
     if played == ["THUD"]: return "thick"
     if played == ["CLICK", "CLICK"]: return "target"

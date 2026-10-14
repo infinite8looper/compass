@@ -64,7 +64,7 @@ class DialVibrationsTest {
     /** The primitives a recorded line says were played, by name, in order (the line's effect only, not the original). */
     private fun playedPrimitives(line: String): List<String> {
         val effect = line.substringBefore("original")
-        return Regex("Primitive[={](?:primitive=)?([A-Z_]+)").findAll(effect).map { it.groupValues[1] }.toList()
+        return Regex("Primitive[={](?:primitive=)?(?:PRIMITIVE_)?([A-Z_]+)").findAll(effect).map { it.groupValues[1] }.toList()
     }
 
     private fun supportedOnThisWatch(feel: Feel): Boolean {
