@@ -40,7 +40,10 @@ import org.junit.runner.RunWith
  * again, which is read from the system's accessibility tree.
  *
  * The settings that would bring position fixes (the breadcrumb trail, the coordinates) are off, so nothing but the
- * turning changes what the screens show while the counts are compared.
+ * turning changes what the screens show while the counts are compared. Since v3 location also runs while the
+ * compass or the waypoints screen is on screen ("Location runs whenever the compass or the waypoints screen is on
+ * screen"), and each position changes what those screens show, so the test that counts compositions switches the
+ * watch's location off for its run, before the app starts, and back on after.
  */
 @RunWith(AndroidJUnit4::class)
 class RingScreensTest {
@@ -181,7 +184,16 @@ class RingScreensTest {
         assertTrue("the list took no scroll at all; on screen: ${wordsOnScreen()}", steps > 0)
     }
 
+    private fun shellRun(command: String) =
+        android.os.ParcelFileDescriptor.AutoCloseInputStream(instrumentation.uiAutomation.executeShellCommand(command)).readBytes()
+
     @Test fun aTurnOfTheRingBuildsNoScreenAndComposesNone() = runBlocking {
+        // No position comes while the counts are compared: location is switched off on the watch for this test.
+        shellRun("settings put secure location_mode 0")
+        try { turnOfTheRingBuildsNoScreenAndComposesNone() } finally { shellRun("settings put secure location_mode 3") }
+    }
+
+    private suspend fun turnOfTheRingBuildsNoScreenAndComposesNone() {
         // The counters are the process's, and an earlier test's activity has counted in them: what this activity
         // builds is counted from here.
         val builtBefore = ScreenCompositions.built.toList()

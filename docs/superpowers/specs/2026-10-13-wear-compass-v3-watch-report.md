@@ -79,12 +79,28 @@ As built (Task 2, 2026-10-13):
 - A crumb follows the same rule.
 - The pure decision (use in hand, wait, refine or not) lives in `nav/` and is unit-tested first.
 
+As built (Task 3, 2026-10-14):
+
+- The position in hand is the latest position the view model's own location updates gave (`inHand`), with its own time on the clock that counts from boot; its age is the press's time on that clock minus the position's. The fused provider's last known location is not used. `positionToSaveAtOnce`, `refines`, `refineWindowLeftMs` and `refinementMayWrite` in `nav/Navigation.kt` decide; a position with no accuracy is not saved at once.
+- With a position in hand the status is `Saving…` with that accuracy from the press until the row is written, then `Saved …`; on the API 35 emulator the row was written 6 to 50 ms after the press. The last position is stored after the row, without being waited for.
+- During the 10 seconds the app asks for positions once a second. A replacement is written under the lock the edits take, from the row as it is then, and only while the row still holds the position the save (or the last replacement) wrote: a delete or a change of position ends it, a new name or color does not. The status of the press takes the new accuracy while it still shows. A second save in the 10 seconds is a row of its own, and each row is refined.
+- The vibration at the press is `HapticFeedbackConstants.VIRTUAL_KEY`, played before the permission or a position is asked for, on every route but the double pinch, whose library plays its own. On an instant save the confirming vibration comes about 40 ms later and cuts it short on the emulator.
+- In the debug and watch builds (`BuildConfig.DIAGNOSTICS`) each save logs one line under the tag `CompassSave` when its listening has ended: milliseconds from the press to the row written, whether the position was in hand or waited for, its age at the press and its accuracy, and whether it was refined and to what accuracy. No coordinates and no name.
+- The emulator's GNSS gives every position an accuracy of 5 m, so a more accurate position was handed to the view model in the tests rather than fed through the geo console.
+
 ## Location while the app is on screen
 
 - With the precise permission held, location updates run while the compass or the waypoints screen is in view, at the present interval, and stop when neither is.
 - The declination is known as soon as one position is. With true north selected and no position stored, the first position is asked for at once.
 - Selecting `True` in the north setting without the permission opens the system's permission dialog once; declining leaves the setting on true and the dial on magnetic with `MAG`.
 - The screen-awake rule does not change: this does not keep the screen on.
+
+As built (Task 3, 2026-10-14):
+
+- The screens are a reason for location while the app is started (on screen), the three screens are on top and the compass or the waypoints screen is on screen, at rest or passing in a swipe (`screensWantLocation`, `nav/Panes.kt`). Whether the app is on screen is taken from each lifecycle event as it comes. Tested exits: a swipe to settings, the edit screen, calibration, Home, and the screen put to sleep.
+- True north is a reason for location while it is selected and no position has ever been stored (`trueNorthWantsPosition`), on any screen while the app is on screen. Once the first position is stored it is no reason any more, and the declination comes from the stored position.
+- `MAG` and the heading's magnetic state come from one rule, `dialIsMagnetic`.
+- Switching `True north` on without the precise permission opens the system's dialog after the setting is stored; the answer only refreshes the permission state. This path was checked by hand on an emulator, not by an instrumented test: a test process cannot give up a permission it holds without being ended.
 
 ## Vibrations
 

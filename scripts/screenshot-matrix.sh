@@ -5,6 +5,8 @@
 # this order; each section sets up what it needs, so any one can be run by itself:
 #   permission   the location dialog; `Needs access to precise location` on the compass, the waypoints band and the
 #                settings row (only approximate location granted); the compass before any position (`MAG`)
+#   truenorth    `True north` switched off and on again without the permission: the system's dialog, the switch on
+#                after `Don't allow`, the compass magnetic with `MAG`
 #   compass      clean; targets; facing; magnetic north and meters; eight colors of the ring; thirty targets;
 #                `No target`; `Arrived at target`; an old distance; `Location is off`; `Locating…`
 #   moving       hold-flat without and with a target (four frames each); a name sliding on the compass, in the list
@@ -191,6 +193,15 @@ sec_permission() {
   sleep 1.5; find_row "Show coordinates" > /dev/null; shot settings-needs-access
   from_settings
 }
+sec_truenorth() {
+  pkill -f geo-feed.sh; fresh; magnetic 40; sleep 8
+  to_settings
+  setting "True north" off || return 1
+  tap_row "True north" || return 1; sleep 2.5; shot truenorth-dialog
+  dialog_choice "Don't allow" || return 1; sleep 1.5
+  find_row "True north" > /dev/null; shot truenorth-declined-settings
+  from_settings; sleep 3; shot truenorth-declined-compass
+}
 sec_compass() {
   fresh granted; feed $HERE_LAT $HERE_LON; sleep 8
   seed $THREE; face 290; shot compass-targets
@@ -226,7 +237,8 @@ sec_log() {
   app_stop; app_start; sleep 1.2; press; sleep 0.9; shot log-saving          # before the session's first fix
   shot_when log-saved $GREEN 50 72 40
   for try in 1 2 3 4; do      # a press followed at once by Home, with location off while the app is off screen:
-    sleep 4                   # no position reaches the save in its 20 seconds, and its result waits for the return
+    sleep 4                   # no position reaches the save in its 20 seconds, and its result waits for the return.
+    app_stop; app_start; sleep 1.2      # a new process holds no position, so the press waits for one (v3: one in hand is saved at once)
     $ADB shell "input tap $C $TAP_Y; sleep 0.1; input tap $C $TAP_Y; input keyevent KEYCODE_HOME; settings put secure location_mode 0"; sleep 23
     location on; sleep 1; app_start; shot_when log-no-gps-fix $RED 50 72 2> /dev/null && break
     [ $try = 4 ] && echo "  log-no-gps-fix-$SUF.png  NOT CAUGHT in four tries (a fix reached the app before it left the screen each time)" >&2
@@ -332,7 +344,7 @@ sec_panes() {
   sleep 2
 }
 
-ALL=(permission compass moving log coords trail waypoints edit settings calibration panes)
+ALL=(permission truenorth compass moving log coords trail waypoints edit settings calibration panes)
 [ $# -eq 0 ] && set -- $ALL
 for s in "$@"; do
   if [[ ${ALL[(i)$s]} -gt ${#ALL} ]]; then echo "no section '$s' (sections: $ALL)" >&2; exit 1; fi

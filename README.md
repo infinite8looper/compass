@@ -47,7 +47,7 @@ A screen reader is given saving as an action of the dial named `Save waypoint he
 ## Compass
 
 - The dial turns so its north points to north: fine ticks every 2 degrees, heavier ticks every 30, degree labels outside the ticks, N, E, S and W inside, a north tick, and a fixed pointer at 12 o'clock. The heading is shown as a whole number in the middle. `MAG` shows when the dial is on magnetic north.
-- True or magnetic north is a setting. True north uses the declination for the last known position; with no position ever known, the dial shows magnetic north and `MAG`.
+- True or magnetic north is a setting. True north uses the declination for the last known position; with no position ever known, the dial shows magnetic north and `MAG` until the first position comes. With true north selected, the location permission held and no position ever stored, the app asks for a position at once, on any of the three screens. Switching `True north` on without the permission opens the system's permission dialog, once for that switch; if it is declined the setting stays on and the dial stays magnetic with `MAG`.
 - When the watch is tilted steeply (it begins past 70 degrees and ends below 60), the heading is not taken: the dial dims and a looping drawing of a watch turning level appears with `Hold flat`.
 - The `Calibrate` prompt appears when the magnetometer reports low or unreliable accuracy, and opens the calibration screen.
 - With `Show coordinates` on, the latitude (for example `43.7022° N`) is at the top of the readout and the longitude (`72.2896° W`) at the bottom. They are not shown in the hold-flat state or without the location permission. Before a position is known the latitude is absent and the longitude's place shows `Locating…`, or `Location is off` with location switched off, unless the distance's row or a logging result already says why there is no position.
@@ -56,9 +56,11 @@ A screen reader is given saving as an action of the dial named `Save waypoint he
 
 ## Saving a waypoint
 
-A double tap on the compass saves the current position without leaving the screen, and so does `Log here` on the waypoints screen. The status under the heading reads `Saving…` with the accuracy, then `Saved Waypoint N` in green with a confirming tap, or a failure in the error color: `No GPS fix`, `Location is off`, `Needs access to precise location`, or `Couldn't save`.
+A double tap on the compass saves the current position without leaving the screen, and so does `Log here` on the waypoints screen. Every press that saves (the double tap, the dial's accessibility action, a side button where there is one, `Log here`, `Drop crumb`) is answered with a vibration (the system's `VIRTUAL_KEY` haptic feedback) before anything else; the double pinch is not, since the gesture library plays its own. The status under the heading then reads `Saved Waypoint N` in green with its accuracy and a confirming tap, or a failure in the error color: `No GPS fix`, `Location is off`, `Needs access to precise location`, or `Couldn't save`.
 
-- A fix with accuracy of 15 m or better is saved at once. After 20 seconds the best fresh fix is saved, or `No GPS fix` is shown when there is none. A fix from before the press is never saved.
+- With a position in hand that is not older than 10 seconds at the press (the latest position the app's own location updates gave), that position is written at once with the accuracy it states, however poor, and the status says saved. On the API 35 emulator the row was written 6 to 50 ms after the press. For 10 seconds after the press the app listens for positions once a second, and a position stating a smaller error replaces the waypoint's position and accuracy in place, once or more. It stops for a waypoint that has been deleted, or whose position has been changed, and never writes a deleted one back. A new name or color stays.
+- With no such position in hand the status reads `Saving…` with the accuracy, a fix with accuracy of 15 m or better taken after the press is saved, and after 20 seconds the best fix taken after the press is saved, or `No GPS fix` is shown when there is none.
+- In the debug and watch builds each save writes one line to the log (tag `CompassSave`): milliseconds from the press to the row written, the age and accuracy of the position used, and whether a more accurate one replaced it. No coordinates.
 - The first press asks for precise and approximate location; if only approximate is granted, nothing is saved and `Needs access to precise location` shows.
 - New waypoints are named `Waypoint N`, are targets, and get a color automatically.
 
@@ -69,6 +71,7 @@ A double tap on the compass saves the current position without leaving the scree
 - The distance is under the heading, in meters and kilometers or feet and miles. A target under 10 m (30 ft) away shows `Arrived at target` and has no line or arrow; it counts as left again only beyond 12 m (36 ft). A distance from a fix more than 20 seconds old is marked `(old)`.
 - When the heading is within 2 degrees of the focused target (held until it is more than 3 degrees off), its line is drawn thicker at 12 o'clock.
 - While a target exists, the location permission is held and the app is on screen, position updates come about every 5 seconds, on any of the three screens. The screen stays awake while a target exists and the compass is in view, with or without a position.
+- With the location permission held, position updates also run about every 5 seconds while the compass or the waypoints screen is on screen (at rest, or passing in a swipe), with or without a target, so that a press nearly always finds a position in hand. They stop on settings, under the edit and calibration screens, at Home and with the screen off. This does not keep the screen awake. It costs battery while the app is open; how much was not measured.
 - Targets and the focus are stored and survive closing the app.
 
 ## Blind navigation
