@@ -220,13 +220,26 @@ class RingScreensTest {
             assertEquals("screens built when the app has opened (settings, compass, waypoints)", listOf(1, 1, 1), before.built.zip(builtBefore) { now, then -> now - then })
 
             // A whole turn by touch: three swipes to the left come round to the compass again.
-            for (pane in listOf(Pane.WAYPOINTS, Pane.SETTINGS, Pane.COMPASS)) { swipe(toTheLeft = true); showsPane(pane) }
+            // On the waypoints screen a new position is waited for, so positions arrive during the turns whatever
+            // their timing: one on each turn.
+            suspend fun aNewPosition() {
+                val had = vm.nav.value.fixElapsedMs
+                assertNotNull("no new position came on the waypoints screen; screen state changes: $changes",
+                    withTimeoutOrNull(15_000) { vm.nav.first { it.fixElapsedMs != null && it.fixElapsedMs != had } })
+            }
+            for (pane in listOf(Pane.WAYPOINTS, Pane.SETTINGS, Pane.COMPASS)) {
+                swipe(toTheLeft = true); showsPane(pane)
+                if (pane == Pane.WAYPOINTS) aNewPosition()
+            }
             val afterSwipes = counts(scenario)
             assertEquals("screens built, after a turn by three swipes (settings, compass, waypoints)", before.built, afterSwipes.built)
             assertEquals("compositions of each screen, after a turn by three swipes (settings, compass, waypoints); screen state changes: $changes", before.composed, afterSwipes.composed)
 
             // A whole turn the other way, as the app itself slides: three Backs.
-            for (pane in listOf(Pane.SETTINGS, Pane.WAYPOINTS, Pane.COMPASS)) { instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK); showsPane(pane) }
+            for (pane in listOf(Pane.SETTINGS, Pane.WAYPOINTS, Pane.COMPASS)) {
+                instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK); showsPane(pane)
+                if (pane == Pane.WAYPOINTS) aNewPosition()
+            }
             val afterBacks = counts(scenario)
             assertEquals("screens built, after a turn by three Backs (settings, compass, waypoints)", before.built, afterBacks.built)
             assertEquals("compositions of each screen, after a turn by three Backs (settings, compass, waypoints); screen state changes: $changes", before.composed, afterBacks.composed)
