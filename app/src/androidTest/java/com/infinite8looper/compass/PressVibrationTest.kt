@@ -85,7 +85,11 @@ class PressVibrationTest {
         // The system adds a vibration to its record when it has ended (played out, or cut short by the next one).
         delay(1_500)
         val lines = vibrations(markMs, writtenAtMs)
-        val press = if (Build.VERSION.SDK_INT >= 35) lines.filter { "performHapticFeedback(constant=1)" in it } else lines
+        // API 35 and later name the constant (1, VIRTUAL_KEY). API 33 and 34 record only the effect, which for the
+        // press is one tick primitive at full scale; the dial's thin line is a tick at half scale and the confirming
+        // vibration two thuds, so neither is taken for it.
+        val press = if (Build.VERSION.SDK_INT >= 35) lines.filter { "performHapticFeedback(constant=1)" in it }
+        else lines.filter { "segments=[Primitive{primitive=PRIMITIVE_TICK, scale=1.0, delay=0}]" in it }
         assertTrue(
             "$route: no vibration from the press at ${stampOf(markMs)} to the row written at ${stampOf(writtenAtMs)}; recorded then: $lines; " +
                 "recorded in the minute before and after: ${vibrations(markMs - 60_000, writtenAtMs + 60_000)}",

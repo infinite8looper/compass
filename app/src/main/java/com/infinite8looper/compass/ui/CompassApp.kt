@@ -143,25 +143,23 @@ fun CompassApp() {
     // there finds a position in hand ([screensWantLocation]). Settings at rest, a screen opened from a row, Home and
     // the screen going off all end it. Whether the app is on screen is taken from the lifecycle as each change of it
     // is announced, as for the trail above: no recomposition comes once the activity has stopped.
-    val locationScreens = remember(panes) {
-        derivedStateOf {
-            val page = panes.currentPage
-            topScreen(route?.destination?.route) to (
-                paneOnScreen(Pane.COMPASS, page, panes.currentPageOffsetFraction, panes.targetPage, panes.isScrollInProgress) to
-                    paneOnScreen(Pane.WAYPOINTS, page, panes.currentPageOffsetFraction, panes.targetPage, panes.isScrollInProgress)
-                )
-        }
+    // Two derived booleans: during a swipe they are worked out each frame and make nothing.
+    val compassForLocation = remember(panes) {
+        derivedStateOf { paneOnScreen(Pane.COMPASS, panes.currentPage, panes.currentPageOffsetFraction, panes.targetPage, panes.isScrollInProgress) }
     }
+    val waypointsForLocation = remember(panes) {
+        derivedStateOf { paneOnScreen(Pane.WAYPOINTS, panes.currentPage, panes.currentPageOffsetFraction, panes.targetPage, panes.isScrollInProgress) }
+    }
+    val topForLocation = remember { derivedStateOf { topScreen(route?.destination?.route) } }
     val locationScope = rememberCoroutineScope()
-    DisposableEffect(vm, lifecycle, locationScreens) {
+    DisposableEffect(vm, lifecycle, panes) {
         var appOnScreen = false
         fun tell() {
-            val (top, onScreen) = locationScreens.value
-            vm.setScreensWantLocation(screensWantLocation(top, onScreen.first, onScreen.second, appOnScreen))
+            vm.setScreensWantLocation(screensWantLocation(topForLocation.value, compassForLocation.value, waypointsForLocation.value, appOnScreen))
         }
         val observer = LifecycleEventObserver { _, event -> appOnScreen = event.targetState.isAtLeast(Lifecycle.State.STARTED); tell() }
         lifecycle.addObserver(observer)
-        val screens = snapshotFlow { locationScreens.value }
+        val screens = snapshotFlow { screensWantLocation(topForLocation.value, compassForLocation.value, waypointsForLocation.value, appOnScreen = true) }
         val following = locationScope.launch { screens.collect { tell() } }
         onDispose {
             following.cancel()

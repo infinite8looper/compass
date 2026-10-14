@@ -98,6 +98,20 @@ class InstantSaveTest {
         return vm.logStatus.value as? LogStatus.Saved ?: throw AssertionError("not saved: ${vm.logStatus.value}")
     }
 
+    private fun shell(command: String): String = android.os.ParcelFileDescriptor.AutoCloseInputStream(
+        androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command),
+    ).bufferedReader().readText()
+
+    /** Location off for 11 s and on again: no position from any source is 10 s old or newer at the press that follows. */
+    private suspend fun noPositionInHand() {
+        shell("settings put secure location_mode 0")
+        try { delay(11_000) } finally { shell("settings put secure location_mode 3") }
+    }
+
+    /** The GPS provider's request as the system last set it, from `dumpsys location`: its interval and whose it is. */
+    private fun gpsRequest(): String =
+        shell("dumpsys location").lines().lastOrNull { "gps provider request = " in it }?.substringAfter("gps provider request = ")?.trim() ?: "none"
+
     private fun fixNow(at: GeoPoint, accuracyM: Float) = Fix(at, accuracyM, 160f, SystemClock.elapsedRealtime())
 
     @Test fun aPositionInHandIsWrittenAtOnceWithItsOwnAccuracy() = runBlocking {
@@ -134,7 +148,9 @@ class InstantSaveTest {
             val vm = holdingAPosition()
             withContext(Dispatchers.Main) { vm.setScreensWantLocation(false) }
             withTimeout(10_000) { vm.nav.first { it.fixElapsedMs == null } }
-            delay(11_000)
+            // No position from any source for over 10 s: the view model's own and the location provider's last known
+            // position are both older than that at the press.
+            noPositionInHand()
             val pressedAt = SystemClock.elapsedRealtime()
             val (atOnce, job) = press(vm)
             assertEquals(LogStatus.Saving(null), atOnce)
@@ -265,6 +281,62 @@ class InstantSaveTest {
             vm.offerRefinement(fixNow(best, 0.3f))
             assertNull(crumbDao.get(crumb.id))
             assertTrue(crumbDao.all().isEmpty())
+        }
+    }
+
+    /**
+     * A view model that holds no position of its own (no screen has told it to run location) takes the location
+     * provider's last known position, which the app's own activity keeps fresh on the compass, as in hand.
+     */
+    @Test fun theLocationProvidersLastKnownPositionIsInHand() = runBlocking {
+        ActivityScenario.launch(MainActivity::class.java).use {
+            // The activity's compass runs location, so the provider's last known position is a second or two old.
+            delay(8_000)
+            val vm = withContext(Dispatchers.Main) { CompassViewModel(app) }
+            assertNull(vm.nav.value.fixElapsedMs)
+            val seen = CopyOnWriteArrayList<LogStatus>()
+            collectors += CoroutineScope(Dispatchers.Main).launch { vm.logStatus.collect { seen += it } }
+            val pressedAt = SystemClock.elapsedRealtime()
+            val saved = savedNow(vm, press(vm).second)
+            Log.i("InstantSaveTest", "saved from the last known position ${SystemClock.elapsedRealtime() - pressedAt} ms after the press")
+            assertTrue("a position ${pressedAt - saved.fixElapsedMs} ms old at the press", saved.fixElapsedMs < pressedAt && pressedAt - saved.fixElapsedMs <= 10_000)
+            // Saving without an accuracy until the last known position was read, then with its accuracy.
+            assertTrue("$seen", LogStatus.Saving(saved.accuracyM) in seen)
+        }
+    }
+
+    /**
+     * The refinement's own listening, not a position handed to it: after a save from a position in hand the view
+     * model asks for a position every second (the GPS provider's request, as `dumpsys location` shows it, is the
+     * app's at 1 s), and after the ten seconds it asks only every 5 s again. On the API 37 image, whose positions vary
+     * in accuracy, a more accurate one that comes in the ten seconds replaces the saved one; the others report every
+     * position at 5 m, where none can be more accurate.
+     */
+    @Test fun afterASaveFromAPositionInHandTheViewModelListensEverySecondForTenSeconds() = runBlocking {
+        ActivityScenario.launch(MainActivity::class.java).use {
+            // An earlier test's save may still be listening: its ten seconds are let pass.
+            delay(REFINE_WITHIN_MS + 1_000)
+            val vm = holdingAPosition()
+            var refined = false
+            repeat(if (android.os.Build.VERSION.SDK_INT >= 37) 6 else 1) {
+                if (refined) return@repeat
+                justAfterAPosition(vm)
+                val pressedAt = SystemClock.elapsedRealtime()
+                val saved = savedNow(vm, press(vm).second)
+                val id = dao.observeAll().first().maxBy { it.createdAt }.id
+                delay(2_500)
+                val during = gpsRequest()
+                assertTrue("during the ten seconds: $during", "@+1s0ms" in during && "com.infinite8looper.compass" in during)
+                // Watched until the ten seconds are over: does a position from the emulator replace the saved one?
+                while (SystemClock.elapsedRealtime() < pressedAt + REFINE_WITHIN_MS + 500) {
+                    if (dao.get(id)!!.accuracyM < saved.accuracyM) refined = true
+                    delay(100)
+                }
+                delay(2_500)
+                val after = gpsRequest()
+                assertTrue("after the ten seconds: $after", "@+1s0ms" !in after && "com.infinite8looper.compass" in after)
+            }
+            if (android.os.Build.VERSION.SDK_INT >= 37) assertTrue("no save in six was refined by a position from the emulator", refined)
         }
     }
 

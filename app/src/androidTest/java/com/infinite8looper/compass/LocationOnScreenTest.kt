@@ -218,6 +218,57 @@ class LocationOnScreenTest {
         }
     }
 
+    /** The GPS provider's request as the system last set it, from `dumpsys location`: its interval and whose it is. */
+    private fun gpsRequest(): String =
+        shell("dumpsys location").lines().lastOrNull { "gps provider request = " in it }?.substringAfter("gps provider request = ")?.trim() ?: "none"
+
+    /**
+     * A save from a position in hand listens for a better one for ten seconds, asking every second; Home, and the
+     * screen going off, end that request with the screens' own, at once and not when the ten seconds are over. Read
+     * from the system's own record of the GPS provider's request (`dumpsys location`), which names the app while any
+     * request of the app's is running.
+     */
+    @Test fun aSavesListeningStopsAtHomeAndWithTheScreenOff() = runBlocking {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            // An earlier test's save may still be listening: its ten seconds are let pass.
+            delay(11_000)
+            // The screen state is not collected here beyond a moment: what keeps location running must be the
+            // app's own screens, as on the watch (the waypoint saved is a target, which v2 runs location for while
+            // the screens collect the state).
+            val vm = viewModelOf(scenario)
+            shows("the compass") { compassInView() }
+            running(vm, "on the compass")
+            var current = vm
+            for (leave in listOf("Home", "the screen off")) {
+                val saving = current
+                val job = kotlinx.coroutines.withContext(Dispatchers.Main) { saving.logHere() }
+                withTimeout(10_000) { job.join() }
+                delay(1_500)
+                val listening = gpsRequest()
+                assertTrue("$leave: after the save: $listening", "@+1s0ms" in listening && "com.infinite8looper.compass" in listening)
+                if (leave == "Home") {
+                    instrumentation.uiAutomation.injectInputEvent(KeyEvent(SystemClock.uptimeMillis(), SystemClock.uptimeMillis(), KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_HOME, 0), true)
+                    instrumentation.uiAutomation.injectInputEvent(KeyEvent(SystemClock.uptimeMillis(), SystemClock.uptimeMillis(), KeyEvent.ACTION_UP, KeyEvent.KEYCODE_HOME, 0), true)
+                } else shell("input keyevent KEYCODE_SLEEP")
+                try {
+                    // Within 4 s of leaving, well inside the ten seconds, nothing of the app's is asked for.
+                    val deadline = SystemClock.uptimeMillis() + 4_000
+                    while ("com.infinite8looper.compass" in gpsRequest() && SystemClock.uptimeMillis() < deadline) delay(200)
+                    val left = gpsRequest()
+                    assertFalse("$leave: $left", "com.infinite8looper.compass" in left)
+                } finally {
+                    if (leave != "Home") { shell("input keyevent KEYCODE_WAKEUP"); delay(1_500) }
+                    shell("am start -n com.infinite8looper.compass/.MainActivity")
+                }
+                val again = resumedViewModel()
+                running(again, "back after $leave")
+                current = again
+                // The status of that save is let go before the next.
+                delay(4_000)
+            }
+        }
+    }
+
     @Test fun locationStopsAtHomeAndWithTheScreenOffAndComesBackWithTheApp() = runBlocking {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             val vm = viewModelOf(scenario)

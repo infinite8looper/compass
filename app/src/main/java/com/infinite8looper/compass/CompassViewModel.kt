@@ -257,7 +257,7 @@ class CompassViewModel(
         .flatMapLatest { wanted ->
             if (!wanted) flowOf(null)
             else locationSource.updates(5_000)
-                .onEach { inHand.value = it }
+                .onEach { noteInHand(it) }
                 .onEach { quietly("save last position") { settingsStore.setLastPosition(it.point, it.altitudeM) } }
                 // Each fix is looked at once for the trail, here, before the screens get it: one fix, at most
                 // one crumb consumed.
@@ -409,8 +409,8 @@ class CompassViewModel(
 
     private fun save(byTrail: Boolean, crumbOnly: Boolean = false): Job {
         val pressedAt = SystemClock.elapsedRealtime()
-        // What is in hand at the press, and whether it is recent enough to be saved as it is.
-        val atOnce = positionToSaveAtOnce(inHand.value, pressedAt)
+        // The app's own position in hand at the press, if it is recent enough to be saved as it is.
+        val own = positionToSaveAtOnce(inHand.value, pressedAt)
         // On the main thread, where presses are handled one after another, so two of them cannot both start a save.
         return viewModelScope.launch(Dispatchers.Main.immediate) {
             if (crumbOnly) {
@@ -433,10 +433,11 @@ class CompassViewModel(
             synchronized(logLock) {
                 logPressCount.value += 1
                 // With a position in hand the save is the time it takes to write it; the status carries its accuracy.
-                logState.value = refused ?: LogStatus.Saving(atOnce?.accuracyM)
+                logState.value = refused ?: LogStatus.Saving(own?.accuracyM)
             }
             if (refused == null) {
-                val outcome = saveFix(pressedAt, byTrail, atOnce)
+                val outcome = saveFix(pressedAt, byTrail, own)
+                val atOnce = outcome.inHand
                 // A save that stored nothing and has nothing to say ends the status here.
                 synchronized(logLock) { if (outcome.status == LogStatus.Idle) endStatus() else logState.value = outcome.status }
                 val written = outcome.stored
@@ -454,7 +455,8 @@ class CompassViewModel(
     /** A row a save wrote: a waypoint's or a crumb's id, and the position it was written with. */
     private class Stored(val id: Long, val asCrumb: Boolean, val fix: Fix)
 
-    private class SaveOutcome(val status: LogStatus, val stored: Stored?)
+    /** What a save ended in, the row it wrote, and the position in hand it used, if it used one rather than waiting. */
+    private class SaveOutcome(val status: LogStatus, val stored: Stored?, val inHand: Fix? = null)
 
     /** What the per-save log line says ([logSave]). No position, no name. */
     private class SaveRecord(
@@ -485,7 +487,11 @@ class CompassViewModel(
             try {
                 val left = refineWindowLeftMs(r.pressedAt, SystemClock.elapsedRealtime())
                 withTimeoutOrNull(left) {
-                    locationSource.updates(1_000).takeWhile { !r.ended }.collect { offerRefinement(it) }
+                    // Only while the screens are a reason for location: Home, the screen off, settings or a screen
+                    // opened from a row end the request at once; it comes back if the screens do within the ten seconds.
+                    screensWantLocationNow.flatMapLatest { on -> if (on) locationSource.updates(1_000) else emptyFlow() }
+                        .onEach { noteInHand(it) }
+                        .takeWhile { !r.ended }.collect { offerRefinement(it) }
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -539,6 +545,21 @@ class CompassViewModel(
             r.times++
             launchQuietly("save last position") { settingsStore.setLastPosition(fix.point, fix.altitudeM) }
         }
+    }
+
+    /** Takes [fix] as the position in hand if it is newer than the one held. */
+    private fun noteInHand(fix: Fix) {
+        inHand.update { held -> if (held == null || held.elapsedMs < fix.elapsedMs) fix else held }
+    }
+
+    /** The location provider's last known position, or null if it has none or does not answer within [LAST_KNOWN_WITHIN_MS]. */
+    private suspend fun lastKnownQuickly(): Fix? = try {
+        withTimeoutOrNull(LAST_KNOWN_WITHIN_MS) { locationSource.lastKnown() }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.w(TAG, "could not read the last known position (" + e.javaClass.simpleName + ")")
+        null
     }
 
     private fun Fix.stored() = StoredPosition(point.lat, point.lon, accuracyM)
@@ -609,7 +630,7 @@ class CompassViewModel(
      * [pressedAt], as v2 did, and stores that. It is stored as a crumb if [byTrail] and a trail is being laid when the
      * press is taken up, and as a waypoint otherwise. Never throws, except to pass a cancellation on.
      */
-    private suspend fun saveFix(pressedAt: Long, byTrail: Boolean, atOnce: Fix?): SaveOutcome {
+    private suspend fun saveFix(pressedAt: Long, byTrail: Boolean, own: Fix?): SaveOutcome {
         var passedOver = 0
         val asCrumb = try {
             // A crumb can be stored only on a trail that has been read. One that has not is waited for here,
@@ -621,6 +642,11 @@ class CompassViewModel(
             Log.w(TAG, "could not read the trail (" + e.javaClass.simpleName + ")")
             return SaveOutcome(LogStatus.Failed(LogFailure.SAVE_FAILED), null)
         }
+        // Without a position of its own in hand, the location provider's last known one may be ([positionInHand]).
+        // Looked at after the trail, so a press that cannot read the trail looks for no position at all.
+        val atOnce = own ?: positionInHand(null, lastKnownQuickly(), pressedAt)?.also { known ->
+            synchronized(logLock) { if (logState.value == LogStatus.Saving(null)) logState.value = LogStatus.Saving(known.accuracyM) }
+        }
         val fix = atOnce ?: try {
             // The location source already drops fixes older than ten seconds; this also drops any from before the press.
             val fixes = locationSource.updates(1_000).onEach { if (!isFixSincePress(it, pressedAt)) passedOver++ }
@@ -631,14 +657,16 @@ class CompassViewModel(
             Log.w(TAG, "location updates failed while logging (" + e.javaClass.simpleName + ")")
             null
         }
+        if (atOnce == null && fix != null) noteInHand(fix)
         if (fix == null) {
             // A count only: it tells a search that got nothing from one that got only fixes from before the press.
             if (passedOver > 0) Log.i(TAG, "no fix since the press; fixes from before it passed over: $passedOver")
             return SaveOutcome(LogStatus.Failed(LogFailure.NO_FIX), null)
         }
         return try {
-            if (asCrumb) dropCrumb(fix)
+            val stored = if (asCrumb) dropCrumb(fix)
             else logWaypoint(fix).let { SaveOutcome(LogStatus.Saved(it.name, fix.accuracyM, fix.elapsedMs), Stored(it.id, asCrumb = false, fix)) }
+            SaveOutcome(stored.status, stored.stored, atOnce)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -851,6 +879,8 @@ class CompassViewModel(
         const val HEADING_STOP_DELAY_MS = 2_000L
         /** Stands for a crumb that is not stored yet, where [nextTrail] is asked whether one may be added. Row ids start at 1. */
         const val NEW_CRUMB = 0L
+        /** The longest a press waits for the location provider's last known position before it waits for a new one. */
+        const val LAST_KNOWN_WITHIN_MS = 500L
         /** The tag of the one line each save logs in builds with diagnostics ([logSave]). */
         const val SAVE_LOG_TAG = "CompassSave"
         /** The longest a change this view model made to the crumbs is waited for to show in the held list. */

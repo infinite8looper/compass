@@ -375,6 +375,14 @@ fun positionToSaveAtOnce(inHand: Fix?, pressedAtMs: Long): Fix? =
     inHand?.takeIf { !it.accuracyM.isNaN() && pressedAtMs - it.elapsedMs <= IN_HAND_MAX_AGE_MS }
 
 /**
+ * The position a press saves at once, from the two places a position can be in hand: [own], the latest the app's
+ * own location updates gave, and [lastKnown], the location provider's last known position. Each counts only if
+ * [positionToSaveAtOnce] takes it; the app's own comes first.
+ */
+fun positionInHand(own: Fix?, lastKnown: Fix?, pressedAtMs: Long): Fix? =
+    positionToSaveAtOnce(own, pressedAtMs) ?: positionToSaveAtOnce(lastKnown, pressedAtMs)
+
+/**
  * Whether [candidate] replaces [written], the position a save from a position in hand wrote (or the last that
  * replaced it): it is newer, states a smaller error, and was taken no later than [REFINE_WITHIN_MS] after the press.
  */

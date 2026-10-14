@@ -47,6 +47,25 @@ class SavingTest {
         assertNull(positionToSaveAtOnce(fixAt(press - 1_000, Float.NaN), press))
     }
 
+    // The two places a position can be in hand.
+
+    @Test fun theAppsOwnPositionIsInHandBeforeTheLastKnownOne() {
+        val own = fixAt(press - 2_000, 5f); val known = fixAt(press - 500, 3f)
+        assertEquals(own, positionInHand(own, known, press))
+    }
+
+    @Test fun theLastKnownPositionIsInHandWhenTheAppHasNoneRecentEnough() {
+        val known = fixAt(press - 1_000, 7f)
+        assertEquals(known, positionInHand(null, known, press))
+        assertEquals(known, positionInHand(fixAt(press - 10_001, 5f), known, press))
+    }
+
+    @Test fun nothingIsInHandWhenNeitherIsRecentEnough() {
+        assertNull(positionInHand(null, null, press))
+        assertNull(positionInHand(fixAt(press - 20_000, 5f), fixAt(press - 10_001, 5f), press))
+        assertNull(positionInHand(null, fixAt(press - 1_000, Float.NaN), press))
+    }
+
     // Refine or not.
 
     @Test fun aMoreAccuratePositionWithinTenSecondsOfThePressReplacesTheOneWritten() {

@@ -290,6 +290,22 @@ class CompassViewModelTest {
         return SystemClock.elapsedRealtime() - start
     }
 
+    private fun shell(command: String) = android.os.ParcelFileDescriptor.AutoCloseInputStream(
+        androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command),
+    ).readBytes()
+
+    /**
+     * Makes sure no position is in hand at the press that follows at once, so the save waits for one as in v2: v3
+     * saves a position not older than 10 seconds at the press, the app's own or the location provider's last known
+     * ("A position in hand, not older than 10 seconds at the press, is written at once"). Location is switched off for
+     * 11 seconds, so no position comes from any source and every one held grows older than 10 seconds, and switched
+     * on again; the press comes before the first new position can.
+     */
+    private suspend fun noPositionInHand() {
+        shell("settings put secure location_mode 0")
+        try { delay(11_000) } finally { shell("settings put secure location_mode 3") }
+    }
+
     /** The view model the app's own screens use: the one the real activity holds. */
     private fun viewModelOf(scenario: ActivityScenario<MainActivity>): CompassViewModel {
         lateinit var vm: CompassViewModel
@@ -396,10 +412,14 @@ class CompassViewModelTest {
     @Test fun aPressWhileASavedResultWaitsStartsANewSave() = runBlocking {
         ActivityScenario.launch(MainActivity::class.java).use {
             val vm = viewModel()
+            // Each save waits for a position taken after its press, so the second's is newer than the first's.
+            noPositionInHand()
             val first = pressAndAwaitSaved(vm)
             val firstPress = vm.logPress.value
             // Well over the two seconds a saved result is shown for: nothing has shown it, so it waits.
             delay(4_000)
+            assertEquals(first, vm.logStatus.value)
+            noPositionInHand()
             assertEquals(first, vm.logStatus.value)
             val second = pressAndAwaitSaved(vm)
             assertNotEquals(first.name, second.name)
@@ -447,10 +467,13 @@ class CompassViewModelTest {
     }
 
     /**
-     * Real location updates run before each press, so fixes from before it exist and the location service has a
-     * recent one to hand to a new request. Each press comes straight after such a fix. What is saved must be newer.
+     * Real location updates run before each press, so fixes from before it exist and the location service holds one
+     * as its last known position. v3 saves a fix up to 10 seconds old at the press ("A position in hand, not older
+     * than 10 seconds at the press, is written at once"); one older than that is never saved, which is what this
+     * checks: before each press the fixes are made older than 10 seconds ([noPositionInHand]). What is saved must be
+     * newer than the press.
      */
-    @Test fun aFixFromBeforeThePressIsNeverSaved() = runBlocking {
+    @Test fun aFixMoreThanTenSecondsBeforeThePressIsNeverSaved() = runBlocking {
         ActivityScenario.launch(MainActivity::class.java).use {
             val vm = viewModel()
             val earlier = CopyOnWriteArrayList<Fix>()
@@ -459,6 +482,7 @@ class CompassViewModelTest {
                 val had = earlier.size
                 withTimeout(60_000) { while (earlier.size < had + 2) delay(10) }
                 val newestBefore = earlier.last().elapsedMs
+                noPositionInHand()
                 val pressedAt = SystemClock.elapsedRealtime()
                 val saved = pressAndAwaitSaved(vm)
                 assertTrue("the press came ${pressedAt - newestBefore} ms after a fix", newestBefore <= pressedAt)
@@ -875,33 +899,26 @@ class CompassViewModelTest {
      * The last crumb is reached while a save is in progress or its result is showing. The save keeps its status,
      * and `Trail complete` is shown after it, once.
      *
-     * Since v3 a save with a position in hand ends within milliseconds ("A position in hand, not older than 10
-     * seconds at the press, is written at once"), so on the real compass its result could be shown out before the
-     * next position consumes the crumb. The view model here is the test's own, told by the test what the screens
-     * would say (the compass on screen and in view), and the result stays until the test reports it shown, as a
-     * screen does when it has shown it: so the crumb is reached while the result is waiting.
+     * The save is one that waits for a position, so that the crumb is reached while it waits or while its result
+     * shows: v3 saves a position in hand at once ("A position in hand, not older than 10 seconds at the press, is
+     * written at once"), and no position may be that recent at the press ([noPositionInHand]).
      */
     @Test fun trailCompleteThatFallsDuringASaveIsShownAfterItOnce() = runBlocking {
         settings.setBreadcrumbTrail(true)
-        ActivityScenario.launch(MainActivity::class.java).use {
-            val vm = viewModel()
-            withContext(Dispatchers.Main) { vm.setCompassOnScreen(true); vm.setCompassInView(true) }
-            val live = launch(Dispatchers.Main) { vm.nav.collect { } }
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            val vm = viewModelOf(scenario)
+            delay(1_500)
             val statuses = CopyOnWriteArrayList<LogStatus>()
             val watching = launch(Dispatchers.Main) { vm.logStatus.collect { statuses += it } }
             crumbDao.insert(crumbAt(hanover.point))
             trailOf(vm) { it.count == 1 }
+            noPositionInHand()
             // A waypoint is saved with `Log here`, and the trail is switched to retracing while that save runs.
             val save = withContext(Dispatchers.Main) { vm.logHere().also { assertTrue(vm.logStatus.value is LogStatus.Saving) } }
             settings.setTrailMode(TrailMode.RETRACING)
             withTimeout(60_000) { save.join() }
             withTimeout(30_000) { while (crumbDao.all().isNotEmpty()) delay(20) }
-            // The saved result is still there, and `Trail complete` waits behind it until it has been shown.
-            assertTrue("${vm.logStatus.value}", vm.logStatus.value is LogStatus.Saved)
-            vm.logResultShown(vm.logPress.value)
             withTimeout(30_000) { while (LogStatus.TrailComplete !in statuses) delay(10) }
-            vm.logResultShown(vm.logPress.value)
-            live.cancel()
             withTimeout(10_000) { while (statuses.last() != LogStatus.Idle) delay(10) }
             delay(3_000)
             watching.cancel()
