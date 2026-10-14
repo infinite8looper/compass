@@ -874,12 +874,19 @@ class CompassViewModelTest {
     /**
      * The last crumb is reached while a save is in progress or its result is showing. The save keeps its status,
      * and `Trail complete` is shown after it, once.
+     *
+     * Since v3 a save with a position in hand ends within milliseconds ("A position in hand, not older than 10
+     * seconds at the press, is written at once"), so on the real compass its result could be shown out before the
+     * next position consumes the crumb. The view model here is the test's own, told by the test what the screens
+     * would say (the compass on screen and in view), and the result stays until the test reports it shown, as a
+     * screen does when it has shown it: so the crumb is reached while the result is waiting.
      */
     @Test fun trailCompleteThatFallsDuringASaveIsShownAfterItOnce() = runBlocking {
         settings.setBreadcrumbTrail(true)
-        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
-            val vm = viewModelOf(scenario)
-            delay(1_500)
+        ActivityScenario.launch(MainActivity::class.java).use {
+            val vm = viewModel()
+            withContext(Dispatchers.Main) { vm.setCompassOnScreen(true); vm.setCompassInView(true) }
+            val live = launch(Dispatchers.Main) { vm.nav.collect { } }
             val statuses = CopyOnWriteArrayList<LogStatus>()
             val watching = launch(Dispatchers.Main) { vm.logStatus.collect { statuses += it } }
             crumbDao.insert(crumbAt(hanover.point))
@@ -889,7 +896,12 @@ class CompassViewModelTest {
             settings.setTrailMode(TrailMode.RETRACING)
             withTimeout(60_000) { save.join() }
             withTimeout(30_000) { while (crumbDao.all().isNotEmpty()) delay(20) }
+            // The saved result is still there, and `Trail complete` waits behind it until it has been shown.
+            assertTrue("${vm.logStatus.value}", vm.logStatus.value is LogStatus.Saved)
+            vm.logResultShown(vm.logPress.value)
             withTimeout(30_000) { while (LogStatus.TrailComplete !in statuses) delay(10) }
+            vm.logResultShown(vm.logPress.value)
+            live.cancel()
             withTimeout(10_000) { while (statuses.last() != LogStatus.Idle) delay(10) }
             delay(3_000)
             watching.cancel()

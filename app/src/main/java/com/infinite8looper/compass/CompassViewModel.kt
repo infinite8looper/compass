@@ -430,11 +430,10 @@ class CompassViewModel(
                 !isLocationOn() -> LogStatus.Failed(LogFailure.LOCATION_OFF)
                 else -> null
             }
-            val press = synchronized(logLock) {
+            synchronized(logLock) {
                 logPressCount.value += 1
                 // With a position in hand the save is the time it takes to write it; the status carries its accuracy.
                 logState.value = refused ?: LogStatus.Saving(atOnce?.accuracyM)
-                logPressCount.value
             }
             if (refused == null) {
                 val outcome = saveFix(pressedAt, byTrail, atOnce)
@@ -447,7 +446,7 @@ class CompassViewModel(
                     result = outcome.status,
                 )
                 // Only a save from a position in hand is refined; one that waited has a position taken after the press.
-                if (atOnce != null && written != null) refine(Refining(written, pressedAt, press, record)) else logSave(record, refinedTo = null, refinedTimes = 0)
+                if (atOnce != null && written != null) refine(Refining(written, pressedAt, record)) else logSave(record, refinedTo = null, refinedTimes = 0)
             }
         }
     }
@@ -467,7 +466,7 @@ class CompassViewModel(
      * A save from a position in hand that listens for a more accurate position until [REFINE_WITHIN_MS] after its
      * press. [written] is what the row holds as this save last wrote it. Read and changed under [waypointEdits].
      */
-    private class Refining(var written: Stored, val pressedAt: Long, val press: Int, val record: SaveRecord) {
+    private class Refining(var written: Stored, val pressedAt: Long, val record: SaveRecord) {
         var times = 0
         var ended = false
     }
@@ -507,7 +506,8 @@ class CompassViewModel(
      * the rest of the row as it is now (a new name or color stays). Only while the row holds what the save last
      * wrote ([refinementMayWrite]): a row that has been deleted or moved ends the listening and is not written,
      * so a deleted waypoint or crumb never comes back. Under the lock the edits take, so no edit reads the row
-     * before and writes it back after. The status of the press, while it still shows, takes the new accuracy.
+     * before and writes it back after. The press's status is left as it is: it says what the save wrote, and a
+     * result waiting to be shown is not changed under it.
      */
     internal suspend fun offerRefinement(fix: Fix) = waypointEdits.withLock {
         val now = SystemClock.elapsedRealtime()
@@ -538,12 +538,6 @@ class CompassViewModel(
             r.written = Stored(s.id, s.asCrumb, fix)
             r.times++
             launchQuietly("save last position") { settingsStore.setLastPosition(fix.point, fix.altitudeM) }
-            synchronized(logLock) {
-                val shown = logState.value
-                if (logPressCount.value == r.press && shown is LogStatus.Saved) {
-                    logState.value = shown.copy(accuracyM = fix.accuracyM, fixElapsedMs = fix.elapsedMs)
-                }
-            }
         }
     }
 

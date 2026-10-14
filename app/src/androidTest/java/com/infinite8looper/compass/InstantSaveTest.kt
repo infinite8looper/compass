@@ -38,9 +38,10 @@ import java.util.concurrent.CopyOnWriteArrayList
  * file, with positions from the emulator's geo console: needs `scripts/geo-feed.sh -72.2896 43.7022` running and the
  * app on screen, as in CompassViewModelTest.
  *
- * The emulator's GNSS reports every position with an accuracy of 5 m (`geo fix` and `geo nmea` take no accuracy;
- * seen on the API 35 image), so no more accurate position ever comes from it. A more accurate one is handed to the
- * view model here, through the call its own location updates make for every position during the ten seconds
+ * `geo fix` and `geo nmea` take no accuracy. The API 33, 34 and 35 images report every position at 5 m, so no more
+ * accurate one comes from them; the API 37 image reports accuracies that vary (3.0 to 3.8 m seen), so there the
+ * view model's own updates do refine. A more accurate position than any emulator gives (well under 1 m) is handed
+ * to the view model here, through the call its own location updates make for every position during the ten seconds
  * ([CompassViewModel.offerRefinement]), as other tests hand [CompassViewModel.logWaypoint] a position.
  */
 @RunWith(AndroidJUnit4::class)
@@ -105,13 +106,14 @@ class InstantSaveTest {
             val seen = CopyOnWriteArrayList<LogStatus>()
             collectors += CoroutineScope(Dispatchers.Main).launch { vm.logStatus.collect { seen += it } }
             val inHandAt = justAfterAPosition(vm)
+            val inHandAccuracy = vm.nav.value.fixAccuracyM!!
             val pressedAt = SystemClock.elapsedRealtime()
             val (atOnce, job) = press(vm)
             val saved = savedNow(vm, job)
             val tookMs = SystemClock.elapsedRealtime() - pressedAt
             Log.i("InstantSaveTest", "saved from the position in hand $tookMs ms after the press")
             // The status carries the accuracy in hand from the press on: no wait for a position without one.
-            assertEquals(LogStatus.Saving(5f), atOnce)
+            assertEquals(LogStatus.Saving(inHandAccuracy), atOnce)
             assertTrue("$seen", seen.none { it == LogStatus.Saving(null) })
             // What was saved is the position held at the press, from before it, which v2 never saved.
             assertEquals(inHandAt, saved.fixElapsedMs)
@@ -119,8 +121,9 @@ class InstantSaveTest {
             assertTrue("took $tookMs ms", tookMs < 2_000)
             val row = dao.observeAll().first().single()
             assertEquals(saved.name, row.name)
-            assertEquals(5f, row.accuracyM, 0f)
-            assertEquals(5f, saved.accuracyM, 0f)
+            assertEquals(inHandAccuracy, saved.accuracyM, 0f)
+            // Written with the accuracy in hand, or a better one where the emulator's own updates have refined it.
+            assertTrue("${row.accuracyM}", row.accuracyM <= inHandAccuracy)
             assertEquals(43.7022, row.lat, 0.001); assertEquals(-72.2896, row.lon, 0.001)
         }
     }
@@ -146,17 +149,17 @@ class InstantSaveTest {
             val vm = holdingAPosition()
             val saved = savedNow(vm, press(vm).second)
             val id = dao.observeAll().first().single().id
-            vm.offerRefinement(fixNow(better, 3f))
+            vm.offerRefinement(fixNow(better, 0.5f))
             val once = dao.get(id)!!
-            assertEquals(better.lat, once.lat, 0.0); assertEquals(better.lon, once.lon, 0.0); assertEquals(3f, once.accuracyM, 0f)
+            assertEquals(better.lat, once.lat, 0.0); assertEquals(better.lon, once.lon, 0.0); assertEquals(0.5f, once.accuracyM, 0f)
             assertEquals(saved.name, once.name)
-            // The status of the press, still showing, says what the row now holds.
-            assertEquals(3f, (vm.logStatus.value as LogStatus.Saved).accuracyM, 0f)
+            // The press's status says what the save wrote; it is not changed under a result that is showing.
+            assertEquals(saved, vm.logStatus.value)
             // Once more, and a less accurate one changes nothing.
-            vm.offerRefinement(fixNow(best, 2f))
-            vm.offerRefinement(fixNow(better, 2.5f))
+            vm.offerRefinement(fixNow(best, 0.3f))
+            vm.offerRefinement(fixNow(better, 0.4f))
             val twice = dao.get(id)!!
-            assertEquals(best.lat, twice.lat, 0.0); assertEquals(best.lon, twice.lon, 0.0); assertEquals(2f, twice.accuracyM, 0f)
+            assertEquals(best.lat, twice.lat, 0.0); assertEquals(best.lon, twice.lon, 0.0); assertEquals(0.3f, twice.accuracyM, 0f)
             assertEquals(1, dao.observeAll().first().size)
         }
     }
@@ -168,11 +171,11 @@ class InstantSaveTest {
             val id = dao.observeAll().first().single().id
             vm.rename(id, "Heronwick").join()
             vm.setHue(id, 200f).join()
-            vm.offerRefinement(fixNow(better, 3f))
+            vm.offerRefinement(fixNow(better, 0.5f))
             val row = dao.get(id)!!
             assertEquals("Heronwick", row.name)
             assertEquals(200f, row.hue, 0f)
-            assertEquals(better.lat, row.lat, 0.0); assertEquals(3f, row.accuracyM, 0f)
+            assertEquals(better.lat, row.lat, 0.0); assertEquals(0.5f, row.accuracyM, 0f)
         }
     }
 
@@ -182,10 +185,10 @@ class InstantSaveTest {
             val vm = holdingAPosition()
             savedNow(vm, press(vm).second)
             val first = dao.observeAll().first().single()
-            vm.offerRefinement(fixNow(better, 3f))
+            vm.offerRefinement(fixNow(better, 0.5f))
             assertEquals(better.lat, dao.get(first.id)!!.lat, 0.0)
             vm.delete(first.id).join()
-            vm.offerRefinement(fixNow(best, 2f))
+            vm.offerRefinement(fixNow(best, 0.3f))
             delay(500)
             assertNull(dao.get(first.id))
             assertTrue(dao.observeAll().first().isEmpty())
@@ -206,7 +209,7 @@ class InstantSaveTest {
             savedNow(vm, press(vm).second)
             val row = dao.observeAll().first().single()
             dao.update(row.copy(lat = best.lat, lon = best.lon, accuracyM = 4f))
-            vm.offerRefinement(fixNow(better, 3f))
+            vm.offerRefinement(fixNow(better, 0.5f))
             val after = dao.get(row.id)!!
             assertEquals(best.lat, after.lat, 0.0); assertEquals(4f, after.accuracyM, 0f)
         }
@@ -220,11 +223,11 @@ class InstantSaveTest {
             val b = savedNow(vm, press(vm).second)
             assertNotEquals(a.name, b.name)
             assertEquals(2, vm.logPress.value)
-            vm.offerRefinement(fixNow(better, 3f))
+            vm.offerRefinement(fixNow(better, 0.5f))
             val rows = dao.observeAll().first()
             assertEquals(setOf(a.name, b.name), rows.map { it.name }.toSet())
-            for (r in rows) { assertEquals(r.name, better.lat, r.lat, 0.0); assertEquals(r.name, 3f, r.accuracyM, 0f) }
-            assertEquals(b.copy(accuracyM = 3f, fixElapsedMs = (vm.logStatus.value as LogStatus.Saved).fixElapsedMs), vm.logStatus.value)
+            for (r in rows) { assertEquals(r.name, better.lat, r.lat, 0.0); assertEquals(r.name, 0.5f, r.accuracyM, 0f) }
+            assertEquals(b, vm.logStatus.value)
         }
     }
 
@@ -233,9 +236,10 @@ class InstantSaveTest {
             val vm = holdingAPosition()
             val pressedAt = SystemClock.elapsedRealtime()
             savedNow(vm, press(vm).second)
-            val row = dao.observeAll().first().single()
             delay(pressedAt + REFINE_WITHIN_MS + 500 - SystemClock.elapsedRealtime())
-            vm.offerRefinement(fixNow(better, 1f))
+            // Read after the ten seconds: within them the emulator's own updates may have refined it.
+            val row = dao.observeAll().first().single()
+            vm.offerRefinement(fixNow(better, 0.1f))
             assertEquals(row, dao.get(row.id))
         }
     }
@@ -246,17 +250,19 @@ class InstantSaveTest {
         settings.setTrailMode(TrailMode.LAYING)
         ActivityScenario.launch(MainActivity::class.java).use {
             val vm = holdingAPosition()
+            val inHandAccuracy = vm.nav.value.fixAccuracyM!!
             val (atOnce, job) = press(vm, sidePress = true)
-            assertEquals(LogStatus.Saving(5f), atOnce)
+            assertEquals(LogStatus.Saving(inHandAccuracy), atOnce)
             val saved = savedNow(vm, job)
             assertEquals("Crumb 1", saved.name)
+            assertEquals(inHandAccuracy, saved.accuracyM, 0f)
             val crumb = crumbDao.all().single()
-            assertEquals(5f, crumb.accuracyM, 0f)
-            vm.offerRefinement(fixNow(better, 3f))
+            assertTrue("${crumb.accuracyM}", crumb.accuracyM <= inHandAccuracy)
+            vm.offerRefinement(fixNow(better, 0.5f))
             val refined = crumbDao.get(crumb.id)!!
-            assertEquals(better.lat, refined.lat, 0.0); assertEquals(3f, refined.accuracyM, 0f)
+            assertEquals(better.lat, refined.lat, 0.0); assertEquals(0.5f, refined.accuracyM, 0f)
             crumbDao.delete(crumb.id)
-            vm.offerRefinement(fixNow(best, 2f))
+            vm.offerRefinement(fixNow(best, 0.3f))
             assertNull(crumbDao.get(crumb.id))
             assertTrue(crumbDao.all().isEmpty())
         }
@@ -273,7 +279,7 @@ class InstantSaveTest {
             Log.i("InstantSaveTest", marker)
             val pressedAt = SystemClock.elapsedRealtime()
             savedNow(vm, press(vm).second)
-            vm.offerRefinement(fixNow(better, 3f))
+            vm.offerRefinement(fixNow(better, 0.5f))
             // The line is written when the ten seconds are over.
             delay(pressedAt + REFINE_WITHIN_MS + 1_500 - SystemClock.elapsedRealtime())
             val log = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-v", "raw", "-s", "InstantSaveTest:I", "CompassSave:I"))
@@ -281,7 +287,7 @@ class InstantSaveTest {
             val lines = log.dropWhile { it != marker }.drop(1).filter { it.startsWith("save:") }
             assertEquals("$log", 1, lines.size)
             val line = lines.single()
-            assertTrue(line, Regex("save: written [0-9]+ ms after the press, position in hand [0-9]+ ms old at the press, accuracy 5\\.0 m, refined 1 time\\(s\\) to 3\\.0 m").matches(line))
+            assertTrue(line, Regex("save: written [0-9]+ ms after the press, position in hand [0-9]+ ms old at the press, accuracy [0-9]+\\.[0-9] m, refined [0-9]+ time\\(s\\) to 0\\.5 m").matches(line))
             for (c in listOf("43.7", "72.2", "43,7", "72,2")) assertFalse(line, line.contains(c))
         }
     }

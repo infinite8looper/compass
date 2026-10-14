@@ -119,6 +119,18 @@ class LocationOnScreenTest {
     private fun compassInView() = nodes().any { n -> n.isVisibleToUser && n.text?.toString()?.let { it == "Hold flat" || it == "--" || it.endsWith("°") } == true } &&
         !visible("Log here") && !visible("Settings")
 
+    /** Scrolls the list on screen forward, through the system's tree, until a node reads [text]; fails if none ever does. */
+    private suspend fun scrollTo(text: String) {
+        repeat(10) {
+            if (nodes().any { it.isVisibleToUser && it.text?.toString() == text }) return
+            // The list, not the ring of screens, which scrolls too and is the one collection of three columns.
+            nodes().firstOrNull { it.isScrollable && it.isVisibleToUser && (it.collectionInfo?.columnCount ?: 1) <= 1 }
+                ?.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
+            delay(800)
+        }
+        fail("`$text` did not come on screen; on screen: " + nodes().filter { it.isVisibleToUser }.mapNotNull { it.text?.toString() })
+    }
+
     /** One finger across the middle of the screen: the swipe that turns the ring (as RingScreensTest). */
     private fun swipe(toTheLeft: Boolean) {
         val bounds = instrumentation.uiAutomation.rootInActiveWindow.let { root -> Rect().also { root.getBoundsInScreen(it) } }
@@ -168,14 +180,14 @@ class LocationOnScreenTest {
             assertTrue("a gap in the positions between the compass and the waypoints", seen.subList(from, seen.size).all { it.fixElapsedMs != null })
 
             // A row opened from the list covers the three screens.
+            scrollTo("Place 1")
             val row = nodes().first { it.text?.toString() == "Place 1" }.let { n -> generateSequence(n) { it.parent }.first { it.isClickable } }
             // A long press opens a row (a tap sets it as a target).
             assertTrue(row.performAction(AccessibilityNodeInfo.ACTION_LONG_CLICK))
-            delay(1_000)
-            assertTrue("the edit screen did not open", nodes().none { it.isVisibleToUser && it.text?.toString() == "Log here" })
+            shows("the edit screen") { visible("Target") || visible("Hold to delete") }
             stopped(vm, "under the edit screen")
             instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
-            shows("the waypoints again") { visible("Log here") }
+            shows("the waypoints again") { visible("Place 1") }
             running(vm, "back on the waypoints")
 
             // Settings, at rest: two screens to the left of the waypoints, one to the right of the compass.
@@ -184,12 +196,7 @@ class LocationOnScreenTest {
             stopped(vm, "on settings")
 
             // Calibration, opened from settings, runs none either.
-            repeat(8) {
-                if (nodes().none { it.text?.toString() == "Calibrate" }) {
-                    nodes().firstOrNull { it.isScrollable && it.isFocused }?.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
-                    delay(800)
-                }
-            }
+            scrollTo("Calibrate")
             val calibrate = nodes().first { it.text?.toString() == "Calibrate" }.let { n -> generateSequence(n) { it.parent }.first { it.isClickable } }
             assertTrue(calibrate.performAction(AccessibilityNodeInfo.ACTION_CLICK))
             delay(1_000)
