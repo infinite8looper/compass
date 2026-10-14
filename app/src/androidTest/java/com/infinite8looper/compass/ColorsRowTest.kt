@@ -1,7 +1,9 @@
 package com.infinite8looper.compass
 
+import android.app.Activity
 import android.app.Application
 import android.os.Build
+import android.os.Bundle
 import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -17,6 +19,7 @@ import com.infinite8looper.compass.nav.paletteFor
 import com.infinite8looper.compass.ui.AccentColor
 import com.infinite8looper.compass.ui.Ink
 import com.infinite8looper.compass.ui.NorthColor
+import com.infinite8looper.compass.ui.followWatchColors
 import com.infinite8looper.compass.ui.watchScheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -191,11 +194,34 @@ class ColorsRowTest {
         setDynamicColor(true)
         settings.setColors(ColorMode.WATCH_FACE)
         val watchFace = paletteFor(ColorMode.WATCH_FACE, watchScheme(app))
-        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
-            // Read on the main thread as soon as the activity is created: the setting was read before anything was shown.
-            var accent: Color? = null
-            scenario.onActivity { accent = AccentColor }
-            assertEquals(opaque(watchFace.roles.accent), accent)
+        // The colors start as `Standard`'s, as in a process just started, so that only the activity's own reading
+        // of the setting can change them.
+        instrumentation.runOnMainSync { followWatchColors(app, ColorMode.STANDARD) }
+        assertEquals(opaque(STANDARD_PALETTE.roles.accent), AccentColor)
+        // The accent as it is the moment the activity's onCreate has returned, through the system's own callback:
+        // before the activity is started, so before anything that runs once it is (the colors' collector runs
+        // only from STARTED) and before the first frame.
+        var accent: Color? = null
+        val callbacks = object : Application.ActivityLifecycleCallbacks {
+            override fun onActivityPostCreated(activity: Activity, savedInstanceState: Bundle?) {
+                if (activity is MainActivity) accent = AccentColor
+            }
+            override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {}
+            override fun onActivityStarted(activity: Activity) {}
+            override fun onActivityResumed(activity: Activity) {}
+            override fun onActivityPaused(activity: Activity) {}
+            override fun onActivityStopped(activity: Activity) {}
+            override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
+            override fun onActivityDestroyed(activity: Activity) {}
+        }
+        app.registerActivityLifecycleCallbacks(callbacks)
+        try {
+            ActivityScenario.launch(MainActivity::class.java).use {
+                assertNotNull("onActivityPostCreated was not called", accent)
+                assertEquals(opaque(watchFace.roles.accent), accent)
+            }
+        } finally {
+            app.unregisterActivityLifecycleCallbacks(callbacks)
         }
     }
 }
