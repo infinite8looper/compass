@@ -330,7 +330,11 @@ class CompassViewModelTest {
             assertTrue(row.isTarget)
             assertTrue("off by ${distanceMeters(hanover.point, GeoPoint(row.lat, row.lon))} m", distanceMeters(hanover.point, GeoPoint(row.lat, row.lon)) < 100.0)
 
-            // The result goes once a screen reports that it has shown it for its time.
+            // The result goes once a screen reports that it has shown it for its time. A screen reports that only
+            // after it has had the result, so the report is made here once the watcher has had it too: the status is
+            // a state, which gives a watcher that is late only the latest value, and the press's result can come
+            // and go before the main thread runs the watcher (seen on API 34: the watcher had Saving, then Idle).
+            withTimeout(10_000) { while (saved !in seen) delay(10) }
             vm.logResultShown(vm.logPress.value)
             withTimeout(10_000) { vm.logStatus.first { it == LogStatus.Idle } }
             withTimeout(10_000) { while (seen.last() != LogStatus.Idle) delay(10) }
