@@ -16,8 +16,8 @@
 # in app/src/main/java/com/infinite8looper/compass/ui/Vibrations.kt): thin (TICK), thick (THUD), target (two
 # CLICKs). Where the vibrator has no texture tick (the API 37 emulator) a tick tap is played as the tick effect, which
 # only the constant tells from a heartbeat. Where the watch lacks a primitive the dial's row plays its constant
-# instead: a thin line as the tick tap's constant (counted as a tick), a thick line as VIRTUAL_KEY (1, the press's
-# constant, counted as other) and the target as CONTEXT_CLICK (counted as a heartbeat).
+# instead: a thin line as the tick tap's constant (counted as a tick), a thick line as GESTURE_START (12, counted as
+# other) and the target as CONFIRM (16, counted as a lock, as a save's confirming vibration is).
 # The system keeps a limited number of entries per kind of use and later folds old ones together, so read soon
 # after the thing happened: a long run of tick taps pushes older entries out (20 are kept on API 33).
 source "$(dirname "$0")/emulator-only.sh" || exit 1
@@ -40,7 +40,7 @@ import re, sys
 #   startTime: MM-DD HH:MM:SS.mmm, endTime: ..., status: S, effect: ..., originalEffect: ..., uid: ..., opPkg: ...
 mark, pkg = sys.argv[1], sys.argv[2]
 names = {"16": "CONFIRM", "6": "CONTEXT_CLICK", "27": "SEGMENT_FREQUENT_TICK", "4": "CLOCK_TICK", "0": "LONG_PRESS",
-         "1": "VIRTUAL_KEY"}
+         "1": "VIRTUAL_KEY", "12": "GESTURE_START"}
 kinds = {"16": "lock", "6": "heartbeat", "27": "tick", "4": "tick"}
 def kind(constant, what):
     if constant: return kinds.get(constant, "other")

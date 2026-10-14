@@ -108,8 +108,14 @@ As built (Task 3, 2026-10-14):
 - One crossing gives one vibration, the strongest kind that applies. The existing limits stay (not while the dial is catching up, at most one per 40 ms, not right after a lock pulse).
 - With the `VIBRATE` permission the app plays composition primitives where the watch says it supports them (`areAllPrimitivesSupported`), and the `HapticFeedbackConstants` it uses today where it does not. Which primitive plays for which kind is fixed in one table in the code.
 - The target's crossing vibration plays with `Blind navigation` off as well. With it on, the lock pulse of v2 remains and the crossing vibration is not added to it.
-- The table (`ui/Vibrations.kt`): thin `TICK` at 0.5, thick `THUD` at 1.0, target two `CLICK`s at 0.7 50 ms apart; without primitives `SEGMENT_FREQUENT_TICK` (`CLOCK_TICK` on API 33), `VIRTUAL_KEY` and `CONTEXT_CLICK`. They are played only with `Tick feedback` on. A tick is not played within 150 ms after the target's vibration.
 - How different the three feel can only be judged on a wrist. The check screen plays each on a tap.
+
+As built (Task 4, 2026-10-14):
+
+- The table (`ui/Vibrations.kt`): thin `TICK` at 0.5, thick `THUD` at 1.0, target two `CLICK`s at 0.7 50 ms apart; without primitives `SEGMENT_FREQUENT_TICK` (`CLOCK_TICK` on API 33), `GESTURE_START` and `CONFIRM`, chosen because on the four emulator images they play three different effects, none the press's. The press, the confirming vibration, the lock, the heartbeat and the long press are rows of the same table, as haptic feedback constants.
+- Implementer's ruling, for the owner: the three are played only with `Tick feedback` on.
+- Controller's ruling: the target's vibration is silent while the position is old, as blind navigation is.
+- The target's vibration is not held back by a line played just before it (the line's is cut short); a line is not played while the target's lasts (its primitives' durations, at least 150 ms). Only the pointer's motion passes the target: a new position that moves the bearing past a still pointer gives nothing.
 
 ## Colors
 

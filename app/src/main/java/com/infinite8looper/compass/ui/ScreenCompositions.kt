@@ -9,8 +9,8 @@ import com.infinite8looper.compass.nav.Pane
  * composition: its state starts from nothing and everything in it is laid out anew. It is composed when it is
  * built and again each time its own function runs for a change.
  *
- * Only the screen functions themselves are counted (and, on the compass, the readout's content): a part of a screen
- * that is composed apart from it, such as one row of a list, is not.
+ * The screen functions themselves are counted here (and, on the compass, the readout's content); a part of a screen
+ * that is composed apart from it is not, except the parts of the waypoints list ([waypointsParts]).
  *
  * The instrumented tests read these to show that turning the ring builds no screen and composes none. The screens
  * write them on the main thread, in builds with `BuildConfig.DIAGNOSTICS` on (the debug and the watch build), and
