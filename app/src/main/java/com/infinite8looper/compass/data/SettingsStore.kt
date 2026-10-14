@@ -1,5 +1,6 @@
 package com.infinite8looper.compass.data
 
+import android.annotation.SuppressLint
 import android.content.Context
 import androidx.datastore.core.DataMigration
 import androidx.datastore.core.DataStore
@@ -252,6 +253,8 @@ class SettingsStore(
         private val ALT = floatPreferencesKey("last_alt")
         private val COUNTER = intPreferencesKey("waypoint_counter")
 
+        // The store holds the application's context only (`app`), which lives as long as the process: no leak.
+        @SuppressLint("StaticFieldLeak")
         @Volatile private var instance: SettingsStore? = null
         fun get(context: Context): SettingsStore =
             instance ?: synchronized(this) { instance ?: SettingsStore(context, "settings").also { instance = it } }

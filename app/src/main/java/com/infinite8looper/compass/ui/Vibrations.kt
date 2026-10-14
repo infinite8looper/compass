@@ -1,5 +1,6 @@
 package com.infinite8looper.compass.ui
 
+import android.annotation.SuppressLint
 import android.os.Build
 import android.os.SystemClock
 import android.os.VibrationAttributes
@@ -37,6 +38,8 @@ import java.util.WeakHashMap
 enum class Feel(
     val primitives: IntArray, val scales: FloatArray, val delaysMs: IntArray, val constant: Int, val constantFrom34: Int = constant,
 ) {
+    // The texture tick is API 34's; [Vibrations.play] plays [constantFrom34] only from API 34.
+    @SuppressLint("InlinedApi")
     THIN(
         intArrayOf(Composition.PRIMITIVE_TICK), floatArrayOf(0.5f), intArrayOf(0),
         HapticFeedbackConstants.CLOCK_TICK, HapticFeedbackConstants.SEGMENT_FREQUENT_TICK,
@@ -81,6 +84,8 @@ class Vibrations private constructor(private val view: View) {
     private val vibrator: Vibrator? =
         view.context.getSystemService(VibratorManager::class.java)?.defaultVibrator?.takeIf { it.hasVibrator() }
     private val attributes = VibrationAttributes.createForUsage(VibrationAttributes.USAGE_TOUCH)
+    // The rows' primitives are Composition's PRIMITIVE_ constants (VibrationTableTest), which lint cannot see in an array.
+    @SuppressLint("WrongConstant")
     private val effects: Array<VibrationEffect?> = Array(Feel.entries.size) { i ->
         val feel = Feel.entries[i]
         if (feel.primitives.isEmpty() || vibrator == null || !vibrator.areAllPrimitivesSupported(*feel.primitives)) null
