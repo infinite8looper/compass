@@ -168,7 +168,7 @@ LONG='Trailhead parking lot, north entrance by the old sugar maple'
 long_names() { app_stop; sleep 1; sql "UPDATE waypoints SET name='$LONG' WHERE name='Waypoint 3'; UPDATE waypoints SET name='Camp' WHERE name='Waypoint 1'; UPDATE waypoints SET name='Summit of Mount Moosilauke via Gorge Brook' WHERE name='Waypoint 2';"; app_start; sleep 6; }
 
 dialog_choice() { # scrolls the system's permission dialog until the choice is well on screen, and taps it
-  for i in 1 2 3 4; do
+  for i in 1 2 3 4 5 6 7 8; do
     local r=($(row "$1"))
     if [ -n "$r" ] && [ $r[2] -lt $((H * 80 / 100)) ]; then $ADB shell input tap $r[1] $r[2]; return 0; fi
     $ADB shell input swipe $C $((H * 70 / 100)) $C $((H * 40 / 100)) 400; sleep 1
@@ -198,7 +198,7 @@ sec_truenorth() {
   to_settings
   setting "True north" off || return 1
   tap_row "True north" || return 1; sleep 2.5; shot truenorth-dialog
-  dialog_choice "Don't allow" || return 1; sleep 1.5
+  dialog_choice "Don’t allow" 2> /dev/null || dialog_choice "Don't allow" || return 1; sleep 1.5
   find_row "True north" > /dev/null; shot truenorth-declined-settings
   from_settings; sleep 3; shot truenorth-declined-compass
 }
@@ -234,11 +234,11 @@ sec_moving() {
 sec_log() {
   fresh granted; feed $HERE_LAT $HERE_LON; sleep 8; magnetic 44
   seed $THREE
-  app_stop; app_start; sleep 1.2; press; sleep 0.9; shot log-saving          # before the session's first fix
+  sleep 2; home; sleep 12; app_start; sleep 0.6; press; sleep 0.9; shot log-saving   # the position in hand is over 10 s old: the save waits
   shot_when log-saved $GREEN 50 72 40
   for try in 1 2 3 4; do      # a press followed at once by Home, with location off while the app is off screen:
     sleep 4                   # no position reaches the save in its 20 seconds, and its result waits for the return.
-    app_stop; app_start; sleep 1.2      # a new process holds no position, so the press waits for one (v3: one in hand is saved at once)
+    home; sleep 12; app_start; sleep 0.6      # the position in hand is over 10 s old, so the press waits for one (v3: one in hand is saved at once)
     $ADB shell "input tap $C $TAP_Y; sleep 0.1; input tap $C $TAP_Y; input keyevent KEYCODE_HOME; settings put secure location_mode 0"; sleep 23
     location on; sleep 1; app_start; shot_when log-no-gps-fix $RED 50 72 2> /dev/null && break
     [ $try = 4 ] && echo "  log-no-gps-fix-$SUF.png  NOT CAUGHT in four tries (a fix reached the app before it left the screen each time)" >&2

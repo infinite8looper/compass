@@ -36,12 +36,15 @@ Every picture here is a capture from an emulator, taken on 2026-10-13 from the d
 | `Needs access to` / `precise location` on the compass | `log-needs-access` | `permission`: `Use precise location` switched off in the dialog, `While using app` |
 | The same on the waypoints band | `waypoints-needs-access` | `permission`: `Log here`, then `Keep approximate location` |
 | The same under `Show coordinates` | `settings-needs-access` | `permission`: the row tapped with only approximate location granted |
-| `Saving…` | `log-saving` | `log`: a press 1.2 s after the app starts, before the first fix |
+| `Saving…` | `log-saving` | `log`: Home for 12 s, so the position in hand is over 10 s old, the app opened again and a press 0.6 s later, before a new position |
 | `Saved Waypoint N` and the accuracy | `log-saved` | `log`: the same press, when the confirming green shows |
-| `No GPS fix` / `Try again outdoors` | `log-no-gps-fix` | `log`: a double tap on the dial (two `input tap`) followed at once by Home, location off while the app is off screen, 23 s, location on, the app opened again (the picture is taken while it opens) |
+| `No GPS fix` / `Try again outdoors` | `log-no-gps-fix` | `log`: Home for 12 s and the app opened again (no position in hand), then 0.6 s later a double tap on the dial (two `input tap`) followed at once by Home, location off while the app is off screen, 23 s, location on, the app opened again (the picture is taken while it opens) |
 | `Location is off` | `log-location-off` | `log`: location off, Home and back, a press |
 | `Couldn't save` | `log-couldnt-save` | `log`: `run-as ... chmod 440 databases/waypoints.db` with the app stopped, start, a press; the file is put back to 660 |
 | The status band on the waypoints screen | `waypoints-saved-band` | `waypoints`: `Log here` tapped |
+| `True north` switched on without the permission: the system's dialog | `truenorth-dialog` | `truenorth`: wiped data, settings, `True north` off and tapped on again |
+| The switch on after the dialog was declined | `truenorth-declined-settings` | `truenorth`: `Don’t allow` |
+| The compass after it: magnetic, `MAG` | `truenorth-declined-compass` | `truenorth`: one swipe back to the compass |
 
 ## Coordinates
 
