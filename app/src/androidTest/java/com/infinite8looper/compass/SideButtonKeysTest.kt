@@ -13,7 +13,17 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.job
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import android.app.Application
+import androidx.test.core.app.ActivityScenario
+import androidx.test.core.app.ApplicationProvider
+import androidx.test.platform.app.InstrumentationRegistry
+import com.infinite8looper.compass.data.SettingsStore
+import com.infinite8looper.compass.nav.TrailMode
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeout
+import org.junit.After
 import org.junit.Assert.*
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -22,6 +32,10 @@ import org.junit.runner.RunWith
  * test keeps by the watch's own clock, and its real timer. This is the handling a watch with a button the app can
  * act on gets; it is checked here, apart from any screen, because the emulator images describe no such button and
  * the screens there install no key handling (SideButtonTest).
+ *
+ * The last three tests run the handling as the screens install it ([com.infinite8looper.compass.ui.rememberSideButtonKeys]
+ * on the outermost box), put in place of the app's content in the real activity ([SideKeysHost]) and told the
+ * watch has a button, with the app's real view model and settings: real key events go through the system to it.
  */
 @RunWith(AndroidJUnit4::class)
 class SideButtonKeysTest {
@@ -110,5 +124,62 @@ class SideButtonKeysTest {
         assertFalse(button.onKey(key(KeyEvent.ACTION_UP, down, KeyEvent.KEYCODE_BACK), { true }, { false }, act))
         delay(DOUBLE_PRESS_WINDOW_MS + 300)
         assertTrue("presses acted on: ${seen.kinds}", seen.kinds.isEmpty())
+    }
+
+    // The handling as the screens install it, in SideKeysHost.
+
+    private val app: Application = ApplicationProvider.getApplicationContext()
+    private val settings = SettingsStore.get(app)
+    private val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+
+    private fun resetTrail() = runBlocking { settings.setTrailMode(TrailMode.OFF); settings.setBreadcrumbTrail(false) }
+    @Before fun setUp() { resetTrail(); SideKeysHost.singles.set(0); SideKeysHost.trailOn = false }
+    @After fun tearDown() = resetTrail()
+
+    /** One short press sent through the system, handled before this returns. Returns when it was let go. */
+    private fun sendPress(): Long {
+        val down = SystemClock.uptimeMillis()
+        assertTrue(automation.injectInputEvent(KeyEvent(down, down, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_STEM_1, 0), true))
+        val up = SystemClock.uptimeMillis()
+        assertTrue(automation.injectInputEvent(KeyEvent(down, up, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_STEM_1, 0), true))
+        return up
+    }
+
+    private fun host(block: suspend () -> Unit) = runBlocking {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { SideKeysHost.showIn(it) }
+            delay(1_500)      // composed, and the box has the focus
+            block()
+        }
+    }
+
+    @Test fun onTheScreensWithTheTrailOffASinglePressIsActedOnWhenItIsLetGo() = host {
+        sendPress()
+        assertEquals(1, SideKeysHost.singles.get())
+        delay(DOUBLE_PRESS_WINDOW_MS + 300)
+        assertEquals(1, SideKeysHost.singles.get())
+    }
+
+    @Test fun onTheScreensWithTheTrailOnASinglePressWaitsForTheWindow() = host {
+        SideKeysHost.trailOn = true
+        val up = sendPress()
+        val at = SystemClock.uptimeMillis() - up
+        if (at < DOUBLE_PRESS_WINDOW_MS) assertEquals("acted on $at ms after the press", 0, SideKeysHost.singles.get())
+        withTimeout(2_000) { while (SideKeysHost.singles.get() == 0) delay(5) }
+        val after = SystemClock.uptimeMillis() - up
+        assertTrue("the single press was acted on $after ms after it was let go", after >= DOUBLE_PRESS_WINDOW_MS)
+    }
+
+    @Test fun onTheScreensADoublePressSwitchesTheTrailInTheViewModel() = host {
+        settings.setBreadcrumbTrail(true)
+        SideKeysHost.trailOn = true
+        val first = sendPress()
+        delay(120)
+        val gap = SystemClock.uptimeMillis() - first
+        sendPress()
+        assertTrue("the presses came $gap ms apart", gap <= DOUBLE_PRESS_WINDOW_MS)
+        withTimeout(10_000) { while (settings.settings.first().trailMode != TrailMode.LAYING) delay(20) }
+        delay(DOUBLE_PRESS_WINDOW_MS + 300)
+        assertEquals("single presses acted on", 0, SideKeysHost.singles.get())
     }
 }

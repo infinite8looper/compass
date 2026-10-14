@@ -156,6 +156,18 @@ class DialInputsTest {
         assertTrue("$what: crumbs stored", crumbDao.all().isEmpty())
     }
 
+    /**
+     * Two taps, and the save has begun by the time the second tap's release has been handled: nothing waits. The
+     * time is logged (`adb logcat -s DialInputsTest`).
+     */
+    private fun doubleTapSavesAtOnce(vm: CompassViewModel, what: String) {
+        val up = doubleTap()
+        val status = vm.logStatus.value
+        val after = SystemClock.uptimeMillis() - up
+        Log.i("DialInputsTest", "$what: the save had begun $after ms after the second tap was let go")
+        assertTrue("$what: $status, $after ms after the second tap", status is LogStatus.Saving || status is LogStatus.Saved)
+    }
+
     /** The save that press number [press] started has ended in a saved position. */
     private suspend fun saved(vm: CompassViewModel, press: Int, what: String) {
         withTimeout(5_000) { while (vm.logPress.value < press) delay(10) }
@@ -173,15 +185,46 @@ class DialInputsTest {
             assertTrue("one tap left the compass: ${wordsOnScreen()}", compassInView())
 
             // Two taps: the save has begun when the second tap's release has been handled. Nothing waits.
-            val up = doubleTap()
-            val status = vm.logStatus.value
-            val after = SystemClock.uptimeMillis() - up
-            Log.i("DialInputsTest", "the save had begun $after ms after the second tap was let go")
-            assertTrue("$status, $after ms after the second tap", status is LogStatus.Saving || status is LogStatus.Saved)
+            doubleTapSavesAtOnce(vm, "with the trail off")
             saved(vm, 1, "after a double tap")
             assertEquals(1, dao.observeAll().first().size)
             assertTrue(crumbDao.all().isEmpty())
             assertEquals(TrailMode.OFF, settings.settings.first().trailMode)
+        }
+    }
+
+    /**
+     * `Breadcrumb trail` is on by default (v3: "`Breadcrumb trail` is on by default, also for an install that never
+     * touched the switch"). With it on and no trail being laid, a double tap saves a waypoint, and at once: the
+     * 300 ms wait for a second press belongs to the side button alone.
+     */
+    @Test fun withTheTrailSettingOnAndNoTrailADoubleTapSavesAWaypointAtOnce() = runBlocking {
+        settings.setBreadcrumbTrail(true)
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            val vm = viewModelOf(scenario)
+            shows("the compass") { compassInView() }
+            doubleTapSavesAtOnce(vm, "with the trail setting on and no trail")
+            saved(vm, 1, "after a double tap with the trail setting on")
+            assertEquals(1, dao.observeAll().first().size)
+            assertTrue(crumbDao.all().isEmpty())
+            assertEquals(TrailMode.OFF, settings.settings.first().trailMode)
+        }
+    }
+
+    /** A tap somewhere else first, a moment before, does not take the double tap's first tap as its partner. */
+    @Test fun aStrayTapJustBeforeADoubleTapDoesNotUseItUp() = runBlocking {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            val vm = viewModelOf(scenario)
+            shows("the compass") { compassInView() }
+            // The stray tap on one side, the double tap on the other, further apart than the double-tap distance.
+            val slop = ViewConfiguration.get(app).scaledDoubleTapSlop
+            val far = screen.width() * 0.38f
+            assertTrue("the screen is too narrow for two taps further apart than $slop px", 2 * far > slop + 2)
+            tap(x = cx - far, y = cy)
+            SystemClock.sleep(120)
+            doubleTap(x = cx + far, y = cy, gapMs = 120)
+            saved(vm, 1, "after a stray tap and then a double tap")
+            assertEquals(1, dao.observeAll().first().size)
         }
     }
 
@@ -191,7 +234,7 @@ class DialInputsTest {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             val vm = viewModelOf(scenario)
             shows("the compass") { compassInView() }
-            doubleTap()
+            doubleTapSavesAtOnce(vm, "while laying")
             saved(vm, 1, "after a double tap while laying")
             assertEquals("Crumb 1", (vm.logStatus.value as? LogStatus.Saved)?.name)
             assertEquals(1, crumbDao.all().size)

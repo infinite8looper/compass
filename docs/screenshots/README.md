@@ -38,7 +38,7 @@ Every picture here is a capture from an emulator, taken on 2026-10-13 from the d
 | The same under `Show coordinates` | `settings-needs-access` | `permission`: the row tapped with only approximate location granted |
 | `Saving…` | `log-saving` | `log`: a press 1.2 s after the app starts, before the first fix |
 | `Saved Waypoint N` and the accuracy | `log-saved` | `log`: the same press, when the confirming green shows |
-| `No GPS fix` / `Try again outdoors` | `log-no-gps-fix` | `log`: `input keyevent KEYCODE_STEM_1 KEYCODE_HOME`, location off while the app is off screen, 23 s, location on, the app opened again (the picture is taken while it opens) |
+| `No GPS fix` / `Try again outdoors` | `log-no-gps-fix` | `log`: a double tap on the dial (two `input tap`) followed at once by Home, location off while the app is off screen, 23 s, location on, the app opened again (the picture is taken while it opens) |
 | `Location is off` | `log-location-off` | `log`: location off, Home and back, a press |
 | `Couldn't save` | `log-couldnt-save` | `log`: `run-as ... chmod 440 databases/waypoints.db` with the app stopped, start, a press; the file is put back to 660 |
 | The status band on the waypoints screen | `waypoints-saved-band` | `waypoints`: `Log here` tapped |
@@ -105,7 +105,7 @@ Every picture here is a capture from an emulator, taken on 2026-10-13 from the d
 
 ## The largest font size
 
-The system's font scale set to 1.24, the largest step of the Wear OS font size setting (`adb shell settings put system font_scale 1.24`), by hand and not by the script. Three waypoints, one named `Trailhead parking lot north`, three crumbs, `Breadcrumb trail` on and a trail being laid.
+The system's font scale set to 1.24, the largest step of the Wear OS font size setting (`adb -s emulator-5554 shell settings put system font_scale 1.24`), by hand and not by the script. Three waypoints, one named `Trailhead parking lot north`, three crumbs, `Breadcrumb trail` on and a trail being laid.
 
 | State | File | How it was produced |
 |-|-|-|
@@ -140,8 +140,8 @@ The system's font scale set to 1.24, the largest step of the Wear OS font size s
 The `accent-` pictures need the system's color scheme switched on through `adb`, since no image does it from the watch face:
 
 ```
-adb shell settings put global dynamic_color_theme_enabled 1
-adb shell settings put secure theme_customization_overlay_packages '{"android.theme.customization.system_palette":"00AA55","android.theme.customization.accent_color":"00AA55","android.theme.customization.color_source":"preset","android.theme.customization.theme_style":"TONAL_SPOT"}'
+adb -s emulator-5554 shell settings put global dynamic_color_theme_enabled 1
+adb -s emulator-5554 shell settings put secure theme_customization_overlay_packages '{"android.theme.customization.system_palette":"00AA55","android.theme.customization.accent_color":"00AA55","android.theme.customization.color_source":"preset","android.theme.customization.theme_style":"TONAL_SPOT"}'
 ```
 
 The app follows when it next comes back on screen (Home, then open it again). `settings delete global dynamic_color_theme_enabled` switches the scheme off; this image also reads the setting as unset after every boot.

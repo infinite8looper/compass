@@ -60,6 +60,43 @@ class InputsTest {
         assertFalse(doubleTapSaves(firstInView = true, secondInView = true, apartPx = Float.NaN, slopPx = slop))
     }
 
+    // Taps one after another: which two make a double tap.
+
+    private fun tap(downMs: Long, x: Float = 100f, inView: Boolean = true, heldMs: Long = 40) =
+        DialTap(downMs, downMs + heldMs, x, 100f, inViewAtDown = inView, inViewAtUp = inView)
+    private fun steps(vararg taps: DialTap): List<Boolean> {
+        var waiting: DialTap? = null
+        return taps.map { t -> nextTap(waiting, t, timeoutMs = 300, minMs = 40, slopPx = slop).also { waiting = it.waiting }.saves }
+    }
+
+    @Test fun twoTapsInsideTheWindowSaveOnceAndOneTapAloneSavesNothing() {
+        assertEquals(listOf(false), steps(tap(0)))
+        assertEquals(listOf(false, true), steps(tap(0), tap(140)))
+    }
+    @Test fun aStrayTapFarAwayDoesNotUseUpTheDoubleTapThatFollowsIt() {
+        // A tap at the edge, then two quick taps on the dial: the second and third are the double tap.
+        assertEquals(listOf(false, false, true), steps(tap(0, x = 10f), tap(150, x = 300f), tap(290, x = 300f)))
+    }
+    @Test fun aStrayTapLongBeforeDoesNotUseUpTheDoubleTapThatFollowsIt() {
+        assertEquals(listOf(false, false, true), steps(tap(0), tap(500), tap(640)))
+    }
+    @Test fun aThirdTapCloseBehindADoubleTapIsNotASecondDoubleTap() {
+        assertEquals(listOf(false, true, false), steps(tap(0), tap(140), tap(280)))
+        // But a fourth makes a pair with the third.
+        assertEquals(listOf(false, true, false, true), steps(tap(0), tap(140), tap(280), tap(420)))
+    }
+    @Test fun tapsTooCloseOrTooFarApartInTimeAreNoPair() {
+        // The second went down 341 ms after the first was let go (the first is held 40 ms).
+        assertEquals(listOf(false, false), steps(tap(0), tap(381)))
+        // Sooner than a double tap may follow (under 40 ms after the release).
+        assertEquals(listOf(false, false), steps(tap(0), tap(60)))
+    }
+    @Test fun aPairWithTheCompassOutOfViewSavesNothingAndLeavesNothingWaiting() {
+        val step = nextTap(tap(0, inView = false), tap(140), timeoutMs = 300, minMs = 40, slopPx = slop)
+        assertFalse(step.saves)
+        assertNull(step.waiting)
+    }
+
     @Test fun theAccessibilityActionIsNamedAsTheSpecProposes() {
         assertEquals("Save waypoint here", SAVE_HERE_ACTION)
         // The dial it is an action of is named for a screen reader with the app's name.

@@ -59,7 +59,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlin.math.abs
-import kotlin.math.hypot
 
 /**
  * The compass, one of the three screens that sit side by side. [paneView] says how much of it the wearer has in
@@ -309,25 +308,33 @@ fun CompassScreen(
             // finger that then moves swipes nothing.
             //
             // One tap does nothing, and gives no vibration either: a brush of the screen saves nothing. Two taps
-            // within the system's double-tap time save, as a single press of the side button did, when
-            // [doubleTapSaves] says they are a double tap: the compass in view at both, and the second near the
-            // first. The long press comes after the system's own long-press time whether or not a tap came just
-            // before it; a second touch that is held is a long press and saves nothing.
+            // save, as a single press of the side button did, when [nextTap] says they are a double tap: the
+            // second goes down within the system's double-tap time after the first is let go, near it, with the
+            // compass in view at both. Each tap is acted on when it is let go and nothing waits for a second one,
+            // so the long press comes after the system's own long-press time whether or not a tap came just before
+            // it. A tap that is no partner of the one before it waits for one in its turn, so a stray tap does not
+            // use up the double tap after it. A touch that becomes a swipe or a long press leaves no tap waiting.
             .pointerInput(view, paneView) {
                 val slopPx = android.view.ViewConfiguration.get(view.context).scaledDoubleTapSlop.toFloat()
-                // Where the last two touches went down, and whether the compass was in view at the earlier one.
-                var earlierX = Float.NaN; var earlierY = Float.NaN; var earlierInView = false
-                var laterX = Float.NaN; var laterY = Float.NaN; var laterInView = false
+                val timeoutMs = viewConfiguration.doubleTapTimeoutMillis
+                val minMs = viewConfiguration.doubleTapMinTimeMillis
+                // The touch that is down now, and the lone tap that waits for a partner.
+                var downMs = 0L; var downX = 0f; var downY = 0f; var downInView = false
+                var waiting: DialTap? = null
                 detectTapGestures(
                     onPress = { at ->
-                        earlierX = laterX; earlierY = laterY; earlierInView = laterInView
-                        laterX = at.x; laterY = at.y; laterInView = paneView() == PaneView.IN_VIEW
+                        downMs = SystemClock.uptimeMillis(); downX = at.x; downY = at.y
+                        downInView = paneView() == PaneView.IN_VIEW
+                        if (!tryAwaitRelease()) waiting = null
                     },
-                    onDoubleTap = {
-                        val apart = hypot(laterX - earlierX, laterY - earlierY)
-                        if (doubleTapSaves(earlierInView, paneView() == PaneView.IN_VIEW, apart, slopPx)) sidePress()
+                    onTap = {
+                        val tap = DialTap(downMs, SystemClock.uptimeMillis(), downX, downY, downInView, paneView() == PaneView.IN_VIEW)
+                        val step = nextTap(waiting, tap, timeoutMs, minMs, slopPx)
+                        waiting = step.waiting
+                        if (step.saves) sidePress()
                     },
                     onLongPress = {
+                        waiting = null
                         if (paneView() == PaneView.IN_VIEW) {
                             view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
                             openList()

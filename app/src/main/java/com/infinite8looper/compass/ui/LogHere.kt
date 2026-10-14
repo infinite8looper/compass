@@ -139,9 +139,8 @@ internal fun LogResultTimer(vm: CompassViewModel, paneView: () -> PaneView) {
 @Composable
 internal fun rememberSideButtonKeys(
     vm: CompassViewModel, paneView: () -> PaneView, doubleEnabled: () -> Boolean, onSinglePress: () -> Unit,
+    hasButton: Boolean = rememberAssignableButton(),
 ): ((KeyEvent) -> Boolean)? {
-    val context = LocalContext.current
-    val hasButton = remember(context) { WatchButtons.assignable(context) }
     if (!hasButton) return null
     val scope = rememberCoroutineScope()
     val button = remember(scope) { SideButton(scope) }
@@ -154,6 +153,17 @@ internal fun rememberSideButtonKeys(
             }
         }
     }
+}
+
+/**
+ * Whether this watch says it has a button the app can act on ([WatchButtons.assignable]). The screens take it from
+ * here; [rememberSideButtonKeys] is given it as a parameter so that SideButtonKeysTest can run the handling the
+ * screens install on an emulator, whose images describe no button.
+ */
+@Composable
+internal fun rememberAssignableButton(): Boolean {
+    val context = LocalContext.current
+    return remember(context) { WatchButtons.assignable(context) }
 }
 
 /** The handling [rememberSideButtonKeys] gave, on a screen's outermost box; nothing where it gave none. */

@@ -162,8 +162,17 @@ class AccessibilityTreeTest {
                 delay(100)
             }
             delay(700)
-            dial.refresh()
-            dial.saveAction()?.let { assertFalse("the action was taken with the settings in view", dial.performAction(it.id)) }
+            // The dial is read again from the system's tree. Either it has left the tree, so no service can ask for
+            // the action (the node read before can no longer be refreshed), or it is still there, off the screen,
+            // and the action is refused. Each case is checked; neither passes having checked nothing.
+            val again = nodes().filter { it.packageName == "com.infinite8looper.compass" && it.saveAction() != null }
+            assertTrue("nodes with the action, with the settings in view: ${again.size}", again.size <= 1)
+            if (again.isEmpty()) {
+                assertFalse("the dial has no action in the tree, yet the node read before is still the system's", dial.refresh())
+            } else {
+                assertFalse("the dial is said to be on screen with the settings in view", again.single().isVisibleToUser)
+                assertFalse("the action was taken with the settings in view", again.single().performAction(again.single().saveAction()!!.id))
+            }
             delay(1_000)
             assertEquals(1, vm.logPress.value)
             assertEquals(1, dao.observeAll().first().size)

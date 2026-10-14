@@ -30,3 +30,32 @@ fun hasAssignableButton(buttonCount: Int, sideKeysKnown: Int): Boolean =
  */
 fun doubleTapSaves(firstInView: Boolean, secondInView: Boolean, apartPx: Float, slopPx: Float): Boolean =
     firstInView && secondInView && apartPx <= slopPx
+
+/**
+ * A tap on the dial: when it went down and was let go ([downMs], [upMs], on one clock), where it went down, and
+ * whether the compass was the screen in view when it went down and when it was let go.
+ */
+data class DialTap(val downMs: Long, val upMs: Long, val x: Float, val y: Float, val inViewAtDown: Boolean, val inViewAtUp: Boolean)
+
+/** After a tap: whether it saves, and the tap that waits for a partner now. */
+data class TapStep(val saves: Boolean, val waiting: DialTap?)
+
+/**
+ * What [tap] makes of the taps on the dial, given the lone tap [waiting] before it, if any.
+ *
+ * Two taps are a pair when the second goes down within [timeoutMs] of the first being let go, and no sooner than
+ * [minMs], and the two are no further apart than [slopPx]. A pair saves when [doubleTapSaves] says so, and leaves
+ * nothing waiting, so a third tap close behind is not a second double tap. A tap that makes no pair waits in its
+ * turn: a stray tap before a double tap (too long before, or too far away) does not use up the double tap's first
+ * tap.
+ */
+fun nextTap(waiting: DialTap?, tap: DialTap, timeoutMs: Long, minMs: Long, slopPx: Float): TapStep {
+    if (waiting != null) {
+        val gap = tap.downMs - waiting.upMs
+        val apart = kotlin.math.hypot(tap.x - waiting.x, tap.y - waiting.y)
+        if (gap in minMs..timeoutMs && apart <= slopPx) {
+            return TapStep(doubleTapSaves(waiting.inViewAtDown, tap.inViewAtUp, apart, slopPx), null)
+        }
+    }
+    return TapStep(false, tap)
+}

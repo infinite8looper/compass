@@ -73,15 +73,30 @@ class RingScreensTest {
      * read from it can stay what it was for seconds after a list has moved (seen: a row read at its old place 1.5 s
      * after its list had stopped at its end, and at its new place 3 s after, with nothing done in between). So every
      * node is fetched again from the app ([AccessibilityNodeInfo.refresh], which bypasses the cache) before it is
-     * read, and a node the app no longer has is left out.
+     * read. A node that cannot be fetched again (the app dropped it while the tree was being walked) is not left out,
+     * which could make a check that something is absent pass on a tree read half way: the whole tree is read again,
+     * up to three times, and if it still cannot be read whole the test fails.
      */
     private fun nodes(): List<AccessibilityNodeInfo> {
-        val root = instrumentation.uiAutomation.rootInActiveWindow ?: return emptyList()
-        if (!root.refresh()) return emptyList()
-        val all = ArrayList<AccessibilityNodeInfo>()
-        fun walk(n: AccessibilityNodeInfo) { all += n; for (i in 0 until n.childCount) n.getChild(i)?.let { if (it.refresh()) walk(it) } }
-        walk(root)
-        return all.filter { it.packageName == "com.infinite8looper.compass" }
+        repeat(3) { attempt ->
+            if (attempt > 0) SystemClock.sleep(200)
+            val root = instrumentation.uiAutomation.rootInActiveWindow ?: return@repeat
+            if (!root.refresh()) return@repeat
+            val all = ArrayList<AccessibilityNodeInfo>()
+            var whole = true
+            fun walk(n: AccessibilityNodeInfo) {
+                all += n
+                for (i in 0 until n.childCount) {
+                    val child = n.getChild(i)
+                    if (child == null || !child.refresh()) { whole = false; return }
+                    walk(child)
+                }
+            }
+            walk(root)
+            if (whole) return all.filter { it.packageName == "com.infinite8looper.compass" }
+        }
+        fail("the app's tree could not be read whole in three tries")
+        return emptyList()
     }
 
     private fun onScreen(text: String) = nodes().any { it.isVisibleToUser && it.text?.toString() == text }
