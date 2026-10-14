@@ -67,8 +67,8 @@ import com.infinite8looper.compass.nav.softLineColor
 // blue pointer, the red north, the app's grays and the full wheel of hues for waypoints, and nothing is read from
 // the watch for them. With `Watch face`, on a watch whose system gives apps a color scheme taken from its watch
 // face, the accent, north and the error color come from that scheme's primary, tertiary and error color, the ink
-// and the grays from its colors for text and outlines, and the waypoints' colors from a ring of the three roles,
-// all after the checks in nav/WatchColors.kt. They are held as state, so a place that reads one while composing is
+// and the grays from its colors for text and outlines, and the waypoints' colors from a ring of the accent, north
+// and a third color apart from both, all after the checks in nav/WatchColors.kt. They are held as state, so a place that reads one while composing is
 // composed again when it changes, and a place that reads one while drawing is drawn again: nothing has to be told.
 // Setting them to what they already are changes nothing.
 private val palette = mutableStateOf(STANDARD_PALETTE)

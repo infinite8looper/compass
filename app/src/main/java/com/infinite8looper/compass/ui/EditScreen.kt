@@ -366,8 +366,8 @@ private class HueWrites(initial: Float, private val store: (Float) -> Unit) {
  * The frame as a color wheel: the waypoints' colors in the order of their places, 0 at 12 o'clock and clockwise
  * ([waypointColor]), and a line across the wheel at the waypoint's place on it, drawn like a focused target's line on
  * the dial. With `Colors` at `Standard` it is the full wheel of hues, red at 12 o'clock; with `Watch face` it is the
- * ring that fades from the accent at 12 o'clock to north a third of the way round, on to the error color at two
- * thirds and back to the accent. [hue] is that place, the waypoint's stored value from 0 to 360. [hue] and [shown] are read while drawing. An
+ * ring that fades from the accent at 12 o'clock to north a third of the way round, on to the ring's third anchor at
+ * two thirds (the error color, or a color apart from both: nav/WatchColors.kt, `ringThirdFor`) and back to the accent. [hue] is that place, the waypoint's stored value from 0 to 360. [hue] and [shown] are read while drawing. An
  * accessibility service sets the place through [onHue].
  */
 @Composable
