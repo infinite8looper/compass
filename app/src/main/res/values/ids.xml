@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The tag under which a window's root view keeps its vibration player (ui/Vibrations.kt). -->
+    <item name="vibrations" type="id" />
+</resources>

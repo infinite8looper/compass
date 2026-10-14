@@ -12,10 +12,10 @@ import android.util.Log
 import android.view.HapticFeedbackConstants
 import android.view.View
 import com.infinite8looper.compass.BuildConfig
+import com.infinite8looper.compass.R
 import com.infinite8looper.compass.nav.DialCrossing
 import com.infinite8looper.compass.nav.NO_PRESS
 import com.infinite8looper.compass.nav.confirmDelayMs
-import java.util.WeakHashMap
 
 /**
  * The app's vibrations, in one table: the feel of each is set here and nowhere else.
@@ -130,9 +130,11 @@ class Vibrations private constructor(private val view: View) {
 
     companion object {
         private const val TAG = "Vibrations"
-        private val forWindow = WeakHashMap<View, Vibrations>()
 
-        /** The player for the window [view] is in. */
-        fun of(view: View): Vibrations = view.rootView.let { root -> forWindow.getOrPut(root) { Vibrations(root) } }
+        /** The player for the window [view] is in, kept as a tag of the window's root view and gone with it. */
+        fun of(view: View): Vibrations {
+            val root = view.rootView
+            return root.getTag(R.id.vibrations) as? Vibrations ?: Vibrations(root).also { root.setTag(R.id.vibrations, it) }
+        }
     }
 }
