@@ -5,7 +5,6 @@ import androidx.compose.ui.unit.Dp
 import com.infinite8looper.compass.NavUi
 import android.os.Build
 import android.os.SystemClock
-import android.view.HapticFeedbackConstants
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -350,7 +349,7 @@ fun CompassScreen(
                     onLongPress = {
                         waiting = null
                         if (paneView() == PaneView.IN_VIEW) {
-                            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                            Vibrations.of(view).play(Feel.LONG_PRESS)
                             openList()
                         }
                     },

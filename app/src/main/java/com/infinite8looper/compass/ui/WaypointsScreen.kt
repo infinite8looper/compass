@@ -6,7 +6,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.runtime.State
 import android.os.SystemClock
-import android.view.HapticFeedbackConstants
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
@@ -182,7 +181,7 @@ fun WaypointsScreen(
             clearHeld.snapTo(progress)
             if (progress >= 1f) {
                 if (paneView() == PaneView.IN_VIEW) {
-                    view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                    Vibrations.of(view).play(Feel.LONG_PRESS)
                     vm.clearTrail()
                 }
                 clearing = false

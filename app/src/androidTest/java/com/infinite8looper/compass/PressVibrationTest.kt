@@ -4,7 +4,6 @@ import android.Manifest
 import android.app.Application
 import android.graphics.Rect
 import android.os.Build
-import android.os.ParcelFileDescriptor
 import android.os.SystemClock
 import android.view.InputDevice
 import android.view.MotionEvent
@@ -28,9 +27,6 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /**
  * Every press that saves is answered with a vibration at once, before the row is written (v3 spec, "Saving": "The
@@ -61,24 +57,10 @@ class PressVibrationTest {
     @Before fun setUp() = reset()
     @After fun tearDown() = reset()
 
-    private fun shell(command: String): String =
-        ParcelFileDescriptor.AutoCloseInputStream(automation.executeShellCommand(command)).bufferedReader().readText()
+    private fun stampOf(ms: Long) = VibrationRecord.stampOf(ms)
 
-    /** The device's clock as the vibration record writes it. */
-    private val stamp = SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.ROOT)
-    private fun stampOf(ms: Long) = stamp.format(Date(ms))
-
-    /**
-     * The app's vibrations the system recorded from [fromMs] to [toMs] (wall clock), each as its line. On API 35 and
-     * later the line names the haptic feedback constant; API 33 and 34 record only the effect.
-     */
-    private fun vibrations(fromMs: Long, toMs: Long): List<String> {
-        val from = stampOf(fromMs); val to = stampOf(toMs)
-        return shell("dumpsys vibrator_manager").lines().filter { "com.infinite8looper.compass" in it }.mapNotNull { line ->
-            val t = Regex("^\\s*(?:startTime: )?(\\d\\d-\\d\\d \\d\\d:\\d\\d:\\d\\d\\.\\d+)").find(line)?.groupValues?.get(1) ?: return@mapNotNull null
-            line.takeIf { t >= from && t <= to }
-        }.distinct()
-    }
+    /** The app's vibrations the system recorded from [fromMs] to [toMs] (wall clock), each as its line ([VibrationRecord]). */
+    private fun vibrations(fromMs: Long, toMs: Long): List<String> = VibrationRecord.lines(fromMs, toMs)
 
     /** A vibration was asked for after [markMs] and no later than the row was written at [writtenAtMs]: the press's own. */
     private suspend fun assertVibratedBeforeTheRow(route: String, markMs: Long, writtenAtMs: Long) {
@@ -167,12 +149,6 @@ class PressVibrationTest {
         }
     }
 
-    /** The system's status of a recorded vibration, lower case: `finished`, `cancelled_superseded`, ... */
-    private fun statusOf(line: String): String =
-        (Regex("\\|\\s*([a-z_]+)\\s*\\| duration").find(line) ?: Regex("status: ([A-Za-z_]+)").find(line))?.groupValues?.get(1)?.lowercase() ?: "?"
-    private fun startOf(line: String): String =
-        Regex("^\\s*(?:startTime: )?(\\d\\d-\\d\\d \\d\\d:\\d\\d:\\d\\d\\.\\d+)").find(line)!!.groupValues[1]
-
     /**
      * An instant save finishes tens of milliseconds after its press. Its confirming vibration waits until the press's
      * has played, so neither is cut short and both are felt (Task 3's record showed the press `cancelled_superseded`
@@ -191,11 +167,11 @@ class PressVibrationTest {
             delay(2_000)
             val lines = vibrations(mark, mark + 3_000)
             val all = "recorded: $lines"
-            assertTrue("no vibration was cut short; $all", lines.none { statusOf(it) != "finished" })
+            assertTrue("no vibration was cut short; $all", lines.none { VibrationRecord.statusOf(it) != "finished" })
             if (Build.VERSION.SDK_INT >= 35) {
                 val press = lines.single { "performHapticFeedback(constant=1)" in it }
                 val confirm = lines.single { "performHapticFeedback(constant=16)" in it }
-                val pressAt = stamp.parse(startOf(press))!!.time; val confirmAt = stamp.parse(startOf(confirm))!!.time
+                val pressAt = VibrationRecord.startMsOf(press); val confirmAt = VibrationRecord.startMsOf(confirm)
                 assertTrue("the confirming vibration came ${confirmAt - pressAt} ms after the press; $all", confirmAt - pressAt >= 140)
             } else {
                 assertEquals(all, 2, lines.size)

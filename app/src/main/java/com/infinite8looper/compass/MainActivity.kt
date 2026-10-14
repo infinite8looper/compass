@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import com.infinite8looper.compass.ui.CompassApp
+import com.infinite8looper.compass.ui.Vibrations
 import com.infinite8looper.compass.ui.WithoutFontScale
 import com.infinite8looper.compass.ui.followFontScale
 import com.infinite8looper.compass.ui.followWatchColors
@@ -12,6 +13,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         followWatchColors(this)
+        // The vibrator is asked which vibrations it supports on a thread of its own, before anything plays.
+        Vibrations.prepare(this)
         // The font size is read here; a change of it makes the activity again.
         followFontScale(this)
         setContent { WithoutFontScale { CompassApp() } }

@@ -4,7 +4,6 @@ import android.app.RemoteInput
 import android.content.ActivityNotFoundException
 import android.os.SystemClock
 import android.util.Log
-import android.view.HapticFeedbackConstants
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.Animatable
@@ -204,7 +203,7 @@ private fun EditWaypoint(vm: CompassViewModel, w: Waypoint, leave: () -> Unit) {
             val progress = holdProgress(withFrameMillis { SystemClock.uptimeMillis() } - holdStartedMs, HOLD_TO_DELETE_MS)
             held.snapTo(progress)
             if (progress >= 1f) {
-                view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                Vibrations.of(view).play(Feel.LONG_PRESS)
                 delete()
                 return@LaunchedEffect
             }

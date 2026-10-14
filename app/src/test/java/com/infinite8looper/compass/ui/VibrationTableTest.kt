@@ -53,16 +53,19 @@ class VibrationTableTest {
         // v2's tick: the texture tick from API 34, the clock tick before.
         assertEquals(HapticFeedbackConstants.CLOCK_TICK, Feel.THIN.constant)
         assertEquals(HapticFeedbackConstants.SEGMENT_FREQUENT_TICK, Feel.THIN.constantFrom34)
-        // Stronger platform effects for the other two, ones the emulators play (the click and the tick effect);
-        // not the long press, whose heavy click the emulators' vibrator does not support, so nothing plays.
-        assertEquals(HapticFeedbackConstants.VIRTUAL_KEY, Feel.THICK.constant)
-        assertEquals(HapticFeedbackConstants.CONTEXT_CLICK, Feel.TARGET.constant)
+        // Constants whose effects differ from each other and from the press on every emulator image (API 33, 34,
+        // 35, 37): GESTURE_START plays the click effect, CONFIRM two thuds. Not the long press, whose heavy click the
+        // emulators' vibrator does not support, so nothing plays; not CONTEXT_CLICK, whose tick effect is what the
+        // texture tick falls back to where the vibrator lacks it (API 37).
+        assertEquals(HapticFeedbackConstants.GESTURE_START, Feel.THICK.constant)
+        assertEquals(HapticFeedbackConstants.CONFIRM, Feel.TARGET.constant)
         for (f in dial) assertNotEquals("$f", HapticFeedbackConstants.LONG_PRESS, f.constantFrom34)
+        for (f in dial) assertNotEquals("$f", Feel.PRESS.constant, f.constantFrom34)
     }
 
     @Test fun theSaveAndBlindNavigationVibrationsAreTheSystemsAsBefore() {
         // The press, the confirming vibration, and v2's lock and heartbeat: haptic feedback constants only.
-        for (f in listOf(Feel.PRESS, Feel.SAVED, Feel.LOCK, Feel.HEARTBEAT)) {
+        for (f in listOf(Feel.PRESS, Feel.SAVED, Feel.LOCK, Feel.HEARTBEAT, Feel.LONG_PRESS)) {
             assertTrue("$f", f.primitives.isEmpty())
             assertEquals("$f", f.constant, f.constantFrom34)
         }
@@ -70,5 +73,7 @@ class VibrationTableTest {
         assertEquals(HapticFeedbackConstants.CONFIRM, Feel.SAVED.constant)
         assertEquals(HapticFeedbackConstants.CONFIRM, Feel.LOCK.constant)
         assertEquals(HapticFeedbackConstants.CONTEXT_CLICK, Feel.HEARTBEAT.constant)
+        // The long press that opens the waypoints, the edit screen's and the list's: the system's long press.
+        assertEquals(HapticFeedbackConstants.LONG_PRESS, Feel.LONG_PRESS.constant)
     }
 }
