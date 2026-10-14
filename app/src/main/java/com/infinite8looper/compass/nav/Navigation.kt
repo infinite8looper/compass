@@ -66,7 +66,7 @@ fun distanceMeters(from: GeoPoint, to: GeoPoint): Double {
 
 /** Declination is positive east: true = magnetic + declination. */
 fun displayHeading(magneticDeg: Float, declination: Float?, north: NorthRef): DisplayHeading =
-    DisplayHeading(displayHeadingDeg(magneticDeg, declination, north), !(north == NorthRef.TRUE && declination != null))
+    DisplayHeading(displayHeadingDeg(magneticDeg, declination, north), dialIsMagnetic(north, declination))
 
 /** The degrees of [displayHeading] alone, as a number: for the frame loop, which asks on every frame and is to make nothing. */
 fun displayHeadingDeg(magneticDeg: Float, declination: Float?, north: NorthRef): Float =
@@ -358,6 +358,52 @@ suspend fun acquireFix(
     }
     return good ?: best
 }
+
+/** A position the app holds may be saved at once at a press if it was taken this long before the press, or less. */
+const val IN_HAND_MAX_AGE_MS = 10_000L
+
+/** After a save from a position in hand, a more accurate position taken within this long of the press replaces it. */
+const val REFINE_WITHIN_MS = 10_000L
+
+/**
+ * The position a press saves at once: [inHand], the latest position the app holds, if it was taken no more than
+ * [IN_HAND_MAX_AGE_MS] before [pressedAtMs] and states an accuracy. Null when there is none such: the save then
+ * waits for a position taken after the press ([acquireFix]). Both times are on the clock that counts from boot.
+ * A position is saved with the accuracy it states, however poor that is.
+ */
+fun positionToSaveAtOnce(inHand: Fix?, pressedAtMs: Long): Fix? =
+    inHand?.takeIf { !it.accuracyM.isNaN() && pressedAtMs - it.elapsedMs <= IN_HAND_MAX_AGE_MS }
+
+/**
+ * Whether [candidate] replaces [written], the position a save from a position in hand wrote (or the last that
+ * replaced it): it is newer, states a smaller error, and was taken no later than [REFINE_WITHIN_MS] after the press.
+ */
+fun refines(written: Fix, candidate: Fix, pressedAtMs: Long): Boolean =
+    candidate.elapsedMs >= written.elapsedMs && candidate.elapsedMs - pressedAtMs <= REFINE_WITHIN_MS &&
+        candidate.accuracyM < written.accuracyM
+
+/** How much longer, at [now], a save made at [pressedAtMs] listens for a more accurate position. */
+fun refineWindowLeftMs(pressedAtMs: Long, now: Long): Long = (pressedAtMs + REFINE_WITHIN_MS - now).coerceAtLeast(0)
+
+/** A stored row's position as a refinement looks at it. */
+data class StoredPosition(val lat: Double, val lon: Double, val accuracyM: Float)
+
+/**
+ * Whether a refinement may write to a row that now holds [row] (null: the row is gone), having last written
+ * [written]: only while the row exists and still holds that position. A deleted row is never written again, so it
+ * never comes back, and a row whose position was changed by anyone else keeps that change. A change of the name, the
+ * color or the target does not touch the position and so does not stop it.
+ */
+fun refinementMayWrite(row: StoredPosition?, written: StoredPosition): Boolean = row != null && row == written
+
+/**
+ * Whether true north is a reason for location to run: with true north selected and no position ever stored, which
+ * is when the dial cannot show true north for want of a declination.
+ */
+fun trueNorthWantsPosition(north: NorthRef, hasStoredPosition: Boolean): Boolean = north == NorthRef.TRUE && !hasStoredPosition
+
+/** Whether the dial shows magnetic north, which is when `MAG` shows: by choice, or for want of a declination. */
+fun dialIsMagnetic(north: NorthRef, declination: Float?): Boolean = north == NorthRef.MAGNETIC || declination == null
 
 enum class LogFailure { NO_FIX, LOCATION_OFF, NO_PERMISSION, SAVE_FAILED }
 

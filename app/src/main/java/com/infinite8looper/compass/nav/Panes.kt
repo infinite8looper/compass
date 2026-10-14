@@ -154,6 +154,15 @@ fun headingWanted(top: TopScreen, compassOnScreen: Boolean, appOnScreen: Boolean
     appOnScreen && (top == TopScreen.CALIBRATION || (top == TopScreen.PANES && compassOnScreen))
 
 /**
+ * Whether the screens are a reason for location to run, so that a press finds a position in hand: while the app is
+ * on screen with the three screens on top and the compass or the waypoints screen on screen, at rest or passing in
+ * a swipe (so a swipe between the two does not stop and start it). Not for settings at rest, not under a screen
+ * opened from a row, not with the app off screen.
+ */
+fun screensWantLocation(top: TopScreen, compassOnScreen: Boolean, waypointsOnScreen: Boolean, appOnScreen: Boolean): Boolean =
+    appOnScreen && top == TopScreen.PANES && (compassOnScreen || waypointsOnScreen)
+
+/**
  * What the wearer has of a page whose place in the row gives it [view], when [top] is the screen on top. Under a
  * screen opened from a row a page is hidden, however it stands in the row: the navigation host can draw the
  * three screens behind such a screen while it is swiped aside, and a page that is only a picture there takes no
