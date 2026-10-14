@@ -16,6 +16,7 @@ import com.infinite8looper.compass.data.WaypointDatabase
 import com.infinite8looper.compass.nav.DOUBLE_PRESS_WINDOW_MS
 import com.infinite8looper.compass.nav.LogStatus
 import com.infinite8looper.compass.nav.TrailMode
+import com.infinite8looper.compass.sensors.WatchButtons
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -31,6 +32,17 @@ import org.junit.runner.RunWith
  * Real key events of the side button, sent to the real activity with the compass in view, at intervals the test
  * sets and then reads back from the events themselves. The tests that save need `scripts/geo-feed.sh -72.2896
  * 43.7022` running, as in CompassViewModelTest.
+ *
+ * What the keys do depends on the watch the tests run on, as that watch describes its buttons
+ * ([WatchButtons.assignable]). On a watch with a button the app can act on, each test checks the rule its name
+ * gives. On a watch without one, which is what the Wear OS emulator images are, the app installs no key handling:
+ * there each test sends the same presses and checks that they save nothing, switch no trail and leave nothing
+ * waiting ([nothingCameOfThePresses]). The rules for a watch with a button are then checked by SideButtonKeysTest,
+ * which gives the same key events to the app's handler directly, and by TrailTest.
+ *
+ * The v3 spec, which changed this: "`WearableButtons` is asked once whether the watch has an assignable button.
+ * Where it has, the side button works as in v2. Where it has not, the key handling is not installed, the 300 ms
+ * wait does not exist, and the settings row for the trail does not speak of a press."
  */
 @RunWith(AndroidJUnit4::class)
 class SideButtonTest {
@@ -41,6 +53,20 @@ class SideButtonTest {
     private val crumbDao = WaypointDatabase.get(app).crumbs()
     private val settings = SettingsStore.get(app)
     private val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+    /** Whether the watch says it has a button the app can act on. */
+    private val hasButton = WatchButtons.assignable(app)
+
+    /**
+     * On a watch with no button the app can act on: the presses that were just sent came to nothing. Longer than
+     * the double-press window is waited first, so a press that was held back for it would have been acted on.
+     */
+    private suspend fun nothingCameOfThePresses(vm: CompassViewModel) {
+        delay(DOUBLE_PRESS_WINDOW_MS + 1_200)
+        assertEquals(LogStatus.Idle, vm.logStatus.value)
+        assertEquals(0, vm.logPress.value)
+        assertEquals(TrailMode.OFF, storedMode())
+        assertTrue(dao.observeAll().first().isEmpty()); assertTrue(crumbDao.all().isEmpty())
+    }
 
     private fun reset() = runBlocking {
         dao.observeAll().first().forEach { dao.delete(it.id) }
@@ -93,6 +119,7 @@ class SideButtonTest {
             settle()
             val gap = pressTwice(150)
             assertTrue("the presses came $gap ms apart", gap in 100..DOUBLE_PRESS_WINDOW_MS)
+            if (!hasButton) { nothingCameOfThePresses(vm); press(); nothingCameOfThePresses(vm); return@use }
             withTimeout(10_000) { while (storedMode() != TrailMode.LAYING) delay(20) }
             // Neither press was a single press: nothing is being saved, and nothing is saved later.
             delay(1_500)
@@ -124,6 +151,7 @@ class SideButtonTest {
             settle()
             val gap = pressTwice(450)
             assertTrue("the presses came $gap ms apart", gap > DOUBLE_PRESS_WINDOW_MS)
+            if (!hasButton) { nothingCameOfThePresses(vm); return@use }
             // No trail is started. The first press saves a waypoint; the second comes while that save is in
             // progress and does nothing, as before.
             withTimeout(60_000) { while (vm.logStatus.value !is LogStatus.Saved) delay(20) }
@@ -136,9 +164,11 @@ class SideButtonTest {
     }
 
     @Test fun withTheSettingOffAPressActsAtOnceAndTwoCloseTogetherStartNoTrail() = runBlocking {
+        settings.setBreadcrumbTrail(false)
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             val vm = viewModelOf(scenario)
             settle()
+            if (!hasButton) { press(); SystemClock.sleep(100); press(); nothingCameOfThePresses(vm); return@use }
             // The save has begun by the time the press's release has been handled: nothing waits.
             val up = press()
             val status = vm.logStatus.value
@@ -165,6 +195,7 @@ class SideButtonTest {
             settle()
             val up = press()
             assertEquals(LogStatus.Idle, vm.logStatus.value)
+            if (!hasButton) { nothingCameOfThePresses(vm); return@use }
             // Still nothing a little before the window ends; the save has begun a little after it.
             SystemClock.sleep((up + DOUBLE_PRESS_WINDOW_MS - 80 - SystemClock.uptimeMillis()).coerceAtLeast(0))
             val early = vm.logStatus.value

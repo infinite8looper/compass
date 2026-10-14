@@ -37,7 +37,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.runtime.Composable
@@ -76,7 +75,6 @@ import com.infinite8looper.compass.nav.DROP_CRUMB
 import com.infinite8looper.compass.nav.LogStatus
 import com.infinite8looper.compass.nav.Pane
 import com.infinite8looper.compass.nav.PaneView
-import com.infinite8looper.compass.nav.PressKind
 import com.infinite8looper.compass.nav.TrailMode
 import com.infinite8looper.compass.nav.trailRowAction
 import com.infinite8looper.compass.nav.trailRowDetail
@@ -108,17 +106,17 @@ import androidx.compose.runtime.snapshotFlow
  * to. So whenever this screen is in view the status can be read, which is what its time is counted by.
  *
  * While the breadcrumb trail setting is on, or crumbs are stored, a row for the trail stands under `Log here`: it
- * says what the trail is doing and how long it is, and a tap on it does what a double press of the side button
- * does. Holding it clears the trail: once the touch has lasted the system's long-press time the frame shows a ring
+ * says what the trail is doing and how long it is, and a tap on it starts a trail, or switches it between laying
+ * and retracing: what a double press of the side button does on a watch that has one. Holding it clears the trail: once the touch has lasted the system's long-press time the frame shows a ring
  * in the error color that drains for a second, the row's smaller line reads `Hold to clear`, and when the ring is
  * empty every crumb is deleted. Letting go, or moving the finger away, before that clears nothing and is no tap. A
- * watch that passes no double press to the app has the whole trail there.
+ * watch with no button the app can act on has the whole trail there.
  *
- * While a trail is being laid, a row `Drop crumb` stands under the trail's row and drops a crumb, as a single press
- * of the side button does then ([onDropCrumb]).
+ * While a trail is being laid, a row `Drop crumb` stands under the trail's row and drops a crumb, as a double tap
+ * on the compass does then ([onDropCrumb]).
  *
  * [onEdit] is what a long press on a waypoint's row does, [onLogHere] what `Log here` does, and [onSidePress] what
- * a single press of a side button does.
+ * a single press of a side button does, on a watch that has one ([sideButtonKeys]).
  */
 @Composable
 fun WaypointsScreen(
@@ -157,7 +155,6 @@ fun WaypointsScreen(
     val setsAll = headerTapSetsAll(targets, total)
 
     val pressScope = rememberCoroutineScope()
-    val sideButton = remember(pressScope) { SideButton(pressScope) }
 
     // How far a hold on the trail's row has come, from 0 to 1, as on the edit screen's `Hold to delete`. Written
     // every frame of a hold and read only where the frame is drawn.
@@ -188,17 +185,10 @@ fun WaypointsScreen(
         }
     }
     val navState = rememberUpdatedState(nav)
-    val sidePress by rememberUpdatedState(onSidePress)
-    Box(
-        Modifier.fillMaxSize().background(Color.Black)
-            // The list inside has the focus while this screen does, so a side button's press passes here first.
-            // A press does here what it does on the compass.
-            .onPreviewKeyEvent { e ->
-                sideButton.onKey(
-                    e.nativeKeyEvent, inView = { paneView() == PaneView.IN_VIEW }, doubleEnabled = { navState.value.breadcrumbTrail },
-                ) { kind -> if (kind == PressKind.DOUBLE) vm.trailDoublePress() else sidePress() }
-            }
-    ) {
+    // On a watch with a button the app can act on: the list inside has the focus while this screen does, so a side
+    // button's press passes here first, and does here what it does on the compass. On a watch without, nothing.
+    val sideKeys = sideButtonKeys(vm, paneView, doubleEnabled = { navState.value.breadcrumbTrail }, onSinglePress = onSidePress)
+    Box(Modifier.fillMaxSize().background(Color.Black).then(sideKeys)) {
       // The list and what is pinned over it are cut off at one circle inside the frame.
       val statusShowing = status != LogStatus.Idle
       val bandPx = with(density) { (r * STATUS_BAND).toPx() }

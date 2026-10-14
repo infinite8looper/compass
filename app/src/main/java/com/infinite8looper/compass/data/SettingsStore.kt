@@ -29,12 +29,15 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.util.Locale
 
+/** `Breadcrumb trail` where nothing is stored for it: on. Every place that needs the default takes it from here. */
+const val BREADCRUMB_TRAIL_DEFAULT = true
+
 data class Settings(
     val north: NorthRef, val units: Units, val focusedId: Long?,
     val lastPosition: GeoPoint?, val lastAltitudeM: Float?,
     val tickFeedback: Boolean = true, val showCoordinates: Boolean = false,
     val backupEnabled: Boolean = true,
-    val blindNavigation: Boolean = true, val breadcrumbTrail: Boolean = false,
+    val blindNavigation: Boolean = true, val breadcrumbTrail: Boolean = BREADCRUMB_TRAIL_DEFAULT,
     /** The breadcrumb trail's mode as it is stored. What the trail is doing also depends on [breadcrumbTrail] and on the crumbs. */
     val trailMode: TrailMode = TrailMode.OFF,
 )
@@ -99,7 +102,9 @@ class SettingsStore(
             // Blind navigation is on wherever nothing is stored for it: on a fresh install, on an install that was
             // upgraded from a build without it, and in a file that was reset or cannot be read.
             blindNavigation = p[BLIND_NAVIGATION] ?: true,
-            breadcrumbTrail = p[BREADCRUMB_TRAIL] ?: false,
+            // The breadcrumb trail is on wherever nothing is stored for it, as blind navigation is: an install that
+            // never touched the switch and a restored backup with no value for it included.
+            breadcrumbTrail = p[BREADCRUMB_TRAIL] ?: BREADCRUMB_TRAIL_DEFAULT,
             trailMode = trailModeOf(p[TRAIL_MODE]),
         )
     }
@@ -110,7 +115,7 @@ class SettingsStore(
     private val trailWrites = Mutex()
     @Volatile private var trailHeld: StoredTrail? = null
 
-    private fun trailIn(p: Preferences) = StoredTrail(trailModeOf(p[TRAIL_MODE]), p[BREADCRUMB_TRAIL] ?: false)
+    private fun trailIn(p: Preferences) = StoredTrail(trailModeOf(p[TRAIL_MODE]), p[BREADCRUMB_TRAIL] ?: BREADCRUMB_TRAIL_DEFAULT)
 
     /**
      * The breadcrumb trail's stored mode and its switch. It is for a press, which acts on what the trail was doing

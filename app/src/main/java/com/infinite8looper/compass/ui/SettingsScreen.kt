@@ -22,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
@@ -45,6 +46,8 @@ import com.infinite8looper.compass.nav.Pane
 import com.infinite8looper.compass.nav.PaneView
 import com.infinite8looper.compass.nav.Units
 import com.infinite8looper.compass.nav.accuracyLabel
+import com.infinite8looper.compass.nav.trailSettingDetail
+import com.infinite8looper.compass.sensors.WatchButtons
 
 /**
  * The settings, one of the three screens that sit side by side: a row for each switch, in the spec's order,
@@ -95,6 +98,9 @@ fun SettingsScreen(vm: CompassViewModel, paneView: () -> PaneView, onCalibrate: 
             footer = density.instrumentText(r * 0.085f, align = TextAlign.Center),
         )
     }
+    // The trail's row speaks of a press only on a watch with a button the app can act on.
+    val context = LocalContext.current
+    val trailDetail = remember(context) { trailSettingDetail(WatchButtons.assignable(context)) }
     // Until the settings file has been read the rows show defaults, which a tap would then store.
     val ready = stored != null
 
@@ -135,7 +141,7 @@ fun SettingsScreen(vm: CompassViewModel, paneView: () -> PaneView, onCalibrate: 
                     }
                 }
                 item(key = "trail") {
-                    SwitchRow("Breadcrumb trail", "Double press starts a trail", switches.breadcrumbTrail, ready, styles) {
+                    SwitchRow("Breadcrumb trail", trailDetail, switches.breadcrumbTrail, ready, styles) {
                         inView { vm.setBreadcrumbTrail(it) }
                     }
                 }

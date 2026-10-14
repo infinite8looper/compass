@@ -21,12 +21,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.rotary.onRotaryScrollEvent
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -48,6 +49,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.wear.compose.foundation.requestFocusOnHierarchyActive
 import androidx.wear.compose.material3.Text
+import androidx.wear.compose.material3.onehandedgesture.OneHandedGestureAction
+import androidx.wear.compose.material3.onehandedgesture.oneHandedGesture
+import androidx.wear.compose.material3.onehandedgesture.rememberOneHandedGestureConfiguration
 import com.infinite8looper.compass.CompassViewModel
 import com.infinite8looper.compass.nav.*
 import com.infinite8looper.compass.sensors.HeadingReading
@@ -55,20 +59,24 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlin.math.abs
+import kotlin.math.hypot
 
 /**
  * The compass, one of the three screens that sit side by side. [paneView] says how much of it the wearer has in
  * front of them, and everything here that depends on that asks it:
  * - hidden, the screen does no work: no heading is taken from the sensor, no frame is asked for, no timer runs;
  * - passing, while the row of screens moves, it is drawn live and does nothing else;
- * - in view, it also takes the crown, the side button, the vertical swipe and the long press, gives the tick and
+ * - in view, it also takes the crown, the double tap, the vertical swipe and the long press, gives the tick and
  *   the confirming tap and the blind navigation pulses, and counts the time a logging result is shown.
  *
  * The screen is built when the three screens are put up and stays while the ring of screens turns. The screen's keep-awake switch
  * is not set here: it has to hold on the other screens too.
  *
- * [onOpenList] is what a long press does, and [onSidePress] what a single press of a side button does. A double
- * press, which there is only with the breadcrumb trail setting on, switches the trail.
+ * [onOpenList] is what a long press does. [onSidePress] saves the position, as a waypoint or, while a trail is
+ * being laid, as a crumb: it is what a double tap on the dial does, what the one-handed primary gesture does on a
+ * watch that has it, and what the dial's accessibility action does. On a watch with a button the app can act on
+ * it is also what a single press of that button does, and a double press, which there is only with the breadcrumb
+ * trail setting on, switches the trail ([sideButtonKeys]).
  */
 @Composable
 fun CompassScreen(
@@ -233,9 +241,9 @@ fun CompassScreen(
     // What the crown has scrolled toward the next step of the focus, and how far a step is on this screen's density.
     var crown by remember { mutableFloatStateOf(0f) }
     val crownStepPx = with(LocalDensity.current) { CROWN_STEP_DP.dp.toPx() }
-    val pressScope = rememberCoroutineScope()
-    val sideButton = remember(pressScope) { SideButton(pressScope) }
     val sidePress by rememberUpdatedState(onSidePress)
+    // On a watch with a button the app can act on, a single press of it saves too; on one without, this is nothing.
+    val sideKeys = sideButtonKeys(vm, paneView, doubleEnabled = { navState.value.breadcrumbTrail }, onSinglePress = onSidePress)
     val openList by rememberUpdatedState(onOpenList)
 
     // The ticks that say which of the three screens this is show only around a swipe: from the moment the compass
@@ -253,7 +261,7 @@ fun CompassScreen(
 
     BoxWithConstraints(
         Modifier.fillMaxSize().background(Color.Black)
-            // The crown and the side buttons come to whichever of the three screens has the focus, which the
+            // The crown, and a side button where there is one, come to whichever of the three screens has the focus, which the
             // ring gives to the one nearest its resting place. The compass acts on them only once it is in view:
             // until then a turn or a press is taken and dropped, so it reaches nothing else either.
             .onRotaryScrollEvent { e ->
@@ -264,12 +272,16 @@ fun CompassScreen(
                 } else crown = 0f
                 true
             }
-            // One press of a side button saves the position; with the breadcrumb trail setting on, two close
-            // together switch the trail. What a press means is decided here.
-            .onPreviewKeyEvent { e ->
-                sideButton.onKey(
-                    e.nativeKeyEvent, inView = { paneView() == PaneView.IN_VIEW }, doubleEnabled = { navState.value.breadcrumbTrail },
-                ) { kind -> if (kind == PressKind.DOUBLE) vm.trailDoublePress() else sidePress() }
+            .then(sideKeys)
+            // For an accessibility service the save is an action of the dial with a name, so it does not depend
+            // on a gesture. It acts as the double tap does, and only while the compass is in view.
+            // The dial has a name of its own, the app's, so that a screen reader stops on it and offers the action;
+            // what is on it (the heading, a target's name, a status) is still read piece by piece.
+            .semantics {
+                contentDescription = DIAL_NAME
+                customActions = listOf(
+                    CustomAccessibilityAction(SAVE_HERE_ACTION) { if (paneView() == PaneView.IN_VIEW) { sidePress(); true } else false }
+                )
             }
             // A plain focus target, not `focusable()`. Observed on the API 35 emulator: with `focusable()` here,
             // every slide the app itself made onto the compass (Back from waypoints, a second Back on through it)
@@ -277,11 +289,12 @@ fun CompassScreen(
             // slide (6 of 6); with `focusTarget()` and nothing else changed, none was (0 of 9). `focusable()`
             // asks to be brought into view when it takes the focus, which is the likely cause.
             .requestFocusOnHierarchyActive().focusTarget()
-            // Three gestures start on the dial, and a touch becomes at most one of them. A sideways swipe is the
-            // ring's, around this screen. The two below are the compass's own: a vertical swipe moves the focus
-            // among the targets, and a long press opens the waypoints. Whichever of the ring and the vertical
-            // swipe first sees the finger travel its own way takes the touch, and the other then sees it as taken
-            // and lets go, so a swipe that wanders is one or the other. Either ends the wait for a long press.
+            // Four gestures start on the dial, and a touch becomes at most one of them. A sideways swipe is the
+            // ring's, around this screen. The three below are the compass's own: a vertical swipe moves the focus
+            // among the targets, a long press opens the waypoints, and two taps one after the other save the
+            // position. Whichever of the ring and the vertical swipe first sees the finger travel its own way
+            // takes the touch, and the others then see it as taken and let go, so a swipe that wanders is one or
+            // the other. Either ends the wait for a long press, and a touch that is swiped is no tap.
             .pointerInput(vm, paneView) {
                 var total = 0f
                 detectVerticalDragGestures(
@@ -291,16 +304,36 @@ fun CompassScreen(
                     },
                 ) { _, dy -> total += dy }
             }
-            // The long press is this one's, after the system's own long-press time, and a tap does nothing. It is
-            // the later of the two modifiers, so it sees a touch first: once a long press has opened the waypoints
-            // it takes the rest of the touch, and a finger that then moves swipes nothing.
+            // The long press and the double tap are this one's. It is the later of the two modifiers, so it sees
+            // a touch first: once a long press has opened the waypoints it takes the rest of the touch, and a
+            // finger that then moves swipes nothing.
+            //
+            // One tap does nothing, and gives no vibration either: a brush of the screen saves nothing. Two taps
+            // within the system's double-tap time save, as a single press of the side button did, when
+            // [doubleTapSaves] says they are a double tap: the compass in view at both, and the second near the
+            // first. The long press comes after the system's own long-press time whether or not a tap came just
+            // before it; a second touch that is held is a long press and saves nothing.
             .pointerInput(view, paneView) {
-                detectTapGestures(onLongPress = {
-                    if (paneView() == PaneView.IN_VIEW) {
-                        view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                        openList()
-                    }
-                })
+                val slopPx = android.view.ViewConfiguration.get(view.context).scaledDoubleTapSlop.toFloat()
+                // Where the last two touches went down, and whether the compass was in view at the earlier one.
+                var earlierX = Float.NaN; var earlierY = Float.NaN; var earlierInView = false
+                var laterX = Float.NaN; var laterY = Float.NaN; var laterInView = false
+                detectTapGestures(
+                    onPress = { at ->
+                        earlierX = laterX; earlierY = laterY; earlierInView = laterInView
+                        laterX = at.x; laterY = at.y; laterInView = paneView() == PaneView.IN_VIEW
+                    },
+                    onDoubleTap = {
+                        val apart = hypot(laterX - earlierX, laterY - earlierY)
+                        if (doubleTapSaves(earlierInView, paneView() == PaneView.IN_VIEW, apart, slopPx)) sidePress()
+                    },
+                    onLongPress = {
+                        if (paneView() == PaneView.IN_VIEW) {
+                            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                            openList()
+                        }
+                    },
+                )
             },
         contentAlignment = Alignment.Center,
     ) {
@@ -309,6 +342,7 @@ fun CompassScreen(
         // and every slot is narrow enough to stay inside the circle the cardinal letters sweep around.
         // The readout is composed apart from the screen's own function, and counts as the screen.
         SideEffect { ScreenCompositions.composed[Pane.COMPASS.ordinal]++ }
+        OneHandedSave(paneView, onSave = onSidePress)
         val r = minOf(maxWidth, maxHeight) / 2
         val density = LocalDensity.current
         // The readout's text styles depend on the dial's radius alone, and are made once for it: a line that
@@ -446,6 +480,33 @@ fun CompassScreen(
         PanePosition(Pane.COMPASS.ordinal, radius = PANE_TICKS_ON_COMPASS, scale = PANE_TICKS_SCALE, alpha = { paneTicks.value })
     }
 }
+
+/**
+ * The one-handed primary action (a double pinch on the watches that have it) on the dial: it saves, as a double tap
+ * does. The Wear Compose library carries the gesture from Wear OS 7 (API level 37) and does nothing on a watch
+ * whose system lacks the framework; below that level this composes nothing at all.
+ *
+ * The gesture is registered only while the compass is the screen in view: the library acts on every gesture that
+ * is registered, and answers each with a vibration of its own, wherever its composable is on the screen. So this
+ * is a part of the compass of its own, composed again when the compass comes into view and when it leaves, twice
+ * for a turn of the ring and not for a frame of it; the compass around it is not composed again.
+ */
+@Composable
+private fun OneHandedSave(paneView: () -> PaneView, onSave: () -> Unit) {
+    if (Build.VERSION.SDK_INT < ONE_HANDED_FROM_API) return
+    val inView by remember(paneView) { derivedStateOf { paneView() == PaneView.IN_VIEW } }
+    if (!inView) return
+    val save by rememberUpdatedState(onSave)
+    val configuration = rememberOneHandedGestureConfiguration(OneHandedGestureAction.Primary, gestureId = ONE_HANDED_SAVE_ID)
+    // As large as the dial and under everything on it. It takes no touch.
+    Box(Modifier.fillMaxSize().oneHandedGesture(configuration, onGestureLabel = SAVE_HERE_ACTION) { save() })
+}
+
+/** The first API level whose system can have the one-handed gesture framework. */
+private const val ONE_HANDED_FROM_API = 37
+
+/** The name the system keeps its record of this gesture's hints under. */
+private const val ONE_HANDED_SAVE_ID = "compass-save-here"
 
 /**
  * One line of the logging status, on the compass and on the waypoints screen. It starts at the size of [style] and, when the words are wider than the slot,

@@ -1,13 +1,28 @@
 package com.infinite8looper.compass
 
 import android.Manifest
+import android.app.Application
+import android.graphics.Rect
 import android.os.SystemClock
+import android.view.KeyEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ActivityScenario
+import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
+import com.infinite8looper.compass.data.SettingsStore
+import com.infinite8looper.compass.data.WaypointDatabase
+import com.infinite8looper.compass.nav.LogStatus
+import com.infinite8looper.compass.nav.TrailMode
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import org.junit.After
 import org.junit.Assert.*
+import org.junit.Before
 import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
@@ -20,6 +35,21 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class AccessibilityTreeTest {
     @get:Rule val permission: GrantPermissionRule = GrantPermissionRule.grant(Manifest.permission.ACCESS_FINE_LOCATION)
+
+    private val app: Application = ApplicationProvider.getApplicationContext()
+    private val dao = WaypointDatabase.get(app).waypoints()
+    private val crumbDao = WaypointDatabase.get(app).crumbs()
+    private val settings = SettingsStore.get(app)
+
+    // The test of the dial's action saves a waypoint, so the stores are emptied around every test.
+    private fun reset() = runBlocking {
+        dao.observeAll().first().forEach { dao.delete(it.id) }
+        settings.setFocused(null)
+        crumbDao.clear()
+        settings.setTrailMode(TrailMode.OFF)
+    }
+    @Before fun setUp() = reset()
+    @After fun tearDown() = reset()
 
     private fun nodes(): List<AccessibilityNodeInfo> {
         val root = InstrumentationRegistry.getInstrumentation().uiAutomation.rootInActiveWindow ?: return emptyList()
@@ -91,6 +121,52 @@ class AccessibilityTreeTest {
                 assertEquals("one heading, one description", 1, described.size)
                 assertEquals("the description is the heading number's own", numbers.single(), described.single())
             }
+        }
+    }
+
+    private fun AccessibilityNodeInfo.saveAction() = actionList.firstOrNull { it.label?.toString() == "Save waypoint here" }
+
+    /**
+     * The dial has an action of its own for saving, with a name, so that saving does not depend on a gesture: an
+     * accessibility service finds it on the dial, and performing it does what a double tap does. It needs
+     * `scripts/geo-feed.sh -72.2896 43.7022` running, as the other tests that save do.
+     */
+    @Test fun theDialHasANamedActionThatSavesAndOnlyWhileTheCompassIsInView() = runBlocking {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            lateinit var vm: CompassViewModel
+            scenario.onActivity { vm = ViewModelProvider(it)[CompassViewModel::class.java] }
+            val all = compassNodes()
+            val withAction = all.filter { it.saveAction() != null }
+            assertEquals("nodes with an action named `Save waypoint here`: ${all.flatMap { n -> n.actionList.mapNotNull { it.label } }}", 1, withAction.size)
+            val dial = withAction.single()
+            // It is the dial: the node is as large as the window, takes the focus, and holds the heading or the hint.
+            val window = Rect().also { InstrumentationRegistry.getInstrumentation().uiAutomation.rootInActiveWindow.getBoundsInScreen(it) }
+            assertEquals(window, Rect().also { dial.getBoundsInScreen(it) })
+            assertTrue("the dial's node is not visible", dial.isVisibleToUser)
+            // It has a name of its own, so a screen reader stops on it and can offer the action.
+            assertEquals("Compass", dial.contentDescription?.toString())
+            assertTrue((0 until dial.childCount).mapNotNull { dial.getChild(it)?.text?.toString() }.any { it == "Hold flat" || it == "--" || it.endsWith("°") })
+
+            assertEquals(0, vm.logPress.value)
+            assertTrue("the action was refused", dial.performAction(dial.saveAction()!!.id))
+            withTimeout(5_000) { while (vm.logPress.value < 1) delay(10) }
+            withTimeout(60_000) { while (vm.logStatus.value !is LogStatus.Saved) delay(20) }
+            assertEquals(1, dao.observeAll().first().size)
+            assertEquals(1, vm.logPress.value)
+
+            // With another screen in view the action does nothing, and says so. Back turns the ring to settings.
+            InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+            val deadline = SystemClock.uptimeMillis() + 10_000
+            while (nodes().none { it.isVisibleToUser && it.text?.toString() == "Settings" }) {
+                assertTrue("the settings did not come in 10 s", SystemClock.uptimeMillis() < deadline)
+                delay(100)
+            }
+            delay(700)
+            dial.refresh()
+            dial.saveAction()?.let { assertFalse("the action was taken with the settings in view", dial.performAction(it.id)) }
+            delay(1_000)
+            assertEquals(1, vm.logPress.value)
+            assertEquals(1, dao.observeAll().first().size)
         }
     }
 }

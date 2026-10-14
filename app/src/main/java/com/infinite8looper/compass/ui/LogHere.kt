@@ -11,6 +11,12 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.platform.LocalContext
+import com.infinite8looper.compass.sensors.WatchButtons
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -72,8 +78,9 @@ private const val DROP_CRUMB_ROW = 2
 
 /**
  * The ways a position is saved, each asking for the permission first where it is not held: [logHere] is the
- * `Log here` row, which always saves a waypoint; [sidePress] is a single press of the side button, which drops
- * a crumb instead while a breadcrumb trail is being laid; and [dropCrumb] is the `Drop crumb` row, which drops a
+ * `Log here` row, which always saves a waypoint; [sidePress] is what saves from the compass (a double tap on the
+ * dial, the one-handed primary gesture, the accessibility action) and a single press of the side button on a watch
+ * that has one, which drops a crumb instead while a breadcrumb trail is being laid; and [dropCrumb] is the `Drop crumb` row, which drops a
  * crumb while a trail is being laid and does nothing otherwise.
  */
 internal class LogActions(val logHere: () -> Unit, val sidePress: () -> Unit, val dropCrumb: () -> Unit)
@@ -115,6 +122,34 @@ internal fun LogResultTimer(vm: CompassViewModel, paneView: () -> PaneView) {
                 }
                 delay(showMs)
                 vm.logResultShown(logPress)
+            }
+        }
+    }
+}
+
+/**
+ * The handling of a side button for a screen that acts on one, the compass and the waypoints screen, as a modifier
+ * for the screen's outermost box: a single press calls [onSinglePress] and a double press switches the trail.
+ *
+ * It is there only on a watch that says it has a button an app can act on ([WatchButtons.assignable], asked once).
+ * On a watch that has none this is the empty modifier: no key event is looked at, no [SideButton] is made and
+ * nothing waits [com.infinite8looper.compass.nav.DOUBLE_PRESS_WINDOW_MS] for a second press.
+ */
+@Composable
+internal fun sideButtonKeys(
+    vm: CompassViewModel, paneView: () -> PaneView, doubleEnabled: () -> Boolean, onSinglePress: () -> Unit,
+): Modifier {
+    val context = LocalContext.current
+    val hasButton = remember(context) { WatchButtons.assignable(context) }
+    if (!hasButton) return Modifier
+    val scope = rememberCoroutineScope()
+    val button = remember(scope) { SideButton(scope) }
+    val single by rememberUpdatedState(onSinglePress)
+    val double by rememberUpdatedState(doubleEnabled)
+    return remember(vm, paneView, button) {
+        Modifier.onPreviewKeyEvent { e ->
+            button.onKey(e.nativeKeyEvent, inView = { paneView() == PaneView.IN_VIEW }, doubleEnabled = { double() }) { kind ->
+                if (kind == PressKind.DOUBLE) vm.trailDoublePress() else single()
             }
         }
     }

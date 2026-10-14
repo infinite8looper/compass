@@ -49,8 +49,9 @@ class SettingsStoreTest {
         assertEquals(NorthRef.TRUE, v.north); assertEquals(defaultUnits(Locale.getDefault()), v.units)
         assertNull(v.focusedId); assertNull(v.lastPosition); assertNull(v.lastAltitudeM)
         assertTrue(v.tickFeedback); assertFalse(v.showCoordinates); assertTrue(v.backupEnabled)
-        // Blind navigation is on until it is turned off; the breadcrumb trail is off until it is turned on.
-        assertTrue(v.blindNavigation); assertFalse(v.breadcrumbTrail)
+        // Blind navigation and the breadcrumb trail are both on until they are turned off. The trail was off by default
+        // in v2; the v3 spec: "`Breadcrumb trail` is on by default, also for an install that never touched the switch."
+        assertTrue(v.blindNavigation); assertTrue(v.breadcrumbTrail)
     }
     @Test fun valuesRoundTrip() = withStore { s, _ ->
         s.setNorth(NorthRef.MAGNETIC); s.setUnits(Units.IMPERIAL); s.setFocused(7)
@@ -68,13 +69,17 @@ class SettingsStoreTest {
         v = s.settings.first()
         assertTrue(v.tickFeedback); assertFalse(v.showCoordinates)
     }
-    @Test fun blindNavigationAndBreadcrumbTrailRoundTripBothWays() = withStore { s, _ ->
+    @Test fun blindNavigationAndBreadcrumbTrailRoundTripBothWays() = withStore { s, file ->
         s.setBlindNavigation(false); s.setBreadcrumbTrail(true)
         var v = s.settings.first()
         assertFalse(v.blindNavigation); assertTrue(v.breadcrumbTrail)
         s.setBlindNavigation(true); s.setBreadcrumbTrail(false)
         v = s.settings.first()
         assertTrue(v.blindNavigation); assertFalse(v.breadcrumbTrail)
+        // Off is stored, so it stays off: the default of on is for a switch that was never touched.
+        assertTrue(ctx.preferencesDataStoreFile(file).readBytes().toString(Charsets.ISO_8859_1).contains("breadcrumb_trail"))
+        s.setBreadcrumbTrail(true)
+        assertTrue(s.settings.first().breadcrumbTrail)
     }
     @Test fun theTwoNewSettingsChangeNoOtherSetting() = withStore { s, _ ->
         s.setBackupEnabled(false); s.setTickFeedback(false); s.setShowCoordinates(true)
@@ -106,8 +111,12 @@ class SettingsStoreTest {
             val text = main.readBytes().toString(Charsets.ISO_8859_1)
             assertTrue(text.contains("tick_feedback")); assertFalse(text.contains("blind_navigation")); assertFalse(text.contains("breadcrumb_trail"))
 
-            val v = SettingsStore(ctx, file, CoroutineScope(Dispatchers.IO + job)).settings.first()
-            assertTrue(v.blindNavigation); assertFalse(v.breadcrumbTrail)
+            // Both are on for an install that never stored them (v3: "`Breadcrumb trail` is on by default, also for
+            // an install that never touched the switch"), and the stored trail a press reads says the same.
+            val store = SettingsStore(ctx, file, CoroutineScope(Dispatchers.IO + job))
+            val v = store.settings.first()
+            assertTrue(v.blindNavigation); assertTrue(v.breadcrumbTrail)
+            assertEquals(StoredTrail(TrailMode.OFF, settingOn = true), store.storedTrail())
             // What it did hold is as it was.
             assertEquals(NorthRef.MAGNETIC, v.north); assertFalse(v.tickFeedback); assertFalse(v.backupEnabled)
         } finally { oldJob.cancelAndJoin(); job.cancelAndJoin(); main.delete(); ctx.preferencesDataStoreFile("$file-position").delete() }
@@ -141,8 +150,9 @@ class SettingsStoreTest {
             assertNull(v.focusedId); assertNull(v.lastPosition); assertNull(v.lastAltitudeM)
             // A damaged file leaves the privacy switch OFF, not at its fresh-install default of on.
             assertTrue(v.tickFeedback); assertFalse(v.showCoordinates); assertFalse(v.backupEnabled)
-            // The two newer settings come back as their defaults: blind navigation on, the trail off.
-            assertTrue(v.blindNavigation); assertFalse(v.breadcrumbTrail)
+            // The two newer settings come back as their defaults: blind navigation on, and the trail on (v3:
+            // "`Breadcrumb trail` is on by default").
+            assertTrue(v.blindNavigation); assertTrue(v.breadcrumbTrail)
             s.setNorth(NorthRef.MAGNETIC)
             assertEquals(NorthRef.MAGNETIC, s.settings.first().north)
         } finally { job.cancelAndJoin(); f.delete(); ctx.preferencesDataStoreFile("$file-position").delete() }
@@ -204,7 +214,7 @@ class SettingsStoreTest {
             // The settings flow does not claim the switch is on either.
             assertFalse(second.settings.first().backupEnabled)
             // The two newer settings read as their defaults while the file cannot be read.
-            assertTrue(second.settings.first().blindNavigation); assertFalse(second.settings.first().breadcrumbTrail)
+            assertTrue(second.settings.first().blindNavigation); assertTrue(second.settings.first().breadcrumbTrail)
         } finally { f.setReadable(true, false); job1.cancelAndJoin(); job2.cancelAndJoin(); f.delete(); ctx.preferencesDataStoreFile("$file-position").delete() }
     }
     // Who turned the switch off. The backup agent puts a backup without waypoints in the place of the stored one
@@ -338,6 +348,9 @@ class SettingsStoreTest {
      * thread, which is then kept busy while the switch is turned off.
      */
     @Test fun theStoredTrailIsWhatTheFileHeldWhenItWasAskedHoweverLateTheAnswerIsTaken() = withStore { s, _ ->
+        // Before anything is stored the switch is on (v3: "`Breadcrumb trail` is on by default").
+        assertEquals(StoredTrail(TrailMode.OFF, settingOn = true), s.storedTrail())
+        s.setBreadcrumbTrail(false)
         assertEquals(StoredTrail(TrailMode.OFF, settingOn = false), s.storedTrail())
         s.setBreadcrumbTrail(true)
         assertEquals(StoredTrail(TrailMode.OFF, settingOn = true), s.storedTrail())
@@ -368,8 +381,10 @@ class SettingsStoreTest {
             assertTrue(answer.isCompleted)
             answer.await()
         }
-        // The first answer is read from the file.
-        assertEquals(StoredTrail(TrailMode.OFF, settingOn = false), s.storedTrail())
+        // The first answer is read from the file, which holds nothing yet: the switch is on by default.
+        assertEquals(StoredTrail(TrailMode.OFF, settingOn = true), s.storedTrail())
+        assertEquals(StoredTrail(TrailMode.OFF, settingOn = true), answeredAtOnce())
+        s.setBreadcrumbTrail(false)
         assertEquals(StoredTrail(TrailMode.OFF, settingOn = false), answeredAtOnce())
         s.setBreadcrumbTrail(true)
         assertEquals(StoredTrail(TrailMode.OFF, settingOn = true), answeredAtOnce())

@@ -7,6 +7,7 @@ import android.os.SystemClock
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.infinite8looper.compass.data.BREADCRUMB_TRAIL_DEFAULT
 import com.infinite8looper.compass.data.Crumb
 import com.infinite8looper.compass.data.RestoredOptOut
 import com.infinite8looper.compass.data.Settings
@@ -44,7 +45,7 @@ data class NavUi(
     val backupEnabled: Boolean = true,
     val blindNavigation: Boolean = true,
     /** The breadcrumb trail setting. */
-    val breadcrumbTrail: Boolean = false,
+    val breadcrumbTrail: Boolean = BREADCRUMB_TRAIL_DEFAULT,
     /**
      * The breadcrumb trail: its mode, how many crumbs it has, the crumb that is walked to and the other crumbs'
      * ticks. While it is retraced, [focused] is that crumb and none of [targets] is focused.
@@ -68,7 +69,7 @@ data class NavUi(
  */
 data class SwitchesUi(
     val north: NorthRef = NorthRef.TRUE, val units: Units = Units.METRIC, val tickFeedback: Boolean = true,
-    val blindNavigation: Boolean = true, val breadcrumbTrail: Boolean = false, val showCoordinates: Boolean = false,
+    val blindNavigation: Boolean = true, val breadcrumbTrail: Boolean = BREADCRUMB_TRAIL_DEFAULT, val showCoordinates: Boolean = false,
     val backupEnabled: Boolean = true,
 )
 

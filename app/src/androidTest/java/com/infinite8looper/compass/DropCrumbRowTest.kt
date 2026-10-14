@@ -16,6 +16,7 @@ import com.infinite8looper.compass.data.SettingsStore
 import com.infinite8looper.compass.data.WaypointDatabase
 import com.infinite8looper.compass.nav.LogStatus
 import com.infinite8looper.compass.nav.TrailMode
+import com.infinite8looper.compass.sensors.WatchButtons
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -141,7 +142,11 @@ class DropCrumbRowTest {
             vm.trailDoublePress().join()
             assertEquals(TrailMode.LAYING, settings.settings.first().trailMode)
             trailRowSays("Laying, 0 crumbs")
-            press()
+            // On a watch with a button the app can act on, the real key. On one without (the emulators), the app
+            // handles no side key (v3: "Where it has not, the key handling is not installed"), and what a single
+            // press did is what a double tap on the compass does: the same call of the view model, made here.
+            // That the double tap itself drops a crumb is in DialInputsTest.
+            if (WatchButtons.assignable(app)) press() else vm.sidePress()
             assertEquals("Crumb 1", savedName(vm, 1))
             assertTrue(dropCrumbRow().performAction(AccessibilityNodeInfo.ACTION_CLICK))
             assertEquals("Crumb 2", savedName(vm, 2))

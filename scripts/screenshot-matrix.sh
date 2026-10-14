@@ -132,8 +132,11 @@ swipe_to() { # swipe_to left|right: the finger's direction; left brings in the s
 to_settings() { swipe_to right; }; from_settings() { swipe_to left; }
 to_waypoints() { swipe_to left; }; from_waypoints() { swipe_to right; }
 leave_route() { $ADB shell input keyevent KEYCODE_BACK; sleep 1.5; }      # edit and calibration
-press() { $ADB shell input keyevent KEYCODE_STEM_1; }
-double_press() { $ADB shell "input keyevent KEYCODE_STEM_1; input keyevent KEYCODE_STEM_1"; }
+# Saving from the compass is a double tap on the dial (scripts/double-tap.sh): above the middle, clear of the
+# `Calibrate` prompt's tap area. The trail is started and switched from its row on the waypoints screen.
+TAP_Y=$((H * 3 / 10))
+press() { $ADB shell "input tap $C $TAP_Y; input tap $C $TAP_Y"; }
+switch_trail() { to_waypoints; tap "Trail" || return 1; sleep 1; from_waypoints; }      # from the compass, and back to it
 flat() { $ADB emu sensor set acceleration 0:0:9.81 > /dev/null; }
 upright() { $ADB emu sensor set acceleration 0:9.81:0 > /dev/null; }
 magnetic() { flat; $ADB emu sensor set magnetic-field "$(awk -v h="$1" 'BEGIN { r = h * atan2(0, -1) / 180; printf "%.3f:%.3f:-45", -20 * sin(r), 20 * cos(r) }')" > /dev/null; }
@@ -223,7 +226,7 @@ sec_log() {
   shot_when log-saved $GREEN 50 72 40
   for try in 1 2 3 4; do      # a press followed at once by Home, with location off while the app is off screen:
     sleep 4                   # no position reaches the save in its 20 seconds, and its result waits for the return
-    $ADB shell "input keyevent KEYCODE_STEM_1 KEYCODE_HOME; settings put secure location_mode 0"; sleep 23
+    $ADB shell "input tap $C $TAP_Y; input tap $C $TAP_Y; input keyevent KEYCODE_HOME; settings put secure location_mode 0"; sleep 23
     location on; sleep 1; app_start; shot_when log-no-gps-fix $RED 50 72 2> /dev/null && break
     [ $try = 4 ] && echo "  log-no-gps-fix-$SUF.png  NOT CAUGHT in four tries (a fix reached the app before it left the screen each time)" >&2
   done
@@ -249,12 +252,12 @@ sec_trail() {
   fresh granted; feed $HERE_LAT $HERE_LON; sleep 6
   to_settings; setting "Breadcrumb trail" on; setting "Feet and miles" off; from_settings
   seed 60:137.5:400; face 160
-  double_press; sleep 2; press; shot_when trail-crumb-saved $GREEN 50 72 40; sleep 4
+  switch_trail || return 1; sleep 1; press; shot_when trail-crumb-saved $GREEN 50 72 40; sleep 4
   feed 43.70274 $HERE_LON; sleep 8; press; sleep 5
   feed 43.70328 $HERE_LON; sleep 8; press; sleep 5
   feed 43.70420 $HERE_LON; sleep 9; shot trail-laying
   to_waypoints; shot trail-row-laying; from_waypoints
-  double_press; sleep 2.5; shot trail-retracing
+  switch_trail || return 1; sleep 1; shot trail-retracing
   face 180; sleep 1; shot trail-facing
   to_waypoints; shot trail-row-retracing
   local r; r=($(row "Trail")); [ -n "$r" ] || { echo "trail: no 'Trail' row on screen" >&2; return 1; }
