@@ -144,6 +144,7 @@ fun CompassScreen(
                 val hold = nextHoldFlat(wasHold, reading.pitchDeg)
                 holdFlat = hold
                 val first = shown.floatValue.isNaN()
+                val previousShown = shown.floatValue
                 val gap = if (last == 0L) 0L else now - last
                 val target = displayHeadingDeg(reading.magneticDeg, n.declination, n.north)
                 // While the watch is tilted too far the heading is not taken, so the dial keeps its last value.
@@ -188,9 +189,9 @@ fun CompassScreen(
                 // Blind navigation: the strong pulse on turning onto the focused target, the soft one each
                 // second while still facing it. Not from an old position: the mark on the distance that says
                 // so is for the eye, and the same condition keeps the pulses silent.
+                val positionStale = isStale(SystemClock.elapsedRealtime(), n.fixElapsedMs)
                 val nextBlind = nextBlindPulses(
-                    blind, facing, n.blindNavigation, inView, now, targetChanged,
-                    positionStale = isStale(SystemClock.elapsedRealtime(), n.fixElapsedMs),
+                    blind, facing, n.blindNavigation, inView, now, targetChanged, positionStale = positionStale,
                 )
                 val pulse = pulseBetween(blind, nextBlind, targetChanged)
                 blind = nextBlind
@@ -203,8 +204,12 @@ fun CompassScreen(
                 // The dial's vibration: a thin line, a thick line or the target's bearing, the strongest that
                 // applies. The frame on which the dial arrives is still part of the catch-up. One that falls on a
                 // pulse, or just after one, is dropped: the pulse is the one the wearer is to feel.
-                val nextSide = nextTargetSide(side, shown.floatValue, n.focused?.dialAngleDeg, targetChanged)
-                val crossing = dialCrossing(cell, next, side, nextSide, n.tickFeedback, n.blindNavigation)
+                // The sides are both taken against the present bearing, so only the pointer's motion passes it. An
+                // old position silences the target's vibration as it silences the blind navigation pulses.
+                val bearing = n.focused?.dialAngleDeg
+                val sideBefore = nextTargetSide(side, previousShown, bearing, targetChanged)
+                val nextSide = nextTargetSide(sideBefore, shown.floatValue, bearing, targetChanged)
+                val crossing = dialCrossing(cell, next, sideBefore, nextSide, n.tickFeedback, n.blindNavigation, positionStale)
                 if (!wasSettling && !settling.active && !hold && inView &&
                     dialVibrationDue(crossing, now, lastTap, lastPulse, lastPulseNanos, lastTargetTap)
                 ) {

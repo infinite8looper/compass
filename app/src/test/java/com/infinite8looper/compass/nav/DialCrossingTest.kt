@@ -146,8 +146,6 @@ class DialCrossingTest {
         val t = 10_000 * ms
         for (k in listOf(DialCrossing.THIN, DialCrossing.THICK, DialCrossing.TARGET)) {
             assertTrue("$k", dialVibrationDue(k, t, lastTapNanos = 0L, lastPulse = null, lastPulseNanos = 0L, lastTargetNanos = 0L))
-            // At most one per 40 ms.
-            assertFalse("$k", dialVibrationDue(k, t, lastTapNanos = t - 39 * ms, lastPulse = null, lastPulseNanos = 0L, lastTargetNanos = 0L))
             assertTrue("$k", dialVibrationDue(k, t, lastTapNanos = t - 40 * ms, lastPulse = null, lastPulseNanos = 0L, lastTargetNanos = 0L))
             // Not on, or right after, a lock pulse or a heartbeat.
             assertFalse("$k", dialVibrationDue(k, t, 0L, Pulse.LOCK, t - 399 * ms, 0L))
@@ -156,6 +154,12 @@ class DialCrossingTest {
             assertTrue("$k", dialVibrationDue(k, t, 0L, Pulse.HEARTBEAT, t - 150 * ms, 0L))
         }
         assertFalse(dialVibrationDue(DialCrossing.NONE, t, 0L, null, 0L, 0L))
+        // At most one line per 40 ms. The target's is not held back by a line played just before it: "One crossing
+        // gives one vibration, the strongest kind that applies" (spec, Vibrations), so the weaker line gives way.
+        assertFalse(dialVibrationDue(DialCrossing.THIN, t, lastTapNanos = t - 39 * ms, lastPulse = null, lastPulseNanos = 0L, lastTargetNanos = 0L))
+        assertFalse(dialVibrationDue(DialCrossing.THICK, t, lastTapNanos = t - 39 * ms, lastPulse = null, lastPulseNanos = 0L, lastTargetNanos = 0L))
+        assertTrue(dialVibrationDue(DialCrossing.TARGET, t, lastTapNanos = t - 10 * ms, lastPulse = null, lastPulseNanos = 0L, lastTargetNanos = 0L))
+        assertTrue(dialVibrationDue(DialCrossing.TARGET, t, lastTapNanos = t, lastPulse = null, lastPulseNanos = 0L, lastTargetNanos = 0L))
         // A line right after the target's vibration is dropped, so the target's is not cut short.
         assertFalse(dialVibrationDue(DialCrossing.THIN, t, t - 50 * ms, null, 0L, lastTargetNanos = t - 50 * ms))
         assertFalse(dialVibrationDue(DialCrossing.THICK, t, t - 149 * ms, null, 0L, lastTargetNanos = t - 149 * ms))
@@ -163,7 +167,7 @@ class DialCrossingTest {
     }
 
     /** The compass screen's frame loop for the dial vibrations, with the same pure functions in the same order. */
-    private class Frames(val target: Float?, val blindNavigation: Boolean = false, val tickFeedback: Boolean = true) {
+    private class Frames(var target: Float?, val blindNavigation: Boolean = false, val tickFeedback: Boolean = true, var positionStale: Boolean = false) {
         var nowNanos = 1_000_000_000L
         var shown = Float.NaN
         val played = mutableListOf<Pair<DialCrossing, Float>>()
@@ -177,13 +181,15 @@ class DialCrossingTest {
         fun frame(heading: Float, dtMs: Long = 16) {
             nowNanos += dtMs * 1_000_000L
             val first = shown.isNaN()
+            val previous = shown
             shown = if (first) heading else smoothAngle(shown, heading, dtMs / 1000f)
             val next = nextTickCell(cell, shown)
             targetCell = nextTickCell(targetCell, heading)
             val wasSettling = settling.active
             settling = nextTickSettling(settling, isTickDisturbance(first, false, dtMs * 1_000_000L, false, 0f), nowNanos, next, targetCell)
-            val nextSide = nextTargetSide(side, shown, target)
-            val k = dialCrossing(cell, next, side, nextSide, tickFeedback, blindNavigation)
+            val base = nextTargetSide(side, previous, target)
+            val nextSide = nextTargetSide(base, shown, target)
+            val k = dialCrossing(cell, next, base, nextSide, tickFeedback, blindNavigation, positionStale)
             if (!wasSettling && !settling.active && dialVibrationDue(k, nowNanos, lastTap, null, 0L, lastTarget)) {
                 played += k to shown
                 lastTap = nowNanos
@@ -217,6 +223,64 @@ class DialCrossingTest {
         f.turn(160.5f, 100.5f, 10f)
         assertEquals(2, f.count(DialCrossing.TARGET))
         assertEquals(4, f.count(DialCrossing.THICK))
+    }
+
+    @Test fun aTargetJustPastALineIsNotLostToTheLinesTap() {
+        // The line at 124 plays at 124.3; the target at 124.3 is passed at 124.6, about 30 ms later at 10 degrees a
+        // second. The target is the strongest kind and plays.
+        val up = Frames(target = 124.3f)
+        up.frame(100.5f); up.rest(100.5f, 2000)
+        up.turn(100.5f, 140.5f, 10f)
+        assertEquals(up.played.toString(), 1, up.count(DialCrossing.TARGET))
+        // Turning down past the same bearing, and the mirror: a target at 123.7 passed just after the line at 124.
+        val down = Frames(target = 124.3f)
+        down.frame(140.5f); down.rest(140.5f, 2000)
+        down.turn(140.5f, 100.5f, 10f)
+        assertEquals(down.played.toString(), 1, down.count(DialCrossing.TARGET))
+        val mirror = Frames(target = 123.7f)
+        mirror.frame(140.5f); mirror.rest(140.5f, 2000)
+        mirror.turn(140.5f, 100.5f, 10f)
+        assertEquals(mirror.played.toString(), 1, mirror.count(DialCrossing.TARGET))
+        // Faster: at 30 degrees a second the target still plays every time it is passed.
+        val fast = Frames(target = 124.3f)
+        fast.frame(100.5f); fast.rest(100.5f, 2000)
+        fast.turn(100.5f, 150.5f, 30f)
+        fast.turn(150.5f, 100.5f, 30f)
+        assertEquals(fast.played.toString(), 2, fast.count(DialCrossing.TARGET))
+    }
+
+    @Test fun onlyThePointersMotionPassesTheTarget() {
+        // A new position moves the bearing from one side of a still pointer to the other: nothing was passed.
+        val f = Frames(target = 125f)
+        f.frame(124f); f.rest(124f, 2000)
+        f.target = 123f
+        f.rest(124f, 1000)
+        f.target = 126f
+        f.rest(124f, 1000)
+        assertEquals(f.played.toString(), 0, f.count(DialCrossing.TARGET))
+        // The pointer then turning past the moved bearing does.
+        f.turn(124f, 128.5f, 10f)
+        assertEquals(f.played.toString(), 1, f.count(DialCrossing.TARGET))
+        // A bearing that moves a little while the pointer passes it is still passed once.
+        val g = Frames(target = 125f)
+        g.frame(120.5f); g.rest(120.5f, 2000)
+        var h = 120.5f
+        while (h < 130f) { h += 0.16f; if (h > 124f && g.target == 125f) g.target = 125.2f; g.frame(h) }
+        g.rest(h, 1000)
+        assertEquals(g.played.toString(), 1, g.count(DialCrossing.TARGET))
+    }
+
+    @Test fun anOldPositionSilencesTheTargetAsItSilencesBlindNavigation() {
+        // While the position is old (isStale), the bearing is not trusted: no target vibration; the lines stay.
+        assertEquals(DialCrossing.NONE, dialCrossing(cell(124.5f), cell(124.5f), TargetSide.Below, TargetSide.Above, true, false, positionStale = true))
+        assertEquals(DialCrossing.THIN, dialCrossing(cell(123.5f), cell(124.5f), TargetSide.Below, TargetSide.Above, true, false, positionStale = true))
+        assertEquals(DialCrossing.THICK, dialCrossing(cell(149.5f), cell(150.5f), TargetSide.Below, TargetSide.Above, true, false, positionStale = true))
+        val f = Frames(target = 125f, positionStale = true)
+        f.frame(100.5f); f.rest(100.5f, 2000)
+        f.turn(100.5f, 160.5f, 10f)
+        assertEquals(0, f.count(DialCrossing.TARGET))
+        assertEquals(2, f.count(DialCrossing.THICK))
+        assertEquals(28, f.count(DialCrossing.THIN))
     }
 
     @Test fun theSameTurnWithBlindNavigationOnGivesTheLinesOnly() {

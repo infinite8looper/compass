@@ -87,32 +87,38 @@ fun crossesThickLine(before: TickCell, after: TickCell): Boolean {
  * else [DialCrossing.THICK] when a thick line was passed, else [DialCrossing.THIN] for any line.
  *
  * With [tickFeedback] off there is none. With [blindNavigation] on the target gives none of its own: the lock
- * pulse of v2 is its vibration then, and the lines keep theirs.
+ * pulse of v2 is its vibration then, and the lines keep theirs. While the position is old ([positionStale], the
+ * condition that silences blind navigation, [isStale]) the target gives none either.
+ *
+ * Only the pointer's motion passes the target: the frame loop takes [sideBefore] as the side of the previous shown
+ * heading against the present bearing (`nextTargetSide(side, previousHeading, bearing)`), so a bearing that a new
+ * position moves past a still pointer gives nothing.
  *
  * Whether it is played is decided by [dialVibrationDue] and, in the frame loop, by the catch-up, the hold-flat
  * state and the compass being in view.
  */
 fun dialCrossing(
     cellBefore: TickCell, cellAfter: TickCell, sideBefore: TargetSide, sideAfter: TargetSide,
-    tickFeedback: Boolean, blindNavigation: Boolean,
+    tickFeedback: Boolean, blindNavigation: Boolean, positionStale: Boolean = false,
 ): DialCrossing = when {
     !tickFeedback -> DialCrossing.NONE
-    !blindNavigation && sideBefore != TargetSide.Unset && sideAfter != TargetSide.Unset && sideBefore != sideAfter -> DialCrossing.TARGET
+    !blindNavigation && !positionStale && sideBefore != TargetSide.Unset && sideAfter != TargetSide.Unset && sideBefore != sideAfter -> DialCrossing.TARGET
     crossesThickLine(cellBefore, cellAfter) -> DialCrossing.THICK
     isTickCrossing(cellBefore, cellAfter) -> DialCrossing.THIN
     else -> DialCrossing.NONE
 }
 
 /**
- * Whether a dial vibration of [kind] at [nowNanos] is played: the limits of the tick taps hold for all three kinds,
- * at most one per [TICK_MIN_INTERVAL_NANOS] ([tickTapDue]) and none on or right after a blind navigation pulse
- * ([tickClearOfPulse]); and a line is not played for [TICK_QUIET_AFTER_TARGET_NANOS] after the target's
- * vibration ([lastTargetNanos]). One that is not played is dropped, not kept for later.
+ * Whether a dial vibration of [kind] at [nowNanos] is played. None on or right after a blind navigation pulse
+ * ([tickClearOfPulse]). A line: at most one per [TICK_MIN_INTERVAL_NANOS] ([tickTapDue]), and none for
+ * [TICK_QUIET_AFTER_TARGET_NANOS] after the target's vibration ([lastTargetNanos]). The target's is not held back by
+ * a line played just before it: it is the strongest kind, and the line's tap gives way to it. One that is not played
+ * is dropped, not kept for later.
  */
 fun dialVibrationDue(
     kind: DialCrossing, nowNanos: Long, lastTapNanos: Long, lastPulse: Pulse?, lastPulseNanos: Long, lastTargetNanos: Long,
-): Boolean = kind != DialCrossing.NONE && tickTapDue(nowNanos, lastTapNanos) && tickClearOfPulse(nowNanos, lastPulse, lastPulseNanos) &&
-    (kind == DialCrossing.TARGET || nowNanos - lastTargetNanos >= TICK_QUIET_AFTER_TARGET_NANOS)
+): Boolean = kind != DialCrossing.NONE && tickClearOfPulse(nowNanos, lastPulse, lastPulseNanos) &&
+    (kind == DialCrossing.TARGET || tickTapDue(nowNanos, lastTapNanos) && nowNanos - lastTargetNanos >= TICK_QUIET_AFTER_TARGET_NANOS)
 
 /**
  * The least time from a press's vibration to the confirming vibration of its save. A save that finishes sooner (an
