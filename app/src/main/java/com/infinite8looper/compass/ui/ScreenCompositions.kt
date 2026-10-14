@@ -20,6 +20,7 @@ object ScreenCompositions {
     val built = IntArray(Pane.entries.size)
     val composed = IntArray(Pane.entries.size)
 
-    fun countBuilt(pane: Pane) { if (BuildConfig.DIAGNOSTICS) built[pane.ordinal]++ }
+    /** Counts one build of [pane]'s screen and returns the count, which the screen keeps (`remember`) and does not use. */
+    fun countBuilt(pane: Pane): Int { if (BuildConfig.DIAGNOSTICS) built[pane.ordinal]++; return built[pane.ordinal] }
     fun countComposed(pane: Pane) { if (BuildConfig.DIAGNOSTICS) composed[pane.ordinal]++ }
 }
