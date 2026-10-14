@@ -17,7 +17,7 @@ const val SAVE_HERE_ACTION = "Save waypoint here"
  * what the button does; on one without, it says where the setting shows, and speaks of no press.
  */
 fun trailSettingDetail(assignableButton: Boolean): String =
-    if (assignableButton) "Double press starts a trail" else "Trail row on waypoints screen"
+    if (assignableButton) "Double press starts a trail" else "Trail row on waypoints"
 
 // The question asked before `Back up waypoints` is turned off: what is asked, what turning it off does, and the two answers.
 

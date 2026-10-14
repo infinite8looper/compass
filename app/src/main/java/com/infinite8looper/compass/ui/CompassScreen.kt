@@ -76,7 +76,7 @@ import kotlin.math.hypot
  * being laid, as a crumb: it is what a double tap on the dial does, what the one-handed primary gesture does on a
  * watch that has it, and what the dial's accessibility action does. On a watch with a button the app can act on
  * it is also what a single press of that button does, and a double press, which there is only with the breadcrumb
- * trail setting on, switches the trail ([sideButtonKeys]).
+ * trail setting on, switches the trail ([rememberSideButtonKeys]).
  */
 @Composable
 fun CompassScreen(
@@ -243,7 +243,7 @@ fun CompassScreen(
     val crownStepPx = with(LocalDensity.current) { CROWN_STEP_DP.dp.toPx() }
     val sidePress by rememberUpdatedState(onSidePress)
     // On a watch with a button the app can act on, a single press of it saves too; on one without, this is nothing.
-    val sideKeys = sideButtonKeys(vm, paneView, doubleEnabled = { navState.value.breadcrumbTrail }, onSinglePress = onSidePress)
+    val sideKeys = rememberSideButtonKeys(vm, paneView, doubleEnabled = { navState.value.breadcrumbTrail }, onSinglePress = onSidePress)
     val openList by rememberUpdatedState(onOpenList)
 
     // The ticks that say which of the three screens this is show only around a swipe: from the moment the compass
@@ -272,7 +272,7 @@ fun CompassScreen(
                 } else crown = 0f
                 true
             }
-            .then(sideKeys)
+            .sideKeys(sideKeys)
             // For an accessibility service the save is an action of the dial with a name, so it does not depend
             // on a gesture. It acts as the double tap does, and only while the compass is in view.
             // The dial has a name of its own, the app's, so that a screen reader stops on it and offers the action;

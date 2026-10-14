@@ -116,7 +116,7 @@ import androidx.compose.runtime.snapshotFlow
  * on the compass does then ([onDropCrumb]).
  *
  * [onEdit] is what a long press on a waypoint's row does, [onLogHere] what `Log here` does, and [onSidePress] what
- * a single press of a side button does, on a watch that has one ([sideButtonKeys]).
+ * a single press of a side button does, on a watch that has one ([rememberSideButtonKeys]).
  */
 @Composable
 fun WaypointsScreen(
@@ -187,8 +187,8 @@ fun WaypointsScreen(
     val navState = rememberUpdatedState(nav)
     // On a watch with a button the app can act on: the list inside has the focus while this screen does, so a side
     // button's press passes here first, and does here what it does on the compass. On a watch without, nothing.
-    val sideKeys = sideButtonKeys(vm, paneView, doubleEnabled = { navState.value.breadcrumbTrail }, onSinglePress = onSidePress)
-    Box(Modifier.fillMaxSize().background(Color.Black).then(sideKeys)) {
+    val sideKeys = rememberSideButtonKeys(vm, paneView, doubleEnabled = { navState.value.breadcrumbTrail }, onSinglePress = onSidePress)
+    Box(Modifier.fillMaxSize().background(Color.Black).sideKeys(sideKeys)) {
       // The list and what is pinned over it are cut off at one circle inside the frame.
       val statusShowing = status != LogStatus.Idle
       val bandPx = with(density) { (r * STATUS_BAND).toPx() }

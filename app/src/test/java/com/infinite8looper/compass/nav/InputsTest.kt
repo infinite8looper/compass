@@ -34,7 +34,7 @@ class InputsTest {
     @Test fun theTrailsSettingSpeaksOfAPressOnlyOnAWatchWithAButton() {
         assertEquals("Double press starts a trail", trailSettingDetail(assignableButton = true))
         val without = trailSettingDetail(assignableButton = false)
-        assertEquals("Trail row on waypoints screen", without)
+        assertEquals("Trail row on waypoints", without)
         assertFalse(without.contains("press", ignoreCase = true))
     }
 

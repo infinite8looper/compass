@@ -135,7 +135,7 @@ leave_route() { $ADB shell input keyevent KEYCODE_BACK; sleep 1.5; }      # edit
 # Saving from the compass is a double tap on the dial (scripts/double-tap.sh): above the middle, clear of the
 # `Calibrate` prompt's tap area. The trail is started and switched from its row on the waypoints screen.
 TAP_Y=$((H * 3 / 10))
-press() { $ADB shell "input tap $C $TAP_Y; input tap $C $TAP_Y"; }
+press() { $ADB shell "input tap $C $TAP_Y; sleep 0.1; input tap $C $TAP_Y"; }
 switch_trail() { to_waypoints; tap "Trail" || return 1; sleep 1; from_waypoints; }      # from the compass, and back to it
 flat() { $ADB emu sensor set acceleration 0:0:9.81 > /dev/null; }
 upright() { $ADB emu sensor set acceleration 0:9.81:0 > /dev/null; }
@@ -226,7 +226,7 @@ sec_log() {
   shot_when log-saved $GREEN 50 72 40
   for try in 1 2 3 4; do      # a press followed at once by Home, with location off while the app is off screen:
     sleep 4                   # no position reaches the save in its 20 seconds, and its result waits for the return
-    $ADB shell "input tap $C $TAP_Y; input tap $C $TAP_Y; input keyevent KEYCODE_HOME; settings put secure location_mode 0"; sleep 23
+    $ADB shell "input tap $C $TAP_Y; sleep 0.1; input tap $C $TAP_Y; input keyevent KEYCODE_HOME; settings put secure location_mode 0"; sleep 23
     location on; sleep 1; app_start; shot_when log-no-gps-fix $RED 50 72 2> /dev/null && break
     [ $try = 4 ] && echo "  log-no-gps-fix-$SUF.png  NOT CAUGHT in four tries (a fix reached the app before it left the screen each time)" >&2
   done
@@ -271,8 +271,8 @@ sec_waypoints() {
   fresh granted; feed $HERE_LAT $HERE_LON; sleep 6
   to_settings; setting "Feet and miles" off; from_settings
   to_waypoints; shot waypoints-empty; from_waypoints
-  seed $THREE; long_names; to_waypoints; $ADB shell input swipe $C $((H * 62 / 100)) $C $((H * 42 / 100)) 600; sleep 1
-  tap "Summit of Mount Moosilauke via Gorge Brook"; sleep 1.5; shot waypoints-few; from_waypoints
+  seed $THREE; long_names; to_waypoints
+  tap_row "Summit of Mount Moosilauke via Gorge Brook" || return 1; sleep 1.5; shot waypoints-few; from_waypoints
   seed many; to_waypoints; shot waypoints-many
   for i in $(seq 1 12); do $ADB shell input swipe $C $((H * 80 / 100)) $C $((H * 15 / 100)) 120; done; sleep 2; shot waypoints-many-end
   for k in 1 2 3 4 5 6 7 8 9 10 11 12; do $ADB shell input swipe $C $((H * 20 / 100)) $C $((H * 85 / 100)) 120; done; sleep 1.5
@@ -302,6 +302,7 @@ sec_settings() {
   find_row "Calibrate" > /dev/null; shot settings-end
   setting "Breadcrumb trail" on; setting "Show coordinates" on; find_row "Breadcrumb trail" > /dev/null; shot settings-trail-coords-on
   for s in "True north" "Feet and miles" "Tick feedback" "Blind navigation" "Breadcrumb trail" "Show coordinates" "Back up waypoints"; do setting "$s" off; done
+  tap "Turn off" || return 1; sleep 1.5      # turning the backup off is asked first, on a screen of its own
   for k in 1 2 3; do $ADB shell input swipe $C $((H * 35 / 100)) $C $((H * 85 / 100)) 150; done; sleep 1
   $ADB exec-out "screencap -p 2>/dev/null" > "$tmp/o1.png"
   find_row "Blind navigation" > /dev/null; $ADB exec-out "screencap -p 2>/dev/null" > "$tmp/o2.png"

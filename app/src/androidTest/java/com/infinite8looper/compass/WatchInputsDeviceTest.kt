@@ -120,7 +120,7 @@ class WatchInputsDeviceTest {
             gather(row!!)
             assertEquals(listOf("Breadcrumb trail", trailSettingDetail(assignable)), lines)
             if (!assignable) {
-                assertEquals(listOf("Breadcrumb trail", "Trail row on waypoints screen"), lines)
+                assertEquals(listOf("Breadcrumb trail", "Trail row on waypoints"), lines)
                 assertTrue("the settings speak of a press on a watch with no button: ${words()}", words().none { it.contains("press", ignoreCase = true) })
             } else assertEquals(listOf("Breadcrumb trail", "Double press starts a trail"), lines)
         }

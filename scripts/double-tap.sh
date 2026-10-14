@@ -4,9 +4,10 @@
 # compass that is the double tap that saves the position (a waypoint, or a crumb while a trail is being laid).
 # With no place given it taps the middle of the screen's width, three tenths of the way down, where the compass
 # has no tap area of its own.
-# Both taps are sent by one shell on the device, so that the second follows the first inside the system's
-# double-tap time (300 ms); how long they really were apart is the device's doing and is not measured here. If the
-# app shows no `Saving…` afterwards, the taps came too far apart: run it again.
+# Both taps are sent by one shell on the device, a tenth of a second apart, so that the second follows the first
+# inside the system's double-tap time (300 ms) and not sooner than a double tap may (40 ms). It prints how long
+# after the first the second was sent, by the device's clock: where that is over 300 ms the taps were two single
+# taps and saved nothing.
 # Emulators only.
 source "$(dirname "$0")/emulator-only.sh" || exit 1
 ADB=~/Library/Android/sdk/platform-tools/adb
@@ -23,4 +24,6 @@ else
   x=$((w / 2)); y=$((h * 3 / 10))
 fi
 if ! [[ "$x" == <-> && "$y" == <-> ]]; then echo "x and y must be whole numbers of pixels" >&2; exit 1; fi
-$ADB shell "input tap $x $y; input tap $x $y" && echo "double tap at $x $y"
+# The pause keeps the second tap from following the first sooner than a double tap may (40 ms).
+gap=$($ADB shell "a=\$(date +%s%N); input tap $x $y; sleep 0.1; b=\$(date +%s%N); input tap $x $y; echo \$(( (b - a) / 1000000 ))" | tr -d '\r')
+echo "double tap at $x $y, the second tap sent $gap ms after the first"

@@ -128,32 +128,37 @@ internal fun LogResultTimer(vm: CompassViewModel, paneView: () -> PaneView) {
 }
 
 /**
- * The handling of a side button for a screen that acts on one, the compass and the waypoints screen, as a modifier
- * for the screen's outermost box: a single press calls [onSinglePress] and a double press switches the trail.
+ * The handling of a side button for a screen that acts on one, the compass and the waypoints screen, as what
+ * the screen's outermost box does with a key event before anything inside it ([sideKeys]): a single press calls
+ * [onSinglePress] and a double press switches the trail.
  *
  * It is there only on a watch that says it has a button an app can act on ([WatchButtons.assignable], asked once).
- * On a watch that has none this is the empty modifier: no key event is looked at, no [SideButton] is made and
+ * On a watch that has none this is null: no key event is looked at, no [SideButton] is made and
  * nothing waits [com.infinite8looper.compass.nav.DOUBLE_PRESS_WINDOW_MS] for a second press.
  */
 @Composable
-internal fun sideButtonKeys(
+internal fun rememberSideButtonKeys(
     vm: CompassViewModel, paneView: () -> PaneView, doubleEnabled: () -> Boolean, onSinglePress: () -> Unit,
-): Modifier {
+): ((KeyEvent) -> Boolean)? {
     val context = LocalContext.current
     val hasButton = remember(context) { WatchButtons.assignable(context) }
-    if (!hasButton) return Modifier
+    if (!hasButton) return null
     val scope = rememberCoroutineScope()
     val button = remember(scope) { SideButton(scope) }
     val single by rememberUpdatedState(onSinglePress)
     val double by rememberUpdatedState(doubleEnabled)
     return remember(vm, paneView, button) {
-        Modifier.onPreviewKeyEvent { e ->
-            button.onKey(e.nativeKeyEvent, inView = { paneView() == PaneView.IN_VIEW }, doubleEnabled = { double() }) { kind ->
+        { key: KeyEvent ->
+            button.onKey(key, inView = { paneView() == PaneView.IN_VIEW }, doubleEnabled = { double() }) { kind ->
                 if (kind == PressKind.DOUBLE) vm.trailDoublePress() else single()
             }
         }
     }
 }
+
+/** The handling [rememberSideButtonKeys] gave, on a screen's outermost box; nothing where it gave none. */
+internal fun Modifier.sideKeys(keys: ((KeyEvent) -> Boolean)?): Modifier =
+    if (keys == null) this else onPreviewKeyEvent { keys(it.nativeKeyEvent) }
 
 /**
  * A side button, on a screen that acts on it: the compass and the waypoints screen. It follows a button from down
