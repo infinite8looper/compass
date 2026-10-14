@@ -119,6 +119,12 @@ class ColorsRowTest {
 
     private fun opaque(rgb: Int) = Color(0xFF000000.toInt() or rgb)
 
+    /** What a screen reader says a click on [n] does: the label of its click action, as the system's tree has it. */
+    private fun clickLabelOf(n: AccessibilityNodeInfo?): String? =
+        n?.actionList?.firstOrNull { it.id == AccessibilityNodeInfo.ACTION_CLICK }?.label?.toString()
+    /** Every click label the app's nodes offer now. */
+    private fun clickLabels() = nodes().mapNotNull { clickLabelOf(it) }
+
     @Test fun withNoSchemeTheRowSaysSoAndTakesNoTap() = runBlocking {
         // The library gives no scheme below API level 35 whatever the setting, and from 35 only while it is 1.
         if (Build.VERSION.SDK_INT >= 35) setDynamicColor(false)
@@ -129,6 +135,11 @@ class ColorsRowTest {
             assertFalse("the row says a choice: ${words()}", rowSays("Standard") || rowSays("Watch face"))
             val r = rowOrNull()
             assertFalse("the row takes a tap", r != null && r.isEnabled && r.isClickable)
+            // No click is offered with the owner's words (2026-10-14, approved: `Use watch face colors` / `Use
+            // standard colors`): the row takes no tap, so it says nothing a tap would do.
+            assertNull(clickLabelOf(r))
+            val offered = clickLabels()
+            assertFalse("$offered", offered.any { it == "Use watch face colors" || it == "Use standard colors" })
             // A click sent anyway, to the row or to the word, changes nothing.
             (r ?: withText("Colors").single()).performAction(AccessibilityNodeInfo.ACTION_CLICK)
             delay(1_000)
@@ -170,8 +181,11 @@ class ColorsRowTest {
 
             // The rows take a tap once the settings file has been read; the system's tree can lag that by a moment.
             shows("the row taking a tap") { rowOrNull()?.let { it.isEnabled && it.isClickable } == true }
+            // The click label says what a tap does, in the words the owner approved (2026-10-14).
+            assertEquals("Use watch face colors", clickLabelOf(row()))
             assertTrue(row().performAction(AccessibilityNodeInfo.ACTION_CLICK))
             shows("`Watch face` on the row") { rowSays("Watch face") }
+            shows("the click label `Use standard colors`; it is `${clickLabelOf(rowOrNull())}`") { clickLabelOf(rowOrNull()) == "Use standard colors" }
             assertEquals(ColorMode.WATCH_FACE, settings.settings.first().colors)
             shows("the accent from the scheme") { AccentColor == opaque(watchFace.roles.accent) }
             assertEquals(opaque(watchFace.roles.north), NorthColor)
@@ -180,6 +194,7 @@ class ColorsRowTest {
 
             assertTrue(row().performAction(AccessibilityNodeInfo.ACTION_CLICK))
             shows("`Standard` on the row again") { rowSays("Standard") }
+            shows("the click label `Use watch face colors` again") { clickLabelOf(rowOrNull()) == "Use watch face colors" }
             assertEquals(ColorMode.STANDARD, settings.settings.first().colors)
             shows("the app's own accent again") { AccentColor == opaque(STANDARD_PALETTE.roles.accent) }
             assertEquals(opaque(STANDARD_PALETTE.grays.ink), Ink)

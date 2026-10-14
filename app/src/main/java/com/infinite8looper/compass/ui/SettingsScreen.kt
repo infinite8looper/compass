@@ -173,11 +173,14 @@ fun SettingsScreen(vm: CompassViewModel, paneView: () -> PaneView, onCalibrate: 
                 }
                 item(key = "colors") {
                     // `Standard` or `Watch face`; one tap gives the other. On a watch that gives no color scheme the
-                    // row says so and takes no tap.
+                    // row says so and takes no tap. A screen reader says what a tap does (the click label), and offers no
+                    // click where the row takes no tap.
                     val row = colorsRow(switches.colors, watchFaceColorsAvailable)
                     val gives = row.tapGives
                     InstrumentRow(
-                        Modifier.clickable(enabled = ready && gives != null, role = Role.Button) { if (gives != null) inView { vm.setColors(gives) } },
+                        Modifier.clickable(enabled = ready && gives != null, onClickLabel = row.clickLabel, role = Role.Button) {
+                            if (gives != null) inView { vm.setColors(gives) }
+                        },
                         fitContent = true,
                     ) {
                         Column {
