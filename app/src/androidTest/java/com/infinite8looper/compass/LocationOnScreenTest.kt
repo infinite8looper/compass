@@ -100,10 +100,15 @@ class LocationOnScreenTest {
     private fun shell(command: String): String =
         ParcelFileDescriptor.AutoCloseInputStream(instrumentation.uiAutomation.executeShellCommand(command)).bufferedReader().readText()
 
+    /**
+     * The app's nodes as the app has them now: each fetched again from the app ([AccessibilityNodeInfo.refresh]), since
+     * the system's cache of the tree can hold a list's old contents for seconds after it has scrolled (RingScreensTest).
+     */
     private fun nodes(): List<AccessibilityNodeInfo> {
         val root = instrumentation.uiAutomation.rootInActiveWindow ?: return emptyList()
+        root.refresh()
         val all = ArrayList<AccessibilityNodeInfo>()
-        fun walk(n: AccessibilityNodeInfo) { all += n; for (i in 0 until n.childCount) n.getChild(i)?.let(::walk) }
+        fun walk(n: AccessibilityNodeInfo) { all += n; for (i in 0 until n.childCount) n.getChild(i)?.let { if (it.refresh()) walk(it) } }
         walk(root)
         return all.filter { it.packageName == "com.infinite8looper.compass" }
     }
@@ -119,14 +124,19 @@ class LocationOnScreenTest {
     private fun compassInView() = nodes().any { n -> n.isVisibleToUser && n.text?.toString()?.let { it == "Hold flat" || it == "--" || it.endsWith("°") } == true } &&
         !visible("Log here") && !visible("Settings")
 
-    /** Scrolls the list on screen forward, through the system's tree, until a node reads [text]; fails if none ever does. */
-    private suspend fun scrollTo(text: String) {
+    /**
+     * Scrolls forward, through the system's tree, the list that holds the visible words [anchor] (the three screens
+     * are all built, so the list is told by what it shows), until a node reads [text]; fails if none ever does.
+     */
+    private suspend fun scrollTo(text: String, anchor: String) {
+        if (nodes().any { it.isVisibleToUser && it.text?.toString() == text }) return
+        val list = nodes().first { it.isVisibleToUser && it.text?.toString() == anchor }
+            .let { n -> generateSequence(n) { it.parent }.first { it.isScrollable && (it.collectionInfo?.columnCount ?: 1) <= 1 } }
         repeat(10) {
             if (nodes().any { it.isVisibleToUser && it.text?.toString() == text }) return
-            // The list, not the ring of screens, which scrolls too and is the one collection of three columns.
-            nodes().firstOrNull { it.isScrollable && it.isVisibleToUser && (it.collectionInfo?.columnCount ?: 1) <= 1 }
-                ?.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
-            delay(800)
+            list.refresh()
+            list.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
+            delay(1_000)
         }
         fail("`$text` did not come on screen; on screen: " + nodes().filter { it.isVisibleToUser }.mapNotNull { it.text?.toString() })
     }
@@ -180,7 +190,7 @@ class LocationOnScreenTest {
             assertTrue("a gap in the positions between the compass and the waypoints", seen.subList(from, seen.size).all { it.fixElapsedMs != null })
 
             // A row opened from the list covers the three screens.
-            scrollTo("Place 1")
+            scrollTo("Place 1", anchor = "Log here")
             val row = nodes().first { it.text?.toString() == "Place 1" }.let { n -> generateSequence(n) { it.parent }.first { it.isClickable } }
             // A long press opens a row (a tap sets it as a target).
             assertTrue(row.performAction(AccessibilityNodeInfo.ACTION_LONG_CLICK))
@@ -196,7 +206,7 @@ class LocationOnScreenTest {
             stopped(vm, "on settings")
 
             // Calibration, opened from settings, runs none either.
-            scrollTo("Calibrate")
+            scrollTo("Calibrate", anchor = "True north")
             val calibrate = nodes().first { it.text?.toString() == "Calibrate" }.let { n -> generateSequence(n) { it.parent }.first { it.isClickable } }
             assertTrue(calibrate.performAction(AccessibilityNodeInfo.ACTION_CLICK))
             delay(1_000)
