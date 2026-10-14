@@ -8,7 +8,7 @@ The picture is the compass screen on an emulator with three waypoints, a simulat
 
 ## The three screens
 
-Settings, the compass and the waypoints are three screens side by side in one row that wraps around. The app opens on the compass. A swipe left from the compass shows the waypoints, a swipe right shows settings, and a second swipe the same way reaches the other one. Three ticks show which screen is in view: at the bottom edge on settings and waypoints, and on the compass for about a second around a swipe.
+Settings, the compass and the waypoints are three screens side by side in one row that wraps around. The app opens on the compass. A swipe left from the compass shows the waypoints, a swipe right shows settings, and a second swipe the same way reaches the other one. Turning the row leaves a list where it was scrolled to. Three ticks show which screen is in view: at the bottom edge on settings and waypoints, and on the compass for about a second around a swipe.
 
 | Where | Gesture | What happens |
 |-|-|-|
@@ -105,7 +105,7 @@ The waypoint database (`waypoints.db`, which also holds the crumbs) and the sett
 
 ## Versions
 
-Minimum API level 33 (Wear OS 4), target 35, compiled against 37. The manifest requires a watch with a compass sensor; GPS hardware is not required. Test runs: emulators at API 33, 34, 35 and 37. No physical watch has been used.
+Minimum API level 33 (Wear OS 4), target 35, compiled against 37. The manifest requires a watch with a compass sensor; GPS hardware is not required. Test runs: emulators at API 33, 34, 35 and 37. The tests and the scripts have run on emulators only. A debug build was run by hand on a Pixel Watch 3 (API 37) on 2026-10-13; what that showed is in [the v3 spec](docs/superpowers/specs/2026-10-13-wear-compass-v3-watch-report.md).
 
 ## Building
 
@@ -117,6 +117,12 @@ Needs JDK 17 and the Android SDK (`local.properties` with `sdk.dir`, which Andro
 ```
 
 `installDebug` installs on the single attached device or emulator. The release build type shrinks the app and is signed from `keystore.properties` when that file exists (the file and keystores are ignored by git).
+
+```
+./gradlew assembleWatch
+```
+
+The `watch` build type is for trying the app on a watch. It is made as the release build is (minified with R8, resources shrunk, not debuggable) and signed with the machine's debug key, the key the debug build is signed with, so it needs no keystore. It has the debug build's application id, and `adb install -r app/build/outputs/apk/watch/app-watch.apk` replaces an installed debug build in place. `BuildConfig.DIAGNOSTICS` is true in the debug and watch builds and false in the release build.
 
 ## Tests
 

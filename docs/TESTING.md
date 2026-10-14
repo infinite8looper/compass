@@ -47,6 +47,7 @@ pkill -f geo-feed.sh
 - While the instrumented tests run, the screen is all white for about half a second each time a test closes the activity. That is `InstrumentationActivityInvoker$EmptyActivity`, a helper activity of the test library in the test package (`com.infinite8looper.compass.test`), which has a light theme; the app's own window was not in front in those frames (screen recording and `dumpsys window`, API 35, 2026-10-13). No white frame was recorded on a cold launch, a font size change, sleep and wake, Home and back, or a change of pose.
 - The run applies `animationsDisabled = true` (set in `app/build.gradle.kts`): a screen that keeps animating, such as the hold-flat hint that loops while an emulator is upright, never lets the main thread go idle. If a run is cut short the animation scales can stay at 0; `scripts/emulator.sh` puts any scale at 0 back to 1 the next time it runs.
 - One class: `ANDROID_SERIAL=emulator-5554 ./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.infinite8looper.compass.SideButtonTest`.
+- `RingScreensTest` reads the counters the three screens keep of how often each was built and composed (`ui/ScreenCompositions.kt`), and turns the ring with touches it injects and with Back. It switches the breadcrumb trail and the coordinates off, so that no position fix changes a screen while the counts are compared.
 - `scripts/test-counts.sh device [folder]` reads `app/build/outputs/androidTest-results/connected/`, or the given folder, such as a copy kept from an earlier run.
 
 ## Instrumented tests, every emulator
@@ -104,10 +105,50 @@ scripts/screenshot-matrix.sh large            # every screen and state, into doc
 scripts/screenshot-matrix.sh small trail      # one section, on whichever emulator is attached
 scripts/ui-dump.sh                            # what the screen gives accessibility services: texts, descriptions, flags
 scripts/frame-times.sh <label>                # frame times while the heading sweeps a full circle
+scripts/frame-times.sh swipes <label>         # frame times during ten swipes round the ring of three screens
+scripts/frame-times.sh settings <label>       # frame times while a list is scrolled to its end and back
 ```
 
 `scripts/screenshot-matrix.sh` wipes the app's data and drives the app through its states; its header lists the sections, and [docs/screenshots/README.md](screenshots/README.md) lists each picture and how it was made. A status that shows for two or three seconds is caught by taking pictures until its color appears, so every picture still has to be looked at.
 
+## Frame times
+
+`scripts/frame-times.sh` reads the system's frame statistics for the app (`dumpsys gfxinfo`) around a movement it makes itself. It measures whichever build is installed under the app's id. To compare builds, on one emulator in one sitting, for each build:
+
+```
+./gradlew assembleDebug assembleWatch
+adb install -r app/build/outputs/apk/debug/app-debug.apk     # or app/build/outputs/apk/watch/app-watch.apk
+adb shell pm clear com.infinite8looper.compass
+scripts/set-heading.sh 40
+adb shell am start -n com.infinite8looper.compass/.MainActivity
+# wait 20 s for the compass to settle
+scripts/frame-times.sh swipes <label>      # twice: twenty swipes to the left end on the settings
+scripts/frame-times.sh swipes <label>
+scripts/frame-times.sh settings <label>    # twice
+scripts/frame-times.sh settings <label>
+```
+
+With only the emulator attached, `adb` here addresses it; the scripts refuse to run otherwise.
+
+Measured on `Wear_OS_Large_Round` on 2026-10-13, two runs of each, the system's percentiles of the frame time in ms and its share of janky frames. "Before" is the debug build of commit 5dc1765, where the three screens stood in a pager and the lists were drawn through offscreen buffers; "after" is commit 903e3cc.
+
+| Sitting | Build | Movement | 50th | 90th | 99th | Janky |
+|-|-|-|-|-|-|-|
+| 1, emulator up for hours | before, debug | swipes | 22, 20 | 44, 48 | 57, 53 | 17.4 %, 20.0 % |
+| 1 | before, debug | settings | 21, 20 | 38, 36 | 57, 53 | 18.8 %, 18.7 % |
+| 1 | after (at 31eac23), debug | swipes | 18, 18 | 24, 31 | 36, 36 | 11.2 %, 8.6 % |
+| 1 | after (at 31eac23), debug | settings | 19, 18 | 32, 32 | 48, 36 | 10.1 %, 8.4 % |
+| 1 | after (at 31eac23), watch | swipes | 17, 17 | 20, 22 | 32, 34 | 9.1 %, 7.3 % |
+| 1 | after (at 31eac23), watch | settings | 17, 18 | 22, 22 | 34, 34 | 6.5 %, 8.4 % |
+| 2, emulator just booted | before, debug | swipes | 17, 17 | 19, 17 | 26, 19 | 3.9 %, 4.6 % |
+| 2 | before, debug | settings | 17, 17 | 18, 18 | 21, 21 | 4.4 %, 3.7 % |
+| 2 | after, debug | swipes | 17, 17 | 17, 17 | 19, 19 | 5.2 %, 2.9 % |
+| 2 | after, debug | settings | 17, 17 | 17, 18 | 19, 20 | 4.9 %, 4.6 % |
+| 2 | after, watch | swipes | 17, 17 | 17, 17 | 18, 18 | 3.1 %, 3.3 % |
+| 2 | after, watch | settings | 17, 18 | 18, 17 | 22, 21 | 4.9 %, 4.6 % |
+
+The two sittings do not agree. In the first, on an emulator that had been running for hours, the change shows; in the second, on the same emulator freshly booted, every build is at the emulator's own frame interval of about 17 ms and the builds cannot be told apart. So these numbers do not show that the change makes the screens smoother, and they do not predict what a watch does: the emulator runs on this computer's processor and draws through its graphics (the swap stage alone has a median of about 16 ms in every run). What the instrumented tests do show is the cause removed: `RingScreensTest` counts, in the screens themselves, that a turn of the ring builds no screen and composes none.
+
 ## Counts at the time of writing
 
-374 unit tests. 156 instrumented tests, run on each of `Wear_OS_API33`, `Wear_OS_API34`, `Wear_OS_Newest` and `Wear_OS_Large_Round` by `scripts/all-suites.sh` on 2026-10-13: 156 passed, 0 failed and 0 skipped on each, 624 in all. `scripts/backup-off-check.sh` on the same day, API 33, 34 and 35: 65 requirements, all held, on each.
+383 unit tests. 161 instrumented tests, run on each of `Wear_OS_API33`, `Wear_OS_API34`, `Wear_OS_Newest` and `Wear_OS_Large_Round` by `scripts/all-suites.sh` on 2026-10-13: 161 passed, 0 failed and 0 skipped on each, 644 in all. `scripts/backup-off-check.sh` on the same day, API 33, 34 and 35: 65 requirements, all held, on each.
