@@ -214,7 +214,8 @@ sec_moving() {
   seed none; upright; sleep 3; frames holdflat-frames 4 0.45; flat; sleep 4
   seed $THREE; upright; sleep 3; frames holdflat-target-frames 4 0.45; flat; sleep 5
   long_names; sleep 1; frames name-sliding-compass 4 1.7
-  to_waypoints; sleep 1; frames name-sliding-list 3 2.2
+  to_waypoints; find_row "$LONG" > /dev/null || { echo "moving: the long name's row was not found" >&2; from_waypoints; return 1; }
+  sleep 1; frames name-sliding-list 3 2.2      # the `Trail` row stands above the waypoints, so the list is scrolled to the name
   hold "$LONG" 900 || { echo "moving: the long name's row was not found, so name-sliding-edit was not taken" >&2; from_waypoints; return 1; }
   sleep 2; frames name-sliding-edit 3 2.2
   leave_route; from_waypoints
@@ -276,6 +277,7 @@ sec_waypoints() {
   seed many; to_waypoints; shot waypoints-many
   for i in $(seq 1 12); do $ADB shell input swipe $C $((H * 80 / 100)) $C $((H * 15 / 100)) 120; done; sleep 2; shot waypoints-many-end
   for k in 1 2 3 4 5 6 7 8 9 10 11 12; do $ADB shell input swipe $C $((H * 20 / 100)) $C $((H * 85 / 100)) 120; done; sleep 1.5
+  $ADB shell input swipe $C $((H * 70 / 100)) $C $((H * 35 / 100)) 600; sleep 1.5      # past `Log here` and `Trail` to the first rows
   location off; sleep 25; shot waypoints-old; location on; from_waypoints; home; app_start; sleep 6
   to_waypoints; tap "Log here"; shot_when waypoints-saved-band $GREEN 8 32 40; sleep 3; from_waypoints
 }

@@ -3,6 +3,7 @@ package com.infinite8looper.compass
 import android.Manifest
 import android.app.Application
 import android.os.SystemClock
+import android.util.Log
 import android.view.KeyEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.lifecycle.ViewModelProvider
@@ -18,6 +19,8 @@ import com.infinite8looper.compass.nav.LogStatus
 import com.infinite8looper.compass.nav.TrailMode
 import com.infinite8looper.compass.sensors.WatchButtons
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -118,6 +121,8 @@ class DropCrumbRowTest {
         withTimeout(10_000) { while (vm.logPress.value < press) delay(10) }
         withTimeout(60_000) { while (vm.logStatus.value is LogStatus.Saving) delay(20) }
         val name = (vm.logStatus.value as? LogStatus.Saved)?.name
+        // What the save ended in, and what the trail was then, for a run in which it is not a saved name.
+        if (name == null) Log.w("DropCrumbRowTest", "press $press ended in ${vm.logStatus.value}; the trail's stored mode ${settings.settings.first().trailMode}, crumbs ${crumbDao.all().size}, screens' trail ${vm.nav.value.trail.mode}")
         withTimeout(15_000) { while (vm.logStatus.value != LogStatus.Idle) delay(20) }
         return name
     }
@@ -146,7 +151,7 @@ class DropCrumbRowTest {
             // handles no side key (v3: "Where it has not, the key handling is not installed"), and what a single
             // press did is what a double tap on the compass does: the same call of the view model, made here.
             // That the double tap itself drops a crumb is in DialInputsTest.
-            if (WatchButtons.assignable(app)) press() else vm.sidePress()
+            if (WatchButtons.assignable(app)) press() else withContext(Dispatchers.Main) { vm.sidePress() }      // on the main thread, as a touch is
             assertEquals("Crumb 1", savedName(vm, 1))
             assertTrue(dropCrumbRow().performAction(AccessibilityNodeInfo.ACTION_CLICK))
             assertEquals("Crumb 2", savedName(vm, 2))
