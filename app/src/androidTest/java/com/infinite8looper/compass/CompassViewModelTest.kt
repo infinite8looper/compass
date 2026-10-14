@@ -735,11 +735,18 @@ class CompassViewModelTest {
         }
     }
 
+    /**
+     * The press is one that waits for a position, so that its fix can arrive after the trail was switched off: v3
+     * saves a position in hand at once ("A position in hand, not older than 10 seconds at the press, is written at
+     * once"), and a crumb from a position in hand was taken before the switch, so whether it is stored would depend
+     * on which of the two reached the stores first. No position may be that recent at the press ([noPositionInHand]).
+     */
     @Test fun aCrumbWhoseFixArrivesAfterTheTrailStoppedBeingLaidIsNotStored() = runBlocking {
         settings.setBreadcrumbTrail(true)
         ActivityScenario.launch(MainActivity::class.java).use {
             val vm = viewModel()
             withTimeout(10_000) { vm.trailDoublePress().join() }
+            noPositionInHand()
             // The press is taken while laying; the trail is switched off before a fix taken since the press can arrive.
             val press = withContext(Dispatchers.Main) { vm.sidePress().also { assertTrue(vm.logStatus.value is LogStatus.Saving) } }
             settings.setBreadcrumbTrail(false)
