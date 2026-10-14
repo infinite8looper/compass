@@ -298,7 +298,11 @@ class InstantSaveTest {
             collectors += CoroutineScope(Dispatchers.Main).launch { vm.logStatus.collect { seen += it } }
             val pressedAt = SystemClock.elapsedRealtime()
             val saved = savedNow(vm, press(vm).second)
-            Log.i("InstantSaveTest", "saved from the last known position ${SystemClock.elapsedRealtime() - pressedAt} ms after the press")
+            val tookMs = SystemClock.elapsedRealtime() - pressedAt
+            Log.i("InstantSaveTest", "saved from the last known position $tookMs ms after the press")
+            // At most the wait for the provider's answer (CompassViewModel.LAST_KNOWN_WITHIN_MS, 500 ms) and the writes of a
+            // save (allowed 300 ms on an emulator).
+            assertTrue("written $tookMs ms after the press", tookMs <= 500 + 300)
             assertTrue("a position ${pressedAt - saved.fixElapsedMs} ms old at the press", saved.fixElapsedMs < pressedAt && pressedAt - saved.fixElapsedMs <= 10_000)
             // Saving without an accuracy until the last known position was read, then with its accuracy.
             assertTrue("$seen", LogStatus.Saving(saved.accuracyM) in seen)

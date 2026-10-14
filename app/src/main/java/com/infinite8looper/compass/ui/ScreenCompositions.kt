@@ -23,4 +23,11 @@ object ScreenCompositions {
     /** Counts one build of [pane]'s screen and returns the count, which the screen keeps (`remember`) and does not use. */
     fun countBuilt(pane: Pane): Int { if (BuildConfig.DIAGNOSTICS) built[pane.ordinal]++; return built[pane.ordinal] }
     fun countComposed(pane: Pane) { if (BuildConfig.DIAGNOSTICS) composed[pane.ordinal]++ }
+
+    /** How often each part of the waypoints list has been composed, by [WaypointsPart]: every row of a kind counts in one. */
+    val waypointsParts = IntArray(WaypointsPart.entries.size)
+    fun countPart(part: WaypointsPart) { if (BuildConfig.DIAGNOSTICS) waypointsParts[part.ordinal]++ }
 }
+
+/** The parts of the waypoints list counted in [ScreenCompositions.waypointsParts]: [ROW] is a waypoint's row, [DISTANCE] the distance line in it. */
+enum class WaypointsPart { HEADER, LOG_HERE, TRAIL, DROP_CRUMB, ROW, DISTANCE }

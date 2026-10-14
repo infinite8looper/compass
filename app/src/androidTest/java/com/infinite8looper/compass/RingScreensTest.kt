@@ -45,7 +45,7 @@ import org.junit.runner.RunWith
  *
  * The settings that would bring position fixes for the trail and the coordinates are off. Location runs all the
  * same while the compass or the waypoints screen is on screen (v3), with the position feed of the suite: positions
- * arrive during the turns, and one is made to arrive while a swipe is held half way. A position composes only the
+ * arrive during the turns, and one is made to arrive while a swipe is held with the finger moved 0.3 of the screen's width. A position composes only the
  * parts of the screens that show it ([ScreenCompositions] counts the screens), so the counts must not rise for it.
  * What the screen state did meanwhile is kept and given in a failure's message.
  */
@@ -204,12 +204,15 @@ class RingScreensTest {
             // Every screen is built with the app, before any turn.
             delay(1_500)
             val changes = java.util.concurrent.CopyOnWriteArrayList<String>()
+            // New positions that arrived (not a position going away, as it does on settings).
+            val arrivals = java.util.concurrent.atomic.AtomicInteger()
             val start = SystemClock.elapsedRealtime()
             val watching = launch(Dispatchers.Main) {
                 var last: NavUi? = null
                 vm.nav.collect { now ->
                     val was = last
                     if (was != null) changes += "${SystemClock.elapsedRealtime() - start} ms: " + navChanges(was, now)
+                    if (was != null && now.fixElapsedMs != null && now.fixElapsedMs != was.fixElapsedMs) arrivals.incrementAndGet()
                     last = now
                 }
             }
@@ -235,16 +238,17 @@ class RingScreensTest {
             assertEquals("screens built, after a swipe each way (settings, compass, waypoints)", before.built, afterBoth.built)
             assertEquals("compositions of each screen, after a swipe each way (settings, compass, waypoints); screen state changes: $changes", before.composed, afterBoth.composed)
 
-            // A position that arrives while a swipe is held half way, the compass and the waypoints both passing.
+            // A position that arrives while a swipe is held, the finger moved 0.3 of the screen's width, the compass and
+            // the waypoints both passing.
             val had = vm.nav.value.fixElapsedMs
-            holdHalfASwipe {
+            holdAPartSwipe {
                 val came = withTimeoutOrNull(15_000) { vm.nav.first { it.fixElapsedMs != null && it.fixElapsedMs != had } }
                 assertNotNull("no position came while the swipe was held; screen state changes: $changes", came)
             }
             showsPane(Pane.COMPASS)
             val afterHeld = counts(scenario)
             watching.cancel()
-            assertTrue("no position came during the turns: $changes", changes.count { "fixElapsedMs" in it } >= 2)
+            assertTrue("fewer than two new positions arrived during the turns (${arrivals.get()}): $changes", arrivals.get() >= 2)
             assertEquals("screens built, after a position came during a held swipe", before.built, afterHeld.built)
             assertEquals("compositions of each screen, after a position came during a held swipe (settings, compass, waypoints); screen state changes: $changes", before.composed, afterHeld.composed)
         }
@@ -264,10 +268,10 @@ class RingScreensTest {
     ).joinToString(",").ifEmpty { "nothing (an equal value)" }
 
     /**
-     * A finger put down on the compass and moved a third of the way toward the waypoints, held there while [during]
+     * A finger put down on the compass and moved 0.3 of the screen's width toward the waypoints, held there while [during]
      * runs, then let go where it is (the ring comes to rest on the nearer page, the compass).
      */
-    private suspend fun holdHalfASwipe(during: suspend () -> Unit) {
+    private suspend fun holdAPartSwipe(during: suspend () -> Unit) {
         val bounds = instrumentation.uiAutomation.rootInActiveWindow.let { root -> Rect().also { root.getBoundsInScreen(it) } }
         val y = bounds.exactCenterY()
         val from = bounds.exactCenterX() + bounds.width() * 0.3f

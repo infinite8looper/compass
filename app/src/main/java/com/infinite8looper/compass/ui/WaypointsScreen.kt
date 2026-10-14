@@ -46,6 +46,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -80,6 +81,8 @@ import com.infinite8looper.compass.nav.LogStatus
 import com.infinite8looper.compass.nav.Pane
 import com.infinite8looper.compass.nav.PaneView
 import com.infinite8looper.compass.nav.TrailMode
+import com.infinite8looper.compass.nav.TrailUi
+import com.infinite8looper.compass.data.Waypoint
 import com.infinite8looper.compass.nav.trailRowAction
 import com.infinite8looper.compass.nav.trailRowDetail
 import com.infinite8looper.compass.nav.ScrollArc
@@ -144,6 +147,9 @@ fun WaypointsScreen(
             while (true) { staleState.value = isStale(SystemClock.elapsedRealtime(), at); delay(1_000) }
         }
     }
+    // What the list is made of, read where the list's items are decided: it changes with the waypoints and the trail,
+    // not with a position, so a position does not decide the items again.
+    val shape = remember { derivedStateOf(structuralEqualityPolicy()) { navState.value.let { ListShape(it.waypoints, it.breadcrumbTrail, it.trail) } } }
     val statusState = vm.logStatus.collectAsStateWithLifecycle()
     LogResultTimer(vm, paneView)
     // A touch that lands while the screens are still sliding does nothing.
@@ -218,7 +224,8 @@ fun WaypointsScreen(
             modifier = Modifier.fillMaxSize().fadeTopAndBottom(),
         ) {
             item(key = "header") {
-                val waypoints = navState.value.waypoints
+                SideEffect { ScreenCompositions.countPart(WaypointsPart.HEADER) }
+                val waypoints = shape.value.waypoints
                 val total = waypoints.size
                 val targets = waypoints.count { it.isTarget }
                 val setsAll = headerTapSetsAll(targets, total)
@@ -234,13 +241,15 @@ fun WaypointsScreen(
                 }
             }
             item(key = "log") {
+                SideEffect { ScreenCompositions.countPart(WaypointsPart.LOG_HERE) }
                 InstrumentRow(Modifier.clickable(role = Role.Button) { inView(onLogHere) }, centered = true) {
                     Text("Log here", color = AccentColor, style = actionStyle, maxLines = 1)
                 }
             }
-            val nav = navState.value
+            val nav = shape.value
             val trail = nav.trail
             if (nav.breadcrumbTrail || trail.count > 0) item(key = "trail") {
+                SideEffect { ScreenCompositions.countPart(WaypointsPart.TRAIL) }
                 val active = trail.mode != TrailMode.OFF
                 // There is something to clear while crumbs are stored or a trail is being laid.
                 val canClear = trail.count > 0 || active
@@ -305,11 +314,13 @@ fun WaypointsScreen(
             // The row is there only while a trail is laid, and its call saves nothing at any other time, so it
             // never saves a waypoint.
             if (nav.breadcrumbTrail && trail.mode == TrailMode.LAYING) item(key = "drop") {
+                SideEffect { ScreenCompositions.countPart(WaypointsPart.DROP_CRUMB) }
                 InstrumentRow(Modifier.clickable(role = Role.Button) { inView(onDropCrumb) }, centered = true) {
                     Text(DROP_CRUMB, color = AccentColor, style = actionStyle, maxLines = 1)
                 }
             }
             items(nav.waypoints, key = { it.id }) { w ->
+                SideEffect { ScreenCompositions.countPart(WaypointsPart.ROW) }
                 InstrumentRow(
                     Modifier
                         .combinedClickable(
@@ -330,14 +341,7 @@ fun WaypointsScreen(
                             w.name, if (w.isTarget) nameOnStyle else nameStyle, { if (w.isTarget) Ink else Dim },
                             view = paneView,
                         )
-                        val now = navState.value
-                        val stale = staleState.value
-                        now.distances[w.id]?.let { d ->
-                            Text(
-                                if (stale) "${formatDistance(d, now.units)} (old)" else formatDistance(d, now.units),
-                                color = if (stale) Faint else Dim, style = distanceStyle, maxLines = 2, overflow = TextOverflow.Ellipsis,
-                            )
-                        }
+                        DistanceLine(w.id, navState, staleState, distanceStyle)
                     }
                 }
             }
@@ -353,6 +357,26 @@ fun WaypointsScreen(
     }
 }
 
+/** What the waypoints list is made of: its rows and whether the trail's rows show. Equal for equal contents. */
+private data class ListShape(val waypoints: List<Waypoint>, val breadcrumbTrail: Boolean, val trail: TrailUi)
+
+/**
+ * A waypoint's distance in its row, with `(old)` while the position is old: a composable of its own, so that a
+ * position composes this line and not the row.
+ */
+@Composable
+private fun DistanceLine(id: Long, navState: State<NavUi>, staleState: State<Boolean>, style: TextStyle) {
+    SideEffect { ScreenCompositions.countPart(WaypointsPart.DISTANCE) }
+    val now = navState.value
+    val stale = staleState.value
+    now.distances[id]?.let { d ->
+        Text(
+            if (stale) "${formatDistance(d, now.units)} (old)" else formatDistance(d, now.units),
+            color = if (stale) Faint else Dim, style = style, maxLines = 2, overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
 /**
  * The logging status pinned over the top of the list. A composable of its own, so that a change of the status or
  * of the screen state composes the band and not the screen.
@@ -361,7 +385,7 @@ fun WaypointsScreen(
 private fun BoxScope.WaypointsStatusBand(
     statusState: State<LogStatus>, navState: State<NavUi>, r: Dp, headerStyle: TextStyle, detailStyle: TextStyle, paneView: () -> PaneView,
 ) {
-val current = statusState.value
+    val current = statusState.value
     if (current != LogStatus.Idle) {
         val (words, detail) = statusText(current, navState.value.units)
         // A black band over the top of the list, soft at its lower edge, with the status on it. It takes no
