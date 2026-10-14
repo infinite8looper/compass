@@ -28,11 +28,11 @@ Every picture here is a capture from an emulator, taken on 2026-10-13 from the d
 | Hold-flat with a target (4 frames) | `holdflat-target-frames` | `moving`: the same with three targets |
 | A long name sliding (4 frames, 1.7 s apart) | `name-sliding-compass` | `moving`: the focused waypoint renamed in the database to a 60-character name |
 
-## Logging with one press
+## Saving from the compass
 
 | State | File | How it was produced |
 |-|-|-|
-| The system's permission dialog | `permission-dialog` | `permission`: first press of the side button (`input keyevent KEYCODE_STEM_1`) |
+| The system's permission dialog | `permission-dialog` | `permission`: the first double tap on the dial |
 | `Needs access to` / `precise location` on the compass | `log-needs-access` | `permission`: `Use precise location` switched off in the dialog, `While using app` |
 | The same on the waypoints band | `waypoints-needs-access` | `permission`: `Log here`, then `Keep approximate location` |
 | The same under `Show coordinates` | `settings-needs-access` | `permission`: the row tapped with only approximate location granted |
@@ -58,12 +58,12 @@ Every picture here is a capture from an emulator, taken on 2026-10-13 from the d
 
 | State | File | How it was produced |
 |-|-|-|
-| `Saved Crumb 1` | `trail-crumb-saved` | `trail`: `Breadcrumb trail` on, a double press (two `KEYCODE_STEM_1`), a press |
+| `Saved Crumb 1` | `trail-crumb-saved` | `trail`: `Breadcrumb trail` on, the `Trail` row tapped on the waypoints screen, a double tap on the dial |
 | Laying, `Trail 3`, a crumb tick near 180 | `trail-laying` | `trail`: crumbs dropped at 43.7022, 43.70274 and 43.70328 north, then the feed moved to 43.7042 |
 | The trail's row while laying, the `Drop crumb` row coming in under it | `trail-row-laying` | by hand, not by the script: `Breadcrumb trail` on, three crumbs put in the database, the `Trail` row tapped |
 | The `Drop crumb` row | `trail-drop-crumb` | the same, the list scrolled up by one row |
 | `Saved Crumb 4` after a tap on `Drop crumb` | `trail-drop-crumb-saved` | the same: `Drop crumb` tapped, taken 1.6 s later |
-| Retracing, `Crumb 3` | `trail-retracing` | `trail`: a double press, heading 160 |
+| Retracing, `Crumb 3` | `trail-retracing` | `trail`: the `Trail` row tapped again, heading 160 |
 | Facing the crumb | `trail-facing` | `trail`: heading 180 |
 | The trail's row while retracing | `trail-row-retracing` | `trail`: the waypoints screen |
 | `Hold to clear`, the ring draining | `trail-hold-to-clear` | `trail`: a touch held on the row for 1.3 s, taken at 1.25 s, let go before it clears |
@@ -97,8 +97,8 @@ Every picture here is a capture from an emulator, taken on 2026-10-13 from the d
 | Top of the list | `settings-top` | `settings`: after `pm clear` (the defaults in the United States locale) |
 | Middle | `settings-middle` | `settings`: scrolled to `Blind navigation` |
 | End | `settings-end` | `settings`: scrolled to `Calibrate` |
-| `Breadcrumb trail` and `Show coordinates` on | `settings-trail-coords-on` | `settings`: both rows tapped (location already granted), scrolled to `Breadcrumb trail` |
-| Every switch off (3 frames: top, middle, end) | `settings-all-off` | `settings`: each row tapped |
+| `Breadcrumb trail` and `Show coordinates` on | `settings-trail-coords-on` | `settings`: `Show coordinates` tapped (location already granted; the trail is on by default), scrolled to `Breadcrumb trail` |
+| Every switch off (3 frames: top, middle, end) | `settings-all-off` | `settings`: each row tapped, and `Turn off` answered to the backup's question |
 | Calibration | `calibrate` | `calibration`: `Calibrate` tapped |
 | Interference | `calibrate-interference` | `calibration`: `adb emu sensor set magnetic-field 0:80:-45` (92 microtesla) |
 | The question before backups are turned off | `backup-off-question` | by hand: `Back up waypoints` tapped while it is on |
@@ -152,7 +152,8 @@ The app follows when it next comes back on screen (Home, then open it again). `s
 - The accuracy note after a crumb's distance (`9 m ±20 m`) and `Saving…` with an accuracy that is not yet good enough: the emulator's position accuracy is always 5 m.
 - A color scheme that follows the watch face.
 - Anything felt: the tick tap, the two blind navigation pulses, the confirming tap.
-- The side button: whether a single press reaches the app, whether a double press arrives as two presses, and what a press does from a dimmed screen. The emulators deliver `KEYCODE_STEM_1` to the app.
+- The side button. The emulator images describe no button (`WearableButtons`), so the app handles no side key on them; the settings row that speaks of a double press was not pictured.
+- The double pinch (the one-handed primary gesture).
 - Real GPS: the emulators give the fed position with no jitter, so arrival at the 10 m and 12 m distances and positions logged while moving were not seen as a watch gives them.
 - The encryption requirement on Google's backup: only the emulator's local backup transport was used, with a build made without that requirement.
 - Device-to-device transfer: not run.

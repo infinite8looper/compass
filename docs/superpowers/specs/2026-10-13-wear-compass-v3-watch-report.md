@@ -62,6 +62,14 @@ The owner was away while this was written. Each line below is the controller's c
 - `WearableButtons` is asked once whether the watch has an assignable button. Where it has, the side button works as in v2. Where it has not, the key handling is not installed, the 300 ms wait does not exist, and the settings row for the trail does not speak of a press.
 - The accessibility tree gains a custom action on the dial for saving, so the action does not depend on a gesture.
 
+As built (Task 2, 2026-10-13):
+
+- A double tap is two taps within the system's double-tap time whose touches went down no further apart than the system's double-tap distance, with the compass at rest in view when the first went down and when the second was let go (`doubleTapSaves`, `nav/Inputs.kt`). Compose's own detection (`detectTapGestures`) gives the timing; it does not compare the two places, so the app does. The long press comes at the system's long-press time as before. A tap followed by a held touch is a long press; a tap followed by a swipe is a swipe.
+- The one-handed primary action is registered only while the compass is at rest in view. The library acts on every registered gesture whose screen it takes to be active, and the ring of screens does not tell it which screen that is, so the app composes the modifier in and out. When the gesture arrives the library plays a vibration of its own (its long-press feedback). No emulator has the gesture service, API 37 included, so the double pinch was never delivered to the app.
+- The watch has an assignable button when `WearableButtons.getButtonInfo` describes one of `KEYCODE_STEM_1`, `KEYCODE_STEM_2`, `KEYCODE_STEM_3` and `getButtonCount` is above one or unknown (`hasAssignableButton`). This is what the watch says: a watch can describe a button and keep its presses for itself, and what the Pixel Watch 3 says is not known. The emulator images at API 33, 34, 35 and 37 report a count of 0 and describe no key.
+- The trail row's words on a watch with no button, proposed: `Trail row on waypoints`.
+- For a screen reader to stop on the dial and offer `Save waypoint here`, the dial has a name, proposed: `Compass` (the app's name). No screen reader was run.
+
 ## Saving
 
 - The press (tap, pinch, button or the `Log here` row) gives a vibration at once, before any position is asked for.
@@ -142,4 +150,4 @@ Smoothness on the watch; the drift and which heading source cures it; the feel o
 
 ## Words shown to wearers, proposed
 
-For the owner to approve or change: `Colors`, `Standard`, `Watch face`, `Not available on this watch`; the calibration instruction `Turn your wrist slowly in every direction`; the ring's label `Covered`; the accessibility action `Save waypoint here`; the trail row's words on a watch with no button.
+For the owner to approve or change: `Colors`, `Standard`, `Watch face`, `Not available on this watch`; the calibration instruction `Turn your wrist slowly in every direction`; the ring's label `Covered`; the accessibility action `Save waypoint here`; the trail row's words on a watch with no button (built as `Trail row on waypoints`); the dial's name for a screen reader (built as `Compass`).

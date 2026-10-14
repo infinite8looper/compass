@@ -14,19 +14,21 @@ Settings, the compass and the waypoints are three screens side by side in one ro
 |-|-|-|
 | Any of the three | Crown press | Leaves the app (the system's crown press) |
 | Any of the three | Back | Moves one screen toward settings (compass to settings, settings to waypoints, waypoints to compass); never leaves the app |
-| Compass | Side button, single press | Saves the current position as a waypoint (or drops a crumb while a trail is being laid) |
-| Compass | Side button, double press | With `Breadcrumb trail` on: starts a trail, or switches between laying and retracing |
+| Compass | Double tap | Saves the current position as a waypoint (or drops a crumb while a trail is being laid) |
+| Compass | Double pinch, on a watch that has the one-handed gestures (Wear OS 7 and newer) | The same as a double tap |
+| Compass | Side button, single press, on a watch with an assignable button | The same as a double tap |
+| Compass | Side button, double press, on a watch with an assignable button | With `Breadcrumb trail` on: starts a trail, or switches between laying and retracing |
 | Compass | Swipe up or down, or turn the crown | Moves the focus among the targets |
 | Compass | Long press | Opens the waypoints screen |
 | Compass | Tap | Nothing |
-| Waypoints | Side button | Saves a waypoint, as on the compass |
+| Waypoints | Side button, on a watch with an assignable button | As on the compass |
 | Waypoints | Tap `Log here` | Saves a waypoint |
 | Waypoints | Tap a row | Sets or clears that waypoint as a target |
 | Waypoints | Long press a row | Opens its edit screen |
 | Waypoints | Tap the header | Sets all waypoints as targets, or clears all if all are |
-| Waypoints | Tap the `Trail` row | With `Breadcrumb trail` on: does what a double press does |
+| Waypoints | Tap the `Trail` row | With `Breadcrumb trail` on: starts a trail, or switches between laying and retracing |
 | Waypoints | Hold the `Trail` row | Clears the trail (`Hold to clear`) |
-| Waypoints | Tap `Drop crumb` (shown while a trail is being laid) | Drops a crumb, as a single press of the side button does then |
+| Waypoints | Tap `Drop crumb` (shown while a trail is being laid) | Drops a crumb, as a double tap on the compass does then |
 | Edit | Drag along the color ring, or turn the crown | Changes the waypoint's color |
 | Edit | Tap the name | Opens the system's text input to rename it |
 | Edit | Tap the `Target` tick | Sets or clears it as a target |
@@ -34,7 +36,13 @@ Settings, the compass and the waypoints are three screens side by side in one ro
 | Edit, calibration | Right swipe, or Back | Returns to the screen it was opened from |
 | Settings | Tap a row | Switches it |
 
-The side button does nothing on settings, edit and calibration. Whether a physical watch delivers a single or a double press of its side button to an app was not tested; `Log here`, the `Trail` row and the `Drop crumb` row do the same things from the waypoints screen.
+A double tap is two taps within the system's double-tap time, no further apart than the system's double-tap distance, with the compass at rest in view at both. One tap does nothing and gives no vibration. A tap followed by a held touch is a long press, and a tap followed by a swipe is a swipe. While the `Calibrate` prompt shows, taps on its area open calibration and save nothing.
+
+The double pinch is the primary action of the one-handed gestures in the Wear Compose library (`Modifier.oneHandedGesture`). The app registers it on API 37 and above, and only while the compass is at rest in view. It was not tried: no emulator has the gesture service (`adb shell cmd IWearGestureService gesture DoublePinch` answers `Can't find service` on the API 35 and the API 37 images), and the Wear Compose library does nothing where the system lacks the framework. When the gesture arrives the library gives a vibration of its own.
+
+The side button is handled only on a watch that describes a button an app can use: `WearableButtons` reports more than one button (or no count) and describes one of the keys `KEYCODE_STEM_1`, `KEYCODE_STEM_2` and `KEYCODE_STEM_3`. This is asked once per start of the app. On a watch that describes none, the app looks at no key event, nothing waits for a second press, and the `Breadcrumb trail` row in settings does not mention a press. The emulator images at API 33, 34, 35 and 37 report no button at all (a count of 0), so on them the side keys do nothing; `KEYCODE_STEM_1` sent with `adb shell input keyevent` is ignored. On a watch that does describe one, the side button does nothing on settings, edit and calibration, and with `Breadcrumb trail` on a single press is acted on 300 ms after it is let go, when no second press has followed.
+
+A screen reader is given saving as an action of the dial named `Save waypoint here`.
 
 ## Compass
 
@@ -48,7 +56,7 @@ The side button does nothing on settings, edit and calibration. Whether a physic
 
 ## Saving a waypoint
 
-A single press of the side button on the compass or the waypoints screen saves the current position without leaving the screen. The status under the heading reads `Saving…` with the accuracy, then `Saved Waypoint N` in green with a confirming tap, or a failure in the error color: `No GPS fix`, `Location is off`, `Needs access to precise location`, or `Couldn't save`.
+A double tap on the compass saves the current position without leaving the screen, and so does `Log here` on the waypoints screen. The status under the heading reads `Saving…` with the accuracy, then `Saved Waypoint N` in green with a confirming tap, or a failure in the error color: `No GPS fix`, `Location is off`, `Needs access to precise location`, or `Couldn't save`.
 
 - A fix with accuracy of 15 m or better is saved at once. After 20 seconds the best fresh fix is saved, or `No GPS fix` is shown when there is none. A fix from before the press is never saved.
 - The first press asks for precise and approximate location; if only approximate is granted, nothing is saved and `Needs access to precise location` shows.
@@ -69,13 +77,15 @@ On by default. When the heading comes within 2 degrees of the focused target the
 
 ## Breadcrumb trail
 
-Off by default (`Breadcrumb trail` in settings). With it on:
+On by default (`Breadcrumb trail` in settings), also for an install that never stored the switch and after a restore that brought no value for it. A switch that was turned off stays off. With it on:
 
-1. A double press with no trail starts one; the compass shows `Trail` and the crumb count.
-2. While laying, each single press drops a crumb at the current position, with the same fix rules as saving a waypoint, and so does a tap on the `Drop crumb` row, which the waypoints screen shows under the `Trail` row while a trail is being laid. Waypoints can still be saved from `Log here`.
-3. A double press switches to retracing: the newest crumb is shown like a focused target (`Crumb N`) with its direction and distance.
+1. A tap on the `Trail` row of the waypoints screen with no trail starts one; the compass shows `Trail` and the crumb count.
+2. While laying, each double tap on the compass drops a crumb at the current position, with the same fix rules as saving a waypoint, and so does a tap on the `Drop crumb` row, which the waypoints screen shows under the `Trail` row while a trail is being laid. Waypoints can still be saved from `Log here`.
+3. A tap on the `Trail` row switches to retracing: the newest crumb is shown like a focused target (`Crumb N`) with its direction and distance.
 4. A crumb is deleted and the next newest takes over when a fix of 15 m or better is within 10 m (30 ft) of it while the compass is the screen at rest in view and the app is in front. After the last, `Trail complete` shows and the trail is off.
-5. A double press while retracing returns to laying with the remaining crumbs.
+5. A tap on the `Trail` row while retracing returns to laying with the remaining crumbs.
+
+On a watch with an assignable side button, a double press does what a tap on the `Trail` row does, and a single press what a double tap does.
 
 Crumbs are stored separately from waypoints, are never listed with them except as the one `Trail` row, and survive closing the app. While a trail is retraced the waypoint focus is suspended and returns afterwards.
 
@@ -87,7 +97,7 @@ Crumbs are stored separately from waypoints, are never listed with them except a
 | Feet and miles | from the watch's locale | `Off: meters and km` |
 | Tick feedback | on | `Faint tap at each tick mark` |
 | Blind navigation | on | `Pulses when facing the target` |
-| Breadcrumb trail | off | `Double press starts a trail` |
+| Breadcrumb trail | on | `Trail row on waypoints`; on a watch with an assignable side button, `Double press starts a trail` |
 | Show coordinates | off | `GPS position on the compass` |
 | Back up waypoints | on | `With this watch's backup` |
 
