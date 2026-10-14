@@ -39,9 +39,15 @@ const val COLORS_STANDARD = "Standard"
 const val COLORS_WATCH_FACE = "Watch face"
 /** The smaller line of the row on a watch that gives no color scheme, where `Watch face` cannot be chosen. */
 const val COLORS_NOT_AVAILABLE = "Not available on this watch"
+/** What a tap on the row does, said by a screen reader (the row's click label); the owner approved both (2026-10-14). */
+const val COLORS_USE_WATCH_FACE = "Use watch face colors"
+const val COLORS_USE_STANDARD = "Use standard colors"
 
-/** What the `Colors` row shows ([detail]) and what a tap on it chooses ([tapGives]; null: it takes no tap). */
-data class ColorsRow(val detail: String, val tapGives: ColorMode?)
+/**
+ * What the `Colors` row shows ([detail]), what a tap on it chooses ([tapGives]; null: it takes no tap) and what a
+ * screen reader says a tap does ([clickLabel]; null when it takes no tap).
+ */
+data class ColorsRow(val detail: String, val tapGives: ColorMode?, val clickLabel: String?)
 
 /**
  * The `Colors` row for the stored choice [mode] on a watch that gives a color scheme or not ([available]). With one,
@@ -49,7 +55,7 @@ data class ColorsRow(val detail: String, val tapGives: ColorMode?)
  * kept, and the colors are those of `Standard` ([paletteFor]).
  */
 fun colorsRow(mode: ColorMode, available: Boolean): ColorsRow = when {
-    !available -> ColorsRow(COLORS_NOT_AVAILABLE, null)
-    mode == ColorMode.STANDARD -> ColorsRow(COLORS_STANDARD, ColorMode.WATCH_FACE)
-    else -> ColorsRow(COLORS_WATCH_FACE, ColorMode.STANDARD)
+    !available -> ColorsRow(COLORS_NOT_AVAILABLE, null, null)
+    mode == ColorMode.STANDARD -> ColorsRow(COLORS_STANDARD, ColorMode.WATCH_FACE, COLORS_USE_WATCH_FACE)
+    else -> ColorsRow(COLORS_WATCH_FACE, ColorMode.STANDARD, COLORS_USE_STANDARD)
 }

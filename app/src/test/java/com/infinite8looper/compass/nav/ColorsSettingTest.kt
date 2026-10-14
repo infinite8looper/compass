@@ -86,15 +86,51 @@ class ColorsSettingTest {
     }
     @Test fun aWaypointKeepsItsStoredPlaceInBothModes() {
         // The ring's third anchor is the palette's (the owner, 2026-10-14: "for themed colors make sure the wheel
-        // has *3* anchorpoints"); until then it was always the error color.
+        // has *3* anchorpoints"); until then it was always the error color. The ring is read turned so that the first
+        // new waypoint's place is its third anchor (the owner, 2026-10-14: "new waypoint should be near some other
+        // color"); until then a place was read straight, which put the first place near north.
         for (scheme in recorded) {
             val watchFace = paletteFor(ColorMode.WATCH_FACE, scheme)
             assertEquals(WaypointColors.RING, watchFace.waypoints)
             for (place in listOf(0f, 52.5f, 137.5f, 190f, 275f, 359f)) {
                 assertEquals(wheelColor(place), waypointRgb(STANDARD_PALETTE, place))
                 val r = watchFace.roles
-                assertEquals(ringColor(place / 360f, r.accent, r.north, watchFace.ringThird), waypointRgb(watchFace, place))
+                val turns = (place - FIRST_WAYPOINT_PLACE) / 360f + 2f / 3f
+                assertEquals(ringColor(turns, r.accent, r.north, watchFace.ringThird), waypointRgb(watchFace, place))
             }
+        }
+    }
+
+    // Where the first new waypoint's color is. The owner (2026-10-14): "new waypoint should be near some other
+    // color-- when unthemed, how about near blue/green or yellow/green?"
+
+    @Test fun inStandardTheFirstNewWaypointIsAYellowGreenOrGreen() {
+        val first = waypointRgb(STANDARD_PALETTE, hueForIndex(0))
+        assertEquals("%06X".format(first), 0x7AFF59, first)
+        // Hue 108: between yellow-green (90) and green (120), far from the red (3) and the blue (213).
+        assertEquals(108.3f, hueOf(first), 0.5f)
+    }
+    @Test fun inWatchFaceTheFirstNewWaypointIsTheRingsThirdAnchorNotNorthOrTheAccent() {
+        fun check(what: String, p: Palette) {
+            val first = waypointRgb(p, hueForIndex(0))
+            val all = "$what -> first %06X, accent %06X, north %06X, third %06X".format(first, p.roles.accent, p.roles.north, p.ringThird)
+            assertEquals(all, p.ringThird, first)
+            assertTrue(all, hueApart(first, p.roles.north) >= MIN_HUE_APART)
+            assertTrue(all, hueApart(first, p.roles.accent) >= MIN_HUE_APART)
+        }
+        for (scheme in recorded) check("$scheme", paletteFor(ColorMode.WATCH_FACE, scheme))
+        val random = java.util.Random(20261017L)
+        repeat(20_000) {
+            val scheme = WatchScheme(random.nextInt(0x1000000), random.nextInt(0x1000000), random.nextInt(0x1000000))
+            check("$scheme", paletteFor(ColorMode.WATCH_FACE, scheme))
+        }
+    }
+    @Test fun inWatchFaceTheAccentAndNorthAreAThirdOfATurnEitherSideOfTheFirstPlace() {
+        // The ring keeps its order (accent, north, third) and its thirds; only where it is read from moves.
+        for (scheme in recorded) {
+            val p = paletteFor(ColorMode.WATCH_FACE, scheme)
+            assertEquals(p.roles.accent, waypointRgb(p, FIRST_WAYPOINT_PLACE + 120f))
+            assertEquals(p.roles.north, waypointRgb(p, FIRST_WAYPOINT_PLACE + 240f))
         }
     }
 
@@ -320,6 +356,14 @@ class ColorsSettingTest {
         assertEquals("Watch face", colorsRow(ColorMode.WATCH_FACE, available = true).detail)
         assertEquals("Not available on this watch", colorsRow(ColorMode.STANDARD, available = false).detail)
         assertEquals("Not available on this watch", colorsRow(ColorMode.WATCH_FACE, available = false).detail)
+    }
+    @Test fun theRowsClickLabelSaysWhatATapDoesAsTheOwnerApproved() {
+        // The owner (2026-10-14) approved `Use watch face colors` / `Use standard colors`.
+        assertEquals("Use watch face colors", colorsRow(ColorMode.STANDARD, available = true).clickLabel)
+        assertEquals("Use standard colors", colorsRow(ColorMode.WATCH_FACE, available = true).clickLabel)
+        // A row that takes no tap offers no click.
+        assertNull(colorsRow(ColorMode.STANDARD, available = false).clickLabel)
+        assertNull(colorsRow(ColorMode.WATCH_FACE, available = false).clickLabel)
     }
     @Test fun aTapOnTheRowGivesTheOtherChoice() {
         assertEquals(ColorMode.WATCH_FACE, colorsRow(ColorMode.STANDARD, available = true).tapGives)

@@ -8,6 +8,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.infinite8looper.compass.nav.ColorMode
+import com.infinite8looper.compass.nav.FIRST_WAYPOINT_PLACE
 import com.infinite8looper.compass.nav.MIN_HUE_APART
 import com.infinite8looper.compass.nav.hueApart
 import com.infinite8looper.compass.nav.Palette
@@ -106,8 +107,12 @@ class WatchColorsDeviceTest {
             assertColors(p)
             // A waypoint's stored place is on the ring of the accent, north and a third anchor apart from both (the
             // owner, 2026-10-14: "for themed colors make sure the wheel has *3* anchorpoints"); until then the third
-            // was always the error color.
-            assertEquals(Color(0xFF000000.toInt() or ringColor(137.5f / 360f, p.roles.accent, p.roles.north, p.ringThird)), waypointColor(137.5f))
+            // was always the error color. The ring is read turned so that the first new waypoint's place is the third
+            // anchor (the owner, 2026-10-14: "new waypoint should be near some other color"); until then a place was
+            // read straight, which put the first place near north.
+            val turns = (137.5f - FIRST_WAYPOINT_PLACE) / 360f + 2f / 3f
+            assertEquals(Color(0xFF000000.toInt() or ringColor(turns, p.roles.accent, p.roles.north, p.ringThird)), waypointColor(137.5f))
+            assertEquals(Color(0xFF000000.toInt() or p.ringThird), waypointColor(FIRST_WAYPOINT_PLACE))
             assertTrue(hueApart(p.ringThird, p.roles.accent) >= MIN_HUE_APART && hueApart(p.ringThird, p.roles.north) >= MIN_HUE_APART)
         } else {
             assertNull(scheme)

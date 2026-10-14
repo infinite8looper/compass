@@ -362,10 +362,23 @@ private fun grayLike(from: Int, own: Int): Int {
     return fromHsv(hue, saturation, high / 255f)
 }
 
-/** A waypoint's color in [palette] for its stored place [position], 0 to 360. It allocates nothing. */
+/**
+ * How far round the ring, in turns, a stored place is read with [WaypointColors.RING]: turned so that the first new
+ * waypoint's place ([FIRST_WAYPOINT_PLACE], 108.3) lands on the ring's third anchor, two thirds of the way round,
+ * rather than near north (a third) or on the accent (0, the pointer's color). The owner (2026-10-14): "new waypoint
+ * should be near some other color". The ring's order and thirds are kept, and no stored place is changed.
+ */
+val RING_READ_OFFSET_TURNS: Float = 2f / 3f - FIRST_WAYPOINT_PLACE / 360f
+
+/**
+ * A waypoint's color in [palette] for its stored place [position], 0 to 360: the full wheel at that hue, or the ring
+ * read [RING_READ_OFFSET_TURNS] on. It allocates nothing.
+ */
 fun waypointRgb(palette: Palette, position: Float): Int = when (palette.waypoints) {
     WaypointColors.WHEEL -> wheelColor(position)
-    WaypointColors.RING -> palette.roles.let { ringColor(position / 360f, it.accent, it.north, palette.ringThird) }
+    WaypointColors.RING -> palette.roles.let {
+        ringColor(position / 360f + RING_READ_OFFSET_TURNS, it.accent, it.north, palette.ringThird)
+    }
 }
 
 /**

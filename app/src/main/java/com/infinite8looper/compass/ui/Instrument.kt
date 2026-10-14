@@ -138,7 +138,8 @@ val ConfirmColor = Color(0xFF7FD99A)
  * A waypoint's own color: its line and arrow on the dial, and its mark wherever it is listed. [position] is the
  * waypoint's stored value, from 0 to 360, kept as it is whatever the setting. With `Standard` it is that hue on the
  * full wheel ([wheelColor]). With `Watch face` it is the color at that place on a ring that fades from the accent to
- * north, on to the error color and back to the accent ([ringColor]), the accent being at 0.
+ * north, on to the ring's third anchor and back to the accent ([ringColor]), read turned so that the first new
+ * waypoint's place is the third anchor ([RING_READ_OFFSET_TURNS]): the accent is at 228.3 and north at 348.3.
  *
  * The colors are read as they are at this moment, so a waypoint's color follows the setting and the watch: read while
  * drawing, it is drawn again when they change, and read while composing, composed again. Nothing is allocated.
