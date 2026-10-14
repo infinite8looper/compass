@@ -63,27 +63,41 @@ internal fun rememberLogHere(vm: CompassViewModel): LogActions {
         vm.permissionChanged()
         save(askedBy)
     }
-    return remember(vm, ask) {
-        fun start(by: Int) {
+    val view = LocalView.current
+    return remember(vm, ask, view) {
+        fun start(by: Int, vibrate: Boolean = true) {
+            // The press is answered at once, before the permission or a position is asked for.
+            if (vibrate) view.performHapticFeedback(PRESS_HAPTIC)
             if (vm.locationSource.hasPermission()) save(by)
             else { askedBy = by; ask.launch(LOCATION_PERMISSIONS) }
         }
-        LogActions(logHere = { start(LOG_HERE) }, sidePress = { start(SIDE_PRESS) }, dropCrumb = { start(DROP_CRUMB_ROW) })
+        LogActions(
+            logHere = { start(LOG_HERE) }, sidePress = { start(SIDE_PRESS) }, dropCrumb = { start(DROP_CRUMB_ROW) },
+            // The one-handed gesture's library plays a vibration of its own when the gesture comes; a second is not added.
+            gestureSave = { start(SIDE_PRESS, vibrate = false) },
+        )
     }
 }
+
+/**
+ * The vibration that answers a press that saves, on every route but the one-handed gesture, whose library plays its
+ * own: the system's feedback for a press of a key on the screen.
+ */
+internal const val PRESS_HAPTIC = HapticFeedbackConstants.VIRTUAL_KEY
 
 private const val LOG_HERE = 0
 private const val SIDE_PRESS = 1
 private const val DROP_CRUMB_ROW = 2
 
 /**
- * The ways a position is saved, each asking for the permission first where it is not held: [logHere] is the
- * `Log here` row, which always saves a waypoint; [sidePress] is what saves from the compass (a double tap on the
- * dial, the one-handed primary gesture, the accessibility action) and a single press of the side button on a watch
- * that has one, which drops a crumb instead while a breadcrumb trail is being laid; and [dropCrumb] is the `Drop crumb` row, which drops a
- * crumb while a trail is being laid and does nothing otherwise.
+ * The ways a position is saved, each asking for the permission first where it is not held and each answered with a
+ * vibration at once ([PRESS_HAPTIC]): [logHere] is the `Log here` row, which always saves a waypoint; [sidePress] is
+ * what saves from the compass (a double tap on the dial, the accessibility action) and a single press of the side
+ * button on a watch that has one, which drops a crumb instead while a breadcrumb trail is being laid; [dropCrumb] is
+ * the `Drop crumb` row, which drops a crumb while a trail is being laid and does nothing otherwise; and
+ * [gestureSave] is [sidePress] for the one-handed primary gesture, without the vibration, which its library plays.
  */
-internal class LogActions(val logHere: () -> Unit, val sidePress: () -> Unit, val dropCrumb: () -> Unit)
+internal class LogActions(val logHere: () -> Unit, val sidePress: () -> Unit, val dropCrumb: () -> Unit, val gestureSave: () -> Unit)
 
 /** Precise and approximate location, which are asked for together wherever the app asks. */
 internal val LOCATION_PERMISSIONS = arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)

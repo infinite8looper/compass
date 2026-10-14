@@ -213,24 +213,51 @@ class CompassViewModel(
 
     private val showCoordinates = settingsStore.settings.map { it.showCoordinates }.distinctUntilChanged()
 
+    private val screensWantLocationNow = MutableStateFlow(false)
+
+    /**
+     * The screens say here whether they are a reason for location to run ([screensWantLocation]): the app on
+     * screen, the three screens on top, and the compass or the waypoints screen on screen. So a press there nearly
+     * always finds a position in hand.
+     */
+    fun setScreensWantLocation(on: Boolean) { screensWantLocationNow.value = on }
+
+    /** True north with no position ever stored asks for one ([trueNorthWantsPosition]). */
+    private val northWantsPosition =
+        settingsStore.settings.map { trueNorthWantsPosition(it.north, it.lastPosition != null) }.distinctUntilChanged()
+
+    /** The reasons of v2 for location to run, or null while the trail is not known. */
+    private val trailTargetsAndCoordinatesWantLocation: Flow<Boolean?> =
+        combine(hasTargets, trailMode, compassOnScreen, showCoordinates) { hasTargets, mode, compass, coordinates ->
+            mode?.let { hasTargets || trailWantsLocation(it, compass) || coordinatesWantLocation(coordinates, compass) }
+        }
+
     /**
      * Whether location should be running right now. This is the one place that decides it: while at least one
      * waypoint is a target; or while a breadcrumb trail is being laid or retraced and the compass is on screen
      * ([trailWantsLocation]); or while the coordinates are to be shown and the compass is on screen
-     * ([coordinatesWantLocation]). In every case only with the permission held.
+     * ([coordinatesWantLocation]); or while the compass or the waypoints screen is on screen ([screensWantLocation]);
+     * or while true north is selected and no position has ever been stored ([trueNorthWantsPosition]). In every case
+     * only with the permission held.
      */
     private val locationWanted: Flow<Boolean> =
-        combine(hasTargets, trailMode, compassOnScreen, showCoordinates, permissionTick) { hasTargets, mode, compass, coordinates, _ ->
+        combine(trailTargetsAndCoordinatesWantLocation, screensWantLocationNow, northWantsPosition, permissionTick) { others, screens, north, _ ->
             // While the trail is not known the screens show nothing, and location does not run for them.
-            mode != null && (hasTargets || trailWantsLocation(mode, compass) || coordinatesWantLocation(coordinates, compass)) &&
-                locationSource.hasPermission()
+            others != null && (others || screens || north) && locationSource.hasPermission()
         }.distinctUntilChanged()
+
+    /**
+     * The latest position the live updates below have given, kept after they stop: what a press finds in hand
+     * ([positionToSaveAtOnce] decides whether it is recent enough to be saved). Null until the first.
+     */
+    private val inHand = MutableStateFlow<Fix?>(null)
 
     /** The live fix, or null when location is not wanted, so a fix never outlives the updates that made it. */
     private val fix: Flow<Fix?> = locationWanted
         .flatMapLatest { wanted ->
             if (!wanted) flowOf(null)
             else locationSource.updates(5_000)
+                .onEach { inHand.value = it }
                 .onEach { quietly("save last position") { settingsStore.setLastPosition(it.point, it.altitudeM) } }
                 // Each fix is looked at once for the trail, here, before the screens get it: one fix, at most
                 // one crumb consumed.
@@ -332,8 +359,10 @@ class CompassViewModel(
             name = "Waypoint $n", lat = fix.point.lat, lon = fix.point.lon, accuracyM = fix.accuracyM,
             createdAt = System.currentTimeMillis(), hue = hueForIndex(n - 1), isTarget = true,
         )
-        quietly("save last position") { settingsStore.setLastPosition(fix.point, fix.altitudeM) }
-        return w.copy(id = dao.insert(w))
+        val stored = w.copy(id = dao.insert(w))
+        // After the row, and not waited for: the press's status does not wait on the settings file.
+        launchQuietly("save last position") { settingsStore.setLastPosition(fix.point, fix.altitudeM) }
+        return stored
     }
 
     private val logState = MutableStateFlow<LogStatus>(LogStatus.Idle)
@@ -380,6 +409,8 @@ class CompassViewModel(
 
     private fun save(byTrail: Boolean, crumbOnly: Boolean = false): Job {
         val pressedAt = SystemClock.elapsedRealtime()
+        // What is in hand at the press, and whether it is recent enough to be saved as it is.
+        val atOnce = positionToSaveAtOnce(inHand.value, pressedAt)
         // On the main thread, where presses are handled one after another, so two of them cannot both start a save.
         return viewModelScope.launch(Dispatchers.Main.immediate) {
             if (crumbOnly) {
@@ -399,16 +430,147 @@ class CompassViewModel(
                 !isLocationOn() -> LogStatus.Failed(LogFailure.LOCATION_OFF)
                 else -> null
             }
-            synchronized(logLock) {
+            val press = synchronized(logLock) {
                 logPressCount.value += 1
-                logState.value = refused ?: LogStatus.Saving(null)
+                // With a position in hand the save is the time it takes to write it; the status carries its accuracy.
+                logState.value = refused ?: LogStatus.Saving(atOnce?.accuracyM)
+                logPressCount.value
             }
             if (refused == null) {
-                val result = saveFreshFix(pressedAt, byTrail)
+                val outcome = saveFix(pressedAt, byTrail, atOnce)
                 // A save that stored nothing and has nothing to say ends the status here.
-                synchronized(logLock) { if (result == LogStatus.Idle) endStatus() else logState.value = result }
+                synchronized(logLock) { if (outcome.status == LogStatus.Idle) endStatus() else logState.value = outcome.status }
+                val written = outcome.stored
+                val record = SaveRecord(
+                    pressedAt, writtenAfterMs = SystemClock.elapsedRealtime() - pressedAt, inHand = atOnce != null,
+                    usedAgeMs = written?.let { pressedAt - it.fix.elapsedMs }, usedAccuracyM = written?.fix?.accuracyM,
+                    result = outcome.status,
+                )
+                // Only a save from a position in hand is refined; one that waited has a position taken after the press.
+                if (atOnce != null && written != null) refine(Refining(written, pressedAt, press, record)) else logSave(record, refinedTo = null, refinedTimes = 0)
             }
         }
+    }
+
+    /** A row a save wrote: a waypoint's or a crumb's id, and the position it was written with. */
+    private class Stored(val id: Long, val asCrumb: Boolean, val fix: Fix)
+
+    private class SaveOutcome(val status: LogStatus, val stored: Stored?)
+
+    /** What the per-save log line says ([logSave]). No position, no name. */
+    private class SaveRecord(
+        val pressedAt: Long, val writtenAfterMs: Long, val inHand: Boolean, val usedAgeMs: Long?, val usedAccuracyM: Float?,
+        val result: LogStatus,
+    )
+
+    /**
+     * A save from a position in hand that listens for a more accurate position until [REFINE_WITHIN_MS] after its
+     * press. [written] is what the row holds as this save last wrote it. Read and changed under [waypointEdits].
+     */
+    private class Refining(var written: Stored, val pressedAt: Long, val press: Int, val record: SaveRecord) {
+        var times = 0
+        var ended = false
+    }
+
+    /** The saves that are listening. Read and changed under [waypointEdits]. */
+    private val refining = ArrayList<Refining>()
+
+    /**
+     * Listens, for what is left of [r]'s ten seconds, to position updates once a second, and offers each to
+     * [offerRefinement]. The listening ends early when the row has been moved or deleted.
+     */
+    private suspend fun refine(r: Refining) {
+        // Listening from before the press's own call ends, so a position offered after it is not missed.
+        waypointEdits.withLock { refining += r }
+        viewModelScope.launch {
+            try {
+                val left = refineWindowLeftMs(r.pressedAt, SystemClock.elapsedRealtime())
+                withTimeoutOrNull(left) {
+                    locationSource.updates(1_000).takeWhile { !r.ended }.collect { offerRefinement(it) }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "location updates failed while refining (" + e.javaClass.simpleName + ")")
+            } finally {
+                withContext(NonCancellable) {
+                    waypointEdits.withLock { refining -= r }
+                    logSave(r.record, refinedTo = r.written.fix.accuracyM.takeIf { r.times > 0 }, refinedTimes = r.times)
+                }
+            }
+        }
+    }
+
+    /**
+     * Offers [fix] to every save still listening ([refining]): where it is more accurate than what the save wrote
+     * and comes within ten seconds of its press ([refines]), it replaces the row's position and accuracy in place,
+     * the rest of the row as it is now (a new name or color stays). Only while the row holds what the save last
+     * wrote ([refinementMayWrite]): a row that has been deleted or moved ends the listening and is not written,
+     * so a deleted waypoint or crumb never comes back. Under the lock the edits take, so no edit reads the row
+     * before and writes it back after. The status of the press, while it still shows, takes the new accuracy.
+     */
+    internal suspend fun offerRefinement(fix: Fix) = waypointEdits.withLock {
+        val now = SystemClock.elapsedRealtime()
+        for (r in refining) {
+            if (r.ended || refineWindowLeftMs(r.pressedAt, now) == 0L || !refines(r.written.fix, fix, r.pressedAt)) continue
+            val s = r.written
+            try {
+                val wrote = if (s.asCrumb) {
+                    val row = crumbDao.get(s.id)
+                    if (row != null && refinementMayWrite(StoredPosition(row.lat, row.lon, row.accuracyM), s.fix.stored())) {
+                        crumbDao.update(row.copy(lat = fix.point.lat, lon = fix.point.lon, accuracyM = fix.accuracyM))
+                        true
+                    } else false
+                } else {
+                    val row = dao.get(s.id)
+                    if (row != null && refinementMayWrite(StoredPosition(row.lat, row.lon, row.accuracyM), s.fix.stored())) {
+                        dao.update(row.copy(lat = fix.point.lat, lon = fix.point.lon, accuracyM = fix.accuracyM))
+                        true
+                    } else false
+                }
+                if (!wrote) { r.ended = true; continue }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "could not refine the saved position (" + e.javaClass.simpleName + ")")
+                continue
+            }
+            r.written = Stored(s.id, s.asCrumb, fix)
+            r.times++
+            launchQuietly("save last position") { settingsStore.setLastPosition(fix.point, fix.altitudeM) }
+            synchronized(logLock) {
+                val shown = logState.value
+                if (logPressCount.value == r.press && shown is LogStatus.Saved) {
+                    logState.value = shown.copy(accuracyM = fix.accuracyM, fixElapsedMs = fix.elapsedMs)
+                }
+            }
+        }
+    }
+
+    private fun Fix.stored() = StoredPosition(point.lat, point.lon, accuracyM)
+
+    /**
+     * One line per save, in builds with diagnostics: milliseconds from the press to the row written, the age and
+     * accuracy of the position used, and whether a more accurate one replaced it. No coordinates and no name.
+     */
+    private fun logSave(r: SaveRecord, refinedTo: Float?, refinedTimes: Int) {
+        if (!BuildConfig.DIAGNOSTICS) return
+        val outcome = when (val s = r.result) {
+            is LogStatus.Saved -> "written ${r.writtenAfterMs} ms after the press"
+            is LogStatus.Failed -> "nothing written (${s.reason}) ${r.writtenAfterMs} ms after the press"
+            else -> "nothing written ${r.writtenAfterMs} ms after the press"
+        }
+        val used = if (r.usedAgeMs != null && r.usedAccuracyM != null) {
+            ", position " + (if (r.inHand) "in hand" else "waited for") +
+                (if (r.usedAgeMs >= 0) " ${r.usedAgeMs} ms old at the press" else " taken ${-r.usedAgeMs} ms after the press") +
+                ", accuracy " + String.format(java.util.Locale.ROOT, "%.1f", r.usedAccuracyM) + " m"
+        } else ""
+        val refined = when {
+            !r.inHand || r.usedAgeMs == null -> ", not refined (waited)"
+            refinedTo == null -> ", not refined"
+            else -> ", refined $refinedTimes time(s) to " + String.format(java.util.Locale.ROOT, "%.1f", refinedTo) + " m"
+        }
+        Log.i(SAVE_LOG_TAG, "save: $outcome$used$refined")
     }
 
     /** `Trail complete` is owed a showing: a trail was completed while another status had its place ([trailCompleteOver]). Guarded by [logLock]. */
@@ -449,10 +611,11 @@ class CompassViewModel(
         getApplication<Application>().getSystemService(LocationManager::class.java)?.isLocationEnabled == true
 
     /**
-     * Waits for a fix taken since [pressedAt] and stores it: as a crumb if [byTrail] and a trail is being laid when
-     * the press is taken up, and as a waypoint otherwise. Never throws, except to pass a cancellation on.
+     * Stores [atOnce], the position in hand at the press, if there is one; otherwise waits for a fix taken since
+     * [pressedAt], as v2 did, and stores that. It is stored as a crumb if [byTrail] and a trail is being laid when the
+     * press is taken up, and as a waypoint otherwise. Never throws, except to pass a cancellation on.
      */
-    private suspend fun saveFreshFix(pressedAt: Long, byTrail: Boolean): LogStatus {
+    private suspend fun saveFix(pressedAt: Long, byTrail: Boolean, atOnce: Fix?): SaveOutcome {
         var passedOver = 0
         val asCrumb = try {
             // A crumb can be stored only on a trail that has been read. One that has not is waited for here,
@@ -462,9 +625,9 @@ class CompassViewModel(
             throw e
         } catch (e: Exception) {
             Log.w(TAG, "could not read the trail (" + e.javaClass.simpleName + ")")
-            return LogStatus.Failed(LogFailure.SAVE_FAILED)
+            return SaveOutcome(LogStatus.Failed(LogFailure.SAVE_FAILED), null)
         }
-        val fix = try {
+        val fix = atOnce ?: try {
             // The location source already drops fixes older than ten seconds; this also drops any from before the press.
             val fixes = locationSource.updates(1_000).onEach { if (!isFixSincePress(it, pressedAt)) passedOver++ }
             acquireFix(fixes, notBeforeMs = pressedAt) { logState.value = LogStatus.Saving(it.accuracyM) }
@@ -477,15 +640,16 @@ class CompassViewModel(
         if (fix == null) {
             // A count only: it tells a search that got nothing from one that got only fixes from before the press.
             if (passedOver > 0) Log.i(TAG, "no fix since the press; fixes from before it passed over: $passedOver")
-            return LogStatus.Failed(LogFailure.NO_FIX)
+            return SaveOutcome(LogStatus.Failed(LogFailure.NO_FIX), null)
         }
         return try {
-            if (asCrumb) dropCrumb(fix) else LogStatus.Saved(logWaypoint(fix).name, fix.accuracyM, fix.elapsedMs)
+            if (asCrumb) dropCrumb(fix)
+            else logWaypoint(fix).let { SaveOutcome(LogStatus.Saved(it.name, fix.accuracyM, fix.elapsedMs), Stored(it.id, asCrumb = false, fix)) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Log.w(TAG, "could not save the " + (if (asCrumb) "crumb" else "waypoint") + " (" + e.javaClass.simpleName + ")")
-            LogStatus.Failed(LogFailure.SAVE_FAILED)
+            SaveOutcome(LogStatus.Failed(LogFailure.SAVE_FAILED), null)
         }
     }
 
@@ -598,14 +762,15 @@ class CompassViewModel(
      * taken while laying whose fix arrives after the trail was switched to retracing, or off, stores nothing and
      * reports nothing.
      */
-    private suspend fun dropCrumb(fix: Fix): LogStatus = waypointEdits.withLock {
+    private suspend fun dropCrumb(fix: Fix): SaveOutcome = waypointEdits.withLock {
         val trail = readTrail().first
         val dropped = nextTrail(trail, TrailEvent.CrumbDropped(NEW_CRUMB)).trail
-        if (dropped == trail) return@withLock LogStatus.Idle
-        quietly("save last position") { settingsStore.setLastPosition(fix.point, fix.altitudeM) }
+        if (dropped == trail) return@withLock SaveOutcome(LogStatus.Idle, null)
         val id = crumbDao.insert(Crumb(lat = fix.point.lat, lon = fix.point.lon, accuracyM = fix.accuracyM, createdAt = System.currentTimeMillis()))
+        // After the row, and not waited for, as for a waypoint.
+        launchQuietly("save last position") { settingsStore.setLastPosition(fix.point, fix.altitudeM) }
         awaitCrumbs { held -> held.any { it.id == id } }
-        LogStatus.Saved(crumbName(dropped.crumbIds.size), fix.accuracyM, fix.elapsedMs)
+        SaveOutcome(LogStatus.Saved(crumbName(dropped.crumbIds.size), fix.accuracyM, fix.elapsedMs), Stored(id, asCrumb = true, fix))
     }
 
     /** The crumb the last fix arrived at, for [trailAfterFix]. */
@@ -692,6 +857,8 @@ class CompassViewModel(
         const val HEADING_STOP_DELAY_MS = 2_000L
         /** Stands for a crumb that is not stored yet, where [nextTrail] is asked whether one may be added. Row ids start at 1. */
         const val NEW_CRUMB = 0L
+        /** The tag of the one line each save logs in builds with diagnostics ([logSave]). */
+        const val SAVE_LOG_TAG = "CompassSave"
         /** The longest a change this view model made to the crumbs is waited for to show in the held list. */
         const val CRUMBS_SEEN_WITHIN_MS = 2_000L
     }

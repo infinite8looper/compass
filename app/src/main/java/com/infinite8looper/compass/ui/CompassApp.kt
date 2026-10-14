@@ -12,6 +12,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -47,6 +48,7 @@ import com.infinite8looper.compass.nav.pageToward
 import com.infinite8looper.compass.nav.pageView
 import com.infinite8looper.compass.nav.pageViewUnder
 import com.infinite8looper.compass.nav.paneOnScreen
+import com.infinite8looper.compass.nav.screensWantLocation
 import com.infinite8looper.compass.nav.paneOf
 import com.infinite8looper.compass.nav.topScreen
 import com.infinite8looper.compass.nav.compassInViewForTrail
@@ -136,6 +138,36 @@ fun CompassApp() {
     DisposableEffect(vm, compassOnScreen) {
         vm.setCompassOnScreen(compassOnScreen)
         onDispose { vm.setCompassOnScreen(false) }
+    }
+    // Location runs while the compass or the waypoints screen is on screen with the app on screen, so that a press
+    // there finds a position in hand ([screensWantLocation]). Settings at rest, a screen opened from a row, Home and
+    // the screen going off all end it. Whether the app is on screen is taken from the lifecycle as each change of it
+    // is announced, as for the trail above: no recomposition comes once the activity has stopped.
+    val locationScreens = remember(panes) {
+        derivedStateOf {
+            val page = panes.currentPage
+            topScreen(route?.destination?.route) to (
+                paneOnScreen(Pane.COMPASS, page, panes.currentPageOffsetFraction, panes.targetPage, panes.isScrollInProgress) to
+                    paneOnScreen(Pane.WAYPOINTS, page, panes.currentPageOffsetFraction, panes.targetPage, panes.isScrollInProgress)
+                )
+        }
+    }
+    val locationScope = rememberCoroutineScope()
+    DisposableEffect(vm, lifecycle, locationScreens) {
+        var appOnScreen = false
+        fun tell() {
+            val (top, onScreen) = locationScreens.value
+            vm.setScreensWantLocation(screensWantLocation(top, onScreen.first, onScreen.second, appOnScreen))
+        }
+        val observer = LifecycleEventObserver { _, event -> appOnScreen = event.targetState.isAtLeast(Lifecycle.State.STARTED); tell() }
+        lifecycle.addObserver(observer)
+        val screens = snapshotFlow { locationScreens.value }
+        val following = locationScope.launch { screens.collect { tell() } }
+        onDispose {
+            following.cancel()
+            lifecycle.removeObserver(observer)
+            vm.setScreensWantLocation(false)
+        }
     }
     // `Trail complete` is for the wearer who has just reached the last crumb. Once the compass is off the screen,
     // or the app is no longer in front, it is given up, so it cannot come up on a later visit.
@@ -230,6 +262,7 @@ private fun Panes(
             Pane.SETTINGS -> SettingsScreen(vm, paneView = view, onCalibrate = onCalibrate, onBackupOff = onBackupOff)
             Pane.COMPASS -> CompassScreen(
                 vm, paneView = view, onOpenList = { show(Pane.WAYPOINTS) }, onSidePress = log.sidePress, onCalibrate = onCalibrate,
+                onGestureSave = log.gestureSave,
             )
             Pane.WAYPOINTS -> WaypointsScreen(vm, paneView = view, onEdit = onEdit, onLogHere = log.logHere, onSidePress = log.sidePress, onDropCrumb = log.dropCrumb)
         }

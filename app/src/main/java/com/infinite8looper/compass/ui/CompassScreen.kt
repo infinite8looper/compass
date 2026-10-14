@@ -72,14 +72,16 @@ import kotlin.math.abs
  * is not set here: it has to hold on the other screens too.
  *
  * [onOpenList] is what a long press does. [onSidePress] saves the position, as a waypoint or, while a trail is
- * being laid, as a crumb: it is what a double tap on the dial does, what the one-handed primary gesture does on a
- * watch that has it, and what the dial's accessibility action does. On a watch with a button the app can act on
- * it is also what a single press of that button does, and a double press, which there is only with the breadcrumb
- * trail setting on, switches the trail ([rememberSideButtonKeys]).
+ * being laid, as a crumb: it is what a double tap on the dial does and what the dial's accessibility action does. On a
+ * watch with a button the app can act on it is also what a single press of that button does, and a double press,
+ * which there is only with the breadcrumb trail setting on, switches the trail ([rememberSideButtonKeys]).
+ * [onGestureSave] is the same save for the one-handed primary gesture on a watch that has it, whose library plays
+ * the press's vibration itself.
  */
 @Composable
 fun CompassScreen(
     vm: CompassViewModel, paneView: () -> PaneView, onOpenList: () -> Unit, onSidePress: () -> Unit, onCalibrate: () -> Unit,
+    onGestureSave: () -> Unit = onSidePress,
 ) {
     remember { ScreenCompositions.countBuilt(Pane.COMPASS) }
     SideEffect { ScreenCompositions.countComposed(Pane.COMPASS) }
@@ -230,7 +232,7 @@ fun CompassScreen(
     val lowAccuracy by remember {
         derivedStateOf { readingState.value?.accuracy?.let { it <= SensorManager.SENSOR_STATUS_ACCURACY_LOW } ?: false }
     }
-    val showingMagnetic = nav.north == NorthRef.MAGNETIC || nav.declination == null
+    val showingMagnetic = dialIsMagnetic(nav.north, nav.declination)
     val stale by produceState(false, nav.fixElapsedMs, onScreen) {
         snapshotFlow { onScreen.value }.collectLatest { on ->
             while (on) { value = isStale(SystemClock.elapsedRealtime(), nav.fixElapsedMs); delay(1_000) }
@@ -349,7 +351,7 @@ fun CompassScreen(
         // and every slot is narrow enough to stay inside the circle the cardinal letters sweep around.
         // The readout is composed apart from the screen's own function, and counts as the screen.
         SideEffect { ScreenCompositions.countComposed(Pane.COMPASS) }
-        OneHandedSave(paneView, onSave = onSidePress)
+        OneHandedSave(paneView, onSave = onGestureSave)
         val r = minOf(maxWidth, maxHeight) / 2
         val density = LocalDensity.current
         // The readout's text styles depend on the dial's radius alone, and are made once for it: a line that

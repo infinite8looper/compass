@@ -81,6 +81,9 @@ fun SettingsScreen(vm: CompassViewModel, paneView: () -> PaneView, onCalibrate: 
         // The switch was never turned on while the permission was missing, so a denial leaves it off.
         if (granted) vm.setShowCoordinates(true)
     }
+    // Selecting true north without the permission asks for it, once for that selection. A refusal leaves the
+    // setting on true, and the dial magnetic with `MAG` until a position is known.
+    val askForTrueNorth = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { vm.permissionChanged() }
     val listState = rememberScalingLazyListState()
     // The settings do not run the heading sensor: this is what it last reported on the compass or on calibration.
     val accuracy by vm.lastAccuracy.collectAsStateWithLifecycle()
@@ -122,7 +125,10 @@ fun SettingsScreen(vm: CompassViewModel, paneView: () -> PaneView, onCalibrate: 
                 }
                 item(key = "north") {
                     SwitchRow("True north", "Off: magnetic north", switches.north == NorthRef.TRUE, ready, styles) {
-                        inView { vm.setNorth(if (it) NorthRef.TRUE else NorthRef.MAGNETIC) }
+                        inView {
+                            vm.setNorth(if (it) NorthRef.TRUE else NorthRef.MAGNETIC)
+                            if (it && !vm.locationSource.hasPermission()) askForTrueNorth.launch(LOCATION_PERMISSIONS)
+                        }
                     }
                 }
                 item(key = "units") {

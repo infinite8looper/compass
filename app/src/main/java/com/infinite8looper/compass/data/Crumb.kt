@@ -5,6 +5,7 @@ import androidx.room.Entity
 import androidx.room.Insert
 import androidx.room.PrimaryKey
 import androidx.room.Query
+import androidx.room.Update
 import com.infinite8looper.compass.nav.CrumbPoint
 import com.infinite8looper.compass.nav.GeoPoint
 import kotlinx.coroutines.flow.Flow
@@ -37,7 +38,13 @@ interface CrumbDao {
     @Query("SELECT * FROM crumbs ORDER BY id DESC")
     suspend fun all(): List<Crumb>
 
+    @Query("SELECT * FROM crumbs WHERE id = :id")
+    suspend fun get(id: Long): Crumb?
+
     @Insert suspend fun insert(c: Crumb): Long
+
+    /** Writes the row back whole; used to put a more accurate position in place of the one a crumb was dropped with. */
+    @Update suspend fun update(c: Crumb)
 
     @Query("DELETE FROM crumbs WHERE id = :id")
     suspend fun delete(id: Long)
