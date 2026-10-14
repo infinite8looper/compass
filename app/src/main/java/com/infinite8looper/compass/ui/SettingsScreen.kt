@@ -65,8 +65,8 @@ import com.infinite8looper.compass.sensors.WatchButtons
  */
 @Composable
 fun SettingsScreen(vm: CompassViewModel, paneView: () -> PaneView, onCalibrate: () -> Unit, onBackupOff: () -> Unit) {
-    remember { ScreenCompositions.built[Pane.SETTINGS.ordinal]++ }
-    SideEffect { ScreenCompositions.composed[Pane.SETTINGS.ordinal]++ }
+    remember { ScreenCompositions.countBuilt(Pane.SETTINGS) }
+    SideEffect { ScreenCompositions.countComposed(Pane.SETTINGS) }
     // The switches come from the settings file alone. The screen state the other screens share can stay unloaded
     // for as long as the crumbs cannot be read with the trail setting on, and a switch does not wait for that: the
     // trail's own switch least of all, since turning it off is what ends that wait.

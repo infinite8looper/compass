@@ -55,8 +55,15 @@ class HeadingSource(context: Context) {
             }
         }
         val handler = SensorThread.acquire()
-        sensors.registerListener(listener, rot, SensorManager.SENSOR_DELAY_GAME, handler)
-        magnet?.let { sensors.registerListener(listener, it, SensorManager.SENSOR_DELAY_UI, handler) }
+        try {
+            sensors.registerListener(listener, rot, SensorManager.SENSOR_DELAY_GAME, handler)
+            magnet?.let { sensors.registerListener(listener, it, SensorManager.SENSOR_DELAY_UI, handler) }
+        } catch (e: Throwable) {
+            // Not registered after all: the listener comes off whatever it was put on, and the thread is given back.
+            sensors.unregisterListener(listener)
+            SensorThread.release()
+            throw e
+        }
         awaitClose {
             sensors.unregisterListener(listener)
             SensorThread.release()

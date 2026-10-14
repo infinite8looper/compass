@@ -1,6 +1,6 @@
 # Testing
 
-The tests use real files, real sensors and real location (fed to the emulator); there are no mocks. Everything here was run on emulators. No physical watch has been used.
+The tests use real files, real sensors and real location (fed to the emulator); there are no mocks. Everything here was run on emulators. A debug build (commit becfa3e) was run by the owner on a Pixel Watch 3 (API 37) on 2026-10-13.
 
 ## Read this before running the instrumented tests
 
@@ -120,10 +120,10 @@ scripts/frame-times.sh settings <label>       # frame times while a list is scro
 
 ```
 ./gradlew assembleDebug assembleWatch
-adb install -r app/build/outputs/apk/debug/app-debug.apk     # or app/build/outputs/apk/watch/app-watch.apk
-adb shell pm clear com.infinite8looper.compass
+adb -s emulator-5554 install -r app/build/outputs/apk/debug/app-debug.apk     # or app/build/outputs/apk/watch/app-watch.apk
+adb -s emulator-5554 shell pm clear com.infinite8looper.compass
 scripts/set-heading.sh 40
-adb shell am start -n com.infinite8looper.compass/.MainActivity
+adb -s emulator-5554 shell am start -n com.infinite8looper.compass/.MainActivity
 # wait 20 s for the compass to settle
 scripts/frame-times.sh swipes <label>      # twice: twenty swipes to the left end on the settings
 scripts/frame-times.sh swipes <label>
@@ -131,7 +131,7 @@ scripts/frame-times.sh settings <label>    # twice
 scripts/frame-times.sh settings <label>
 ```
 
-With only the emulator attached, `adb` here addresses it; the scripts refuse to run otherwise.
+Each `adb` line names the emulator by its serial (`emulator-5554` when it is the only one running; `adb devices` lists it), so it reaches that emulator and nothing else; the scripts refuse to run while a device that is not an emulator is attached.
 
 Measured on `Wear_OS_Large_Round` on 2026-10-13, two runs of each, the system's percentiles of the frame time in ms and its share of janky frames. "Before" is the debug build of commit 5dc1765, where the three screens stood in a pager and the lists were drawn through offscreen buffers; "after" is commit 903e3cc.
 
@@ -150,7 +150,7 @@ Measured on `Wear_OS_Large_Round` on 2026-10-13, two runs of each, the system's 
 | 2 | after, watch | swipes | 17, 17 | 17, 17 | 18, 18 | 3.1 %, 3.3 % |
 | 2 | after, watch | settings | 17, 18 | 18, 17 | 22, 21 | 4.9 %, 4.6 % |
 
-The two sittings do not agree. In the first, on an emulator that had been running for hours, the change shows; in the second, on the same emulator freshly booted, every build is at the emulator's own frame interval of about 17 ms and the builds cannot be told apart. So these numbers do not show that the change makes the screens smoother, and they do not predict what a watch does: the emulator runs on this computer's processor and draws through its graphics (the swap stage alone has a median of about 16 ms in every run). What the instrumented tests do show is the cause removed: `RingScreensTest` counts, in the screens themselves, that a turn of the ring builds no screen and composes none.
+The two sittings do not agree. In the first, on an emulator that had been running for hours, the change shows; in the second, on the same emulator freshly booted, every build is at the emulator's own frame interval of about 17 ms and the builds cannot be told apart. So these numbers do not show that the change makes the screens smoother, and they do not predict what a watch does: the emulator runs on this computer's processor and draws through its graphics (the swap stage alone has a median of about 16 ms in every run). What the instrumented tests do show is that one suspected cause is gone: `RingScreensTest` counts, in the screen functions themselves, that a turn of the ring builds no screen and composes none.
 
 ## Counts at the time of writing
 

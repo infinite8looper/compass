@@ -20,6 +20,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.geometry.Offset
@@ -351,14 +352,15 @@ fun InstrumentRow(
     ) {
         if (centered) Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { content() }
         else {
-            if (fitContent) Box(Modifier.weight(1f).graphicsLayer { translationX = inset.floatValue }, contentAlignment = Alignment.CenterStart) {
+            // The box is clipped to itself, so the cover below never paints beyond the text's own box.
+            if (fitContent) Box(Modifier.weight(1f).graphicsLayer { translationX = inset.floatValue }.clipToBounds(), contentAlignment = Alignment.CenterStart) {
                 Box(Modifier.padding(end = ROW_FIT_GAP)) { content() }
                 // Both ends have come in by the inset, so the tick now starts that much twice over before the
                 // end of this box. The text is gone where the tick starts and whole a gap before that, which in
                 // the middle of the screen is where the text ends anyway. The cover is drawn once, as it stands
                 // in the middle of the screen: thinning to nothing over the gap before the end of the box, and
-                // solid from there on for as far as the two ends can ever come in. Its layer is moved left by
-                // twice the inset, which is all a scroll does to it.
+                // solid from there on for as far as the two ends can ever come in, which the box's clip cuts at
+                // its own edge. Its layer is moved left by twice the inset, which is all a scroll does to it.
                 Spacer(
                     Modifier.matchParentSize().graphicsLayer { translationX = -2f * inset.floatValue }.drawWithCache {
                         val gap = ROW_FIT_GAP.toPx()

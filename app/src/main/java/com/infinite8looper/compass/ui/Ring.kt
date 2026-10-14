@@ -13,6 +13,9 @@ import androidx.compose.foundation.gestures.ScrollableState
 import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -190,21 +193,37 @@ fun Ring(state: RingState, modifier: Modifier = Modifier, screen: @Composable (P
         { pages -> scope.launch { state.animateScrollToPage(state.targetPage + pages) }; true }
     }
     val leftIsBack = direction == LayoutDirection.Ltr
+    // A ring that is not being moved and stands between two pages comes to rest on the nearer. A let-go swipe
+    // settles by itself; this is for a movement that ends without one: a slide cut off half way (the three screens
+    // leaving the composition while a Back slides them), or a scroll the system makes. The answer is looked at
+    // again a frame later, so the instant between a finger lifting and its fling starting is not taken for one.
+    LaunchedEffect(state) {
+        // `collect`, not `collectLatest`: the slide itself makes the ring scroll, which must not cut it off.
+        snapshotFlow { !state.isScrollInProgress && state.currentPageOffsetFraction != 0f }.collect { stranded ->
+            if (!stranded) return@collect
+            withFrameNanos { }
+            if (!state.isScrollInProgress && state.currentPageOffsetFraction != 0f) state.animateScrollToPage(state.currentPage)
+        }
+    }
     Layout(
         content = { for (pane in Pane.entries) key(pane) { RingSlot(state, pane, direction, screen) } },
         modifier = modifier
             .clipToBounds()
-            .scrollable(
-                state, Orientation.Horizontal, flingBehavior = fling,
-                reverseDirection = ScrollableDefaults.reverseDirection(direction, Orientation.Horizontal, reverseScrolling = false),
-            )
+            // Before `scrollable` in the chain, so applied after it: the scroll action here, which turns the ring a
+            // whole screen through a slide, replaces the one `scrollable` gives, which moves it by a width of pixels.
+            // A screen reader's scroll forward, backward, left and right come to the page actions (seen on the API
+            // 35 emulator), so the ring turns through [turn] whichever it uses.
             .semantics {
                 // A ring: from every screen there is one further on, either way.
                 horizontalScrollAxisRange = ScrollAxisRange(value = { 1f }, maxValue = { 2f })
                 scrollBy { x, _ -> if (x == 0f) false else turn(if (x > 0f) 1 else -1) }
                 pageLeft { turn(if (leftIsBack) -1 else 1) }
                 pageRight { turn(if (leftIsBack) 1 else -1) }
-            },
+            }
+            .scrollable(
+                state, Orientation.Horizontal, flingBehavior = fling,
+                reverseDirection = ScrollableDefaults.reverseDirection(direction, Orientation.Horizontal, reverseScrolling = false),
+            ),
     ) { measurables, constraints ->
         val width = constraints.maxWidth
         val height = constraints.maxHeight

@@ -4,7 +4,7 @@ A compass for Wear OS that also saves GPS positions as waypoints and shows the d
 
 ![The compass screen on the Wear_OS_Large_Round emulator, with waypoints as lines on the ring and the focused one named in the middle](docs/screenshots/compass-targets-large.png)
 
-The picture is the compass screen on an emulator with three waypoints, a simulated position, and the heading at 290 degrees. The screens and states an emulator can produce are pictured in [docs/screenshots](docs/screenshots/README.md), which also lists the ones it cannot. Everything in this file was seen on emulators; the app has not been run on a physical watch.
+The picture is the compass screen on an emulator with three waypoints, a simulated position, and the heading at 290 degrees. The screens and states an emulator can produce are pictured in [docs/screenshots](docs/screenshots/README.md), which also lists the ones it cannot. Everything in this file was seen on emulators. A debug build (commit becfa3e) was run by the owner on a Pixel Watch 3 (API 37) on 2026-10-13.
 
 ## The three screens
 
@@ -115,7 +115,7 @@ The waypoint database (`waypoints.db`, which also holds the crumbs) and the sett
 
 ## Versions
 
-Minimum API level 33 (Wear OS 4), target 35, compiled against 37. The manifest requires a watch with a compass sensor; GPS hardware is not required. Test runs: emulators at API 33, 34, 35 and 37. The tests and the scripts have run on emulators only. A debug build was run by hand on a Pixel Watch 3 (API 37) on 2026-10-13; what that showed is in [the v3 spec](docs/superpowers/specs/2026-10-13-wear-compass-v3-watch-report.md).
+Minimum API level 33 (Wear OS 4), target 35, compiled against 37. The manifest requires a watch with a compass sensor; GPS hardware is not required. Test runs: emulators at API 33, 34, 35 and 37. The tests and the scripts have run on emulators only. A debug build (commit becfa3e) was run by the owner on a Pixel Watch 3 (API 37) on 2026-10-13.
 
 ## Building
 

@@ -16,7 +16,14 @@ import com.infinite8looper.compass.data.Waypoint
 import com.infinite8looper.compass.data.WaypointDatabase
 import com.infinite8looper.compass.nav.Pane
 import com.infinite8looper.compass.nav.TrailMode
+import com.infinite8looper.compass.ui.Ring
+import com.infinite8looper.compass.ui.RingState
 import com.infinite8looper.compass.ui.ScreenCompositions
+import com.infinite8looper.compass.nav.PANE_START_PAGE
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.Modifier
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -61,10 +68,18 @@ class RingScreensTest {
     }
     @After fun tearDown() = reset()
 
+    /**
+     * The app's nodes as the app has them now. The system keeps a cache of the tree for a test, and a node's place
+     * read from it can stay what it was for seconds after a list has moved (seen: a row read at its old place 1.5 s
+     * after its list had stopped at its end, and at its new place 3 s after, with nothing done in between). So every
+     * node is fetched again from the app ([AccessibilityNodeInfo.refresh], which bypasses the cache) before it is
+     * read, and a node the app no longer has is left out.
+     */
     private fun nodes(): List<AccessibilityNodeInfo> {
         val root = instrumentation.uiAutomation.rootInActiveWindow ?: return emptyList()
+        if (!root.refresh()) return emptyList()
         val all = ArrayList<AccessibilityNodeInfo>()
-        fun walk(n: AccessibilityNodeInfo) { all += n; for (i in 0 until n.childCount) n.getChild(i)?.let(::walk) }
+        fun walk(n: AccessibilityNodeInfo) { all += n; for (i in 0 until n.childCount) n.getChild(i)?.let { if (it.refresh()) walk(it) } }
         walk(root)
         return all.filter { it.packageName == "com.infinite8looper.compass" }
     }
@@ -213,6 +228,115 @@ class RingScreensTest {
             waitsFor { !onScreen("Log here") && place(row) == before }
             assertFalse("after a turn the waypoints list is at its top again: ${wordsOnScreen()}", onScreen("Log here"))
             assertEquals("where `$row` stands after a turn of the ring", before, place(row))
+        }
+    }
+
+    /**
+     * The word that stands in the middle of the screen, left to right, on each screen at rest when its list is at
+     * its top: on the compass the heading (or the hold-flat hint), on the others the first rows.
+     */
+    private fun middleWordIsCentered(pane: Pane): Boolean {
+        val screen = Rect().also { instrumentation.uiAutomation.rootInActiveWindow.getBoundsInScreen(it) }
+        val word = nodes().firstOrNull { n ->
+            n.isVisibleToUser && n.text?.toString()?.let { t ->
+                when (pane) {
+                    Pane.COMPASS -> t == "Hold flat" || t == "--" || t.endsWith("°")
+                    Pane.SETTINGS -> t == "Settings"
+                    Pane.WAYPOINTS -> t == "Log here"
+                }
+            } == true
+        } ?: return false
+        val bounds = Rect().also(word::getBoundsInScreen)
+        return kotlin.math.abs(bounds.centerX() - screen.centerX()) <= 2
+    }
+
+    /** One accessibility action on the ring itself: the node that tells a screen reader of the three screens. */
+    private fun ringAction(action: Int) {
+        val ring = nodes().firstOrNull { it.collectionInfo?.columnCount == 3 }
+        assertNotNull("no node in the tree is the ring of three screens", ring)
+        assertTrue("the ring did not take the action $action", ring!!.performAction(action))
+    }
+
+    @Test fun anAccessibilityServiceTurnsTheRingByScrollingAndByPaging() = runBlocking {
+        ActivityScenario.launch(MainActivity::class.java).use {
+            showsPane(Pane.COMPASS)
+            val forward = AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
+            val backward = AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
+            val left = AccessibilityNodeInfo.AccessibilityAction.ACTION_PAGE_LEFT.id
+            val right = AccessibilityNodeInfo.AccessibilityAction.ACTION_PAGE_RIGHT.id
+            val scrollLeft = AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_LEFT.id
+            val scrollRight = AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_RIGHT.id
+            // Each action turns the ring one screen, the way it says, and leaves it at rest on that screen.
+            for ((action, pane) in listOf(
+                forward to Pane.WAYPOINTS, backward to Pane.COMPASS, right to Pane.WAYPOINTS, left to Pane.COMPASS,
+                // Three the same way come round to the compass, either way.
+                forward to Pane.WAYPOINTS, forward to Pane.SETTINGS, forward to Pane.COMPASS,
+                backward to Pane.SETTINGS, backward to Pane.WAYPOINTS, backward to Pane.COMPASS,
+                left to Pane.SETTINGS, left to Pane.WAYPOINTS, left to Pane.COMPASS,
+                // Scrolling the way the screen is moved: to the right brings the screen on the right.
+                scrollRight to Pane.WAYPOINTS, scrollLeft to Pane.COMPASS, scrollLeft to Pane.SETTINGS, scrollRight to Pane.COMPASS,
+            )) {
+                ringAction(action)
+                showsPane(pane)
+                waitsFor { middleWordIsCentered(pane) }
+                assertTrue("after action $action the ring is not at rest on the $pane: ${wordsOnScreen()}", middleWordIsCentered(pane))
+            }
+        }
+    }
+
+    /**
+     * Two scroll actions made one right after the other, with the system's animations on (the suite runs with them
+     * off, where a slide ends at once): the second goes one screen further than the first, and the ring comes to
+     * rest on that screen, as two Backs do.
+     */
+    @Test fun twoAccessibilityScrollsInQuickSuccessionTurnTheRingTwoScreens() = runBlocking {
+        val shell = instrumentation.uiAutomation
+        fun scale(): String = shell.executeShellCommand("settings get global animator_duration_scale").let { fd ->
+            android.os.ParcelFileDescriptor.AutoCloseInputStream(fd).bufferedReader().readText().trim()
+        }
+        fun setScale(v: String) { android.os.ParcelFileDescriptor.AutoCloseInputStream(shell.executeShellCommand("settings put global animator_duration_scale $v")).readBytes() }
+        val was = scale()
+        setScale("1")
+        try {
+            ActivityScenario.launch(MainActivity::class.java).use {
+                showsPane(Pane.COMPASS)
+                for ((action, pane) in listOf(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD to Pane.SETTINGS, AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD to Pane.COMPASS)) {
+                    ringAction(action)
+                    ringAction(action)
+                    delay(1_500)
+                    showsPane(pane)
+                    waitsFor { middleWordIsCentered(pane) }
+                    assertTrue("after two quick actions $action the ring is not at rest on the $pane: ${wordsOnScreen()}", middleWordIsCentered(pane))
+                }
+            }
+        } finally {
+            setScale(if (was == "null" || was.isEmpty()) "0" else was)
+        }
+    }
+
+    /**
+     * A ring that something has moved part of a page and left there without a fling (a scroll by the system or a
+     * slide cut off half way, none of which ends in the let-go that settles it) comes to rest on the nearest page
+     * by itself. A real [Ring] in the real activity, moved through its state.
+     */
+    @Test fun aRingLeftBetweenTwoPagesComesToRestOnTheNearest() = runBlocking {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            val state = RingState(PANE_START_PAGE)
+            scenario.onActivity { it.setContent { Ring(state) { Box(Modifier.fillMaxSize()) } } }
+            delay(1_000)
+            for ((part, rests) in listOf(0.3f to PANE_START_PAGE, 0.7f to PANE_START_PAGE + 1, -0.8f to PANE_START_PAGE)) {
+                var moved = 0f
+                scenario.onActivity { moved = state.dispatchRawDelta(state.pageWidth * part) }
+                assertTrue("the ring did not move", moved != 0f)
+                var place = 0 to 1f
+                val deadline = SystemClock.uptimeMillis() + 5_000
+                while (SystemClock.uptimeMillis() < deadline) {
+                    scenario.onActivity { place = state.currentPage to state.currentPageOffsetFraction }
+                    if (place.second == 0f) break
+                    delay(50)
+                }
+                assertEquals("where the ring rests after being moved ${part} of a page and left (page, fraction)", rests to 0f, place)
+            }
         }
     }
 }

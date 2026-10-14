@@ -82,8 +82,8 @@ import kotlin.math.hypot
 fun CompassScreen(
     vm: CompassViewModel, paneView: () -> PaneView, onOpenList: () -> Unit, onSidePress: () -> Unit, onCalibrate: () -> Unit,
 ) {
-    remember { ScreenCompositions.built[Pane.COMPASS.ordinal]++ }
-    SideEffect { ScreenCompositions.composed[Pane.COMPASS.ordinal]++ }
+    remember { ScreenCompositions.countBuilt(Pane.COMPASS) }
+    SideEffect { ScreenCompositions.countComposed(Pane.COMPASS) }
     val view = LocalView.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     // Whether any of the compass is on the screen. It is read in the effects below and never where the screen is
@@ -341,7 +341,7 @@ fun CompassScreen(
         // center and every other line has a fixed slot above or below it, so nothing moves when a line appears,
         // and every slot is narrow enough to stay inside the circle the cardinal letters sweep around.
         // The readout is composed apart from the screen's own function, and counts as the screen.
-        SideEffect { ScreenCompositions.composed[Pane.COMPASS.ordinal]++ }
+        SideEffect { ScreenCompositions.countComposed(Pane.COMPASS) }
         OneHandedSave(paneView, onSave = onSidePress)
         val r = minOf(maxWidth, maxHeight) / 2
         val density = LocalDensity.current

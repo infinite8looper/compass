@@ -123,8 +123,8 @@ fun WaypointsScreen(
     vm: CompassViewModel, paneView: () -> PaneView, onEdit: (Long) -> Unit, onLogHere: () -> Unit, onSidePress: () -> Unit,
     onDropCrumb: () -> Unit,
 ) {
-    remember { ScreenCompositions.built[Pane.WAYPOINTS.ordinal]++ }
-    SideEffect { ScreenCompositions.composed[Pane.WAYPOINTS.ordinal]++ }
+    remember { ScreenCompositions.countBuilt(Pane.WAYPOINTS) }
+    SideEffect { ScreenCompositions.countComposed(Pane.WAYPOINTS) }
     val nav by vm.nav.collectAsStateWithLifecycle()
     val listState = rememberScalingLazyListState()
     // Whether any of the screen is showing. Read in the clock below and never where the screen is composed: the
