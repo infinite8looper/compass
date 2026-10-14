@@ -21,7 +21,6 @@ import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import com.infinite8looper.compass.nav.TargetUi
 
-private val LabelGray = Color(0xFF7C7C7C)
 
 // Fractions of the dial radius, shared with the screen so its readout can stay inside the letters.
 private const val RING_OUTER = 0.84f

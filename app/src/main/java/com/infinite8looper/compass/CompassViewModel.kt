@@ -1,5 +1,6 @@
 package com.infinite8looper.compass
 
+import com.infinite8looper.compass.nav.ColorMode
 import android.app.Application
 import android.app.backup.BackupManager
 import android.location.LocationManager
@@ -70,7 +71,7 @@ data class NavUi(
 data class SwitchesUi(
     val north: NorthRef = NorthRef.TRUE, val units: Units = Units.METRIC, val tickFeedback: Boolean = true,
     val blindNavigation: Boolean = true, val breadcrumbTrail: Boolean = BREADCRUMB_TRAIL_DEFAULT, val showCoordinates: Boolean = false,
-    val backupEnabled: Boolean = true,
+    val backupEnabled: Boolean = true, val colors: ColorMode = ColorMode.STANDARD,
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -103,7 +104,7 @@ class CompassViewModel(
             SwitchesUi(
                 s.north, s.units, s.tickFeedback, s.blindNavigation, s.breadcrumbTrail, s.showCoordinates,
                 // Shown off while it is owed off by a restore, which is what the backup passes then do.
-                backupShownOn(s.backupEnabled, owedOff),
+                backupShownOn(s.backupEnabled, owedOff), s.colors,
             ) as SwitchesUi?
         }
         .distinctUntilChanged()
@@ -851,6 +852,7 @@ class CompassViewModel(
     fun setTickFeedback(on: Boolean) = launchQuietly("set tick feedback") { settingsStore.setTickFeedback(on) }
     fun setShowCoordinates(on: Boolean) = launchQuietly("set show coordinates") { settingsStore.setShowCoordinates(on) }
     fun setBlindNavigation(on: Boolean) = launchQuietly("set blind navigation") { settingsStore.setBlindNavigation(on) }
+    fun setColors(mode: ColorMode) = launchQuietly("set colors") { settingsStore.setColors(mode) }
     /** Stores the switch. Off also ends laying or retracing; the crumbs stay until the trail is cleared. */
     fun setBreadcrumbTrail(on: Boolean) = launchEdit("set breadcrumb trail") { settingsStore.setBreadcrumbTrail(on) }
 

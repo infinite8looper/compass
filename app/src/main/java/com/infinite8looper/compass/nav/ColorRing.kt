@@ -120,3 +120,16 @@ private fun paler(rgb: Int, share: Float): Int {
     fun mixed(channel: Int) = mixChannel(channel, 255, share)
     return (mixed(rgb shr 16) shl 16) or (mixed(rgb shr 8) shl 8) or mixed(rgb)
 }
+
+/** The saturation of every color of the full wheel: what a waypoint's hue had in v2 before the ring, `Color.hsv(hue, 0.65f, 1f)`. */
+const val WHEEL_SATURATION = 0.65f
+
+/**
+ * The color at [position] degrees on the full wheel of hues, `Standard`'s waypoint colors: that hue at
+ * [WHEEL_SATURATION] and full brightness. [position] wraps, so 360 is 0 and -120 is 240; one that is not a number is 0.
+ * It allocates nothing, so it can be called while drawing.
+ */
+fun wheelColor(position: Float): Int {
+    val degrees = if (position.isNaN() || position.isInfinite()) 0f else position - 360f * floor(position / 360f)
+    return fromHsv(if (degrees >= 360f) 0f else degrees, WHEEL_SATURATION, 1f)
+}

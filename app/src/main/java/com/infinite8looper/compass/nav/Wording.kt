@@ -29,3 +29,27 @@ const val BACKUP_OFF_DETAIL = "The next backup replaces the stored one, without 
 const val BACKUP_OFF_CONFIRM = "Turn off"
 /** The answer that leaves it on; Back and a right swipe do the same. */
 const val BACKUP_OFF_KEEP = "Keep on"
+
+// The `Colors` setting's row (v3 spec, "Colors"; the words are the spec's proposal, for the owner to approve).
+
+/** What the row sets. */
+const val COLORS_LABEL = "Colors"
+/** The smaller line of the row: the choice as it stands. */
+const val COLORS_STANDARD = "Standard"
+const val COLORS_WATCH_FACE = "Watch face"
+/** The smaller line of the row on a watch that gives no color scheme, where `Watch face` cannot be chosen. */
+const val COLORS_NOT_AVAILABLE = "Not available on this watch"
+
+/** What the `Colors` row shows ([detail]) and what a tap on it chooses ([tapGives]; null: it takes no tap). */
+data class ColorsRow(val detail: String, val tapGives: ColorMode?)
+
+/**
+ * The `Colors` row for the stored choice [mode] on a watch that gives a color scheme or not ([available]). With one,
+ * the row says the choice and a tap gives the other. Without one it says so and takes no tap; what is stored is
+ * kept, and the colors are those of `Standard` ([paletteFor]).
+ */
+fun colorsRow(mode: ColorMode, available: Boolean): ColorsRow = when {
+    !available -> ColorsRow(COLORS_NOT_AVAILABLE, null)
+    mode == ColorMode.STANDARD -> ColorsRow(COLORS_STANDARD, ColorMode.WATCH_FACE)
+    else -> ColorsRow(COLORS_WATCH_FACE, ColorMode.STANDARD)
+}

@@ -112,9 +112,30 @@ class WatchColorsTest {
     @Test fun aPaleColorThatIsStillAColorIsKept() {
         assertEquals(0.15f, MIN_SATURATION, 0f)
         assertEquals(paleViolet, roles(paleViolet, paleRed).accent)
-        // Just under and just over the least saturation, at full brightness.
-        assertEquals(blue, roles(0xDBDBFF, paleRed).accent)      // 0.14
+        // Just over the least saturation, at full brightness, is used as it is.
         assertEquals(0xD6D6FF, roles(0xD6D6FF, paleRed).accent)  // 0.16
+    }
+    @Test fun aPalePrimaryJustUnderTheLeastSaturationIsDeepenedAndKept() {
+        // v3 spec ("Colors"): "A pale primary is deepened and kept, not thrown away." Until v3 these two gave the
+        // blue: 0xDBDBFF (0.14) and the Wear OS 5.1 image's fixed primary 0xD9E2FF (0.149).
+        for (pale in listOf(0xDBDBFF, 0xD9E2FF)) {
+            val accent = roles(pale, paleRed).accent
+            val what = "%06X -> %06X".format(pale, accent)
+            assertNotEquals(what, blue, accent)
+            // Deepened just to the least saturation: the same hue and the same brightness.
+            assertTrue(what, saturationOf(accent) >= MIN_SATURATION)
+            assertTrue(what, saturationOf(accent) < MIN_SATURATION + 0.01f)
+            assertEquals(what, hueOf(pale), hueOf(accent), 1.5f)
+            assertEquals(what, 0xFF, accent and 0xFF)
+            assertTrue(what, contrastOnBlack(accent) >= MIN_CONTRAST)
+        }
+    }
+    @Test fun aPrimaryBelowTheSaturationOfAGrayIsStillNotUsed() {
+        // The least saturation a primary needs to be deepened rather than taken for a gray: the grays of the
+        // schemes the emulators gave have up to 0.085.
+        assertEquals(0.10f, GRAY_SATURATION, 0f)
+        assertEquals(blue, roles(0xE6E6FF, paleRed).accent)      // 0.098
+        assertNotEquals(blue, roles(0xE5E5FF, paleRed).accent)   // 0.102
     }
     @Test fun aGrayTertiaryGivesTheRedAndAGrayErrorGivesTheRed() {
         assertEquals(RoleColors(paleBlue, red, red), roles(paleBlue, 0x808080, error = 0x909090))
@@ -235,11 +256,19 @@ class WatchColorsTest {
         // A gray primary beside a tertiary and an error color that could both have been used.
         assertEquals(own, roles(0x808080, 0x2F6BFF, paleRed))
         assertEquals(own, roles(0x808080, 0xFF7AA8, 0xFFBEB9))
-        // A near-black one, and one just under the least saturation.
+        // A near-black one, and a pale one that is a gray (v3: a pale primary above that is deepened and kept,
+        // in aPalePrimaryJustUnderTheLeastSaturationIsDeepenedAndKept).
         assertEquals(own, roles(0x101010, 0xFF7AA8, paleRed))
-        assertEquals(own, roles(0xDBDBFF, 0xFF7AA8, paleRed))
-        // The fixed colors of the Wear OS 5.1 image: its primary has 0.149.
-        assertEquals(own, roles(0xD9E2FF, 0xFDD7FA, 0xF2B8B5))
+        assertEquals(own, roles(0xE6E6FF, 0xFF7AA8, paleRed))
+    }
+    @Test fun theFixedColorsOfTheApi35ImageAreNowUsed() {
+        // Until v3 the whole scheme gave way to the app's own colors, its primary having 0.149. v3 spec: "A pale
+        // primary is deepened and kept, not thrown away."
+        val roles = roles(0xD9E2FF, 0xFDD7FA, 0xF2B8B5)
+        assertNotEquals(roleColors(null), roles)
+        assertEquals(0xF2B8B5, roles.error)
+        assertTrue(saturationOf(roles.north) >= NORTH_MIN_SATURATION)
+        assertTrue(hueApart(roles.accent, roles.north) >= MIN_HUE_APART)
     }
     @Test fun aPrimaryThatOnlyHadToBeLightenedKeepsTheScheme() {
         val roles = roles(0x000080, 0xFF7AA8, paleRed)

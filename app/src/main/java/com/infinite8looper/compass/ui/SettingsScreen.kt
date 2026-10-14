@@ -39,6 +39,8 @@ import com.infinite8looper.compass.BuildConfig
 import com.infinite8looper.compass.CompassViewModel
 import com.infinite8looper.compass.SwitchesUi
 import com.infinite8looper.compass.nav.BackupTap
+import com.infinite8looper.compass.nav.COLORS_LABEL
+import com.infinite8looper.compass.nav.colorsRow
 import com.infinite8looper.compass.nav.backupSwitchTap
 import com.infinite8looper.compass.nav.NEEDS_PRECISE_LOCATION
 import com.infinite8looper.compass.nav.NorthRef
@@ -50,8 +52,8 @@ import com.infinite8looper.compass.nav.trailSettingDetail
 import com.infinite8looper.compass.sensors.WatchButtons
 
 /**
- * The settings, one of the three screens that sit side by side: a row for each switch, in the spec's order,
- * then `Calibrate` and the version, inside the frame, which shows how far the list is scrolled.
+ * The settings, one of the three screens that sit side by side: a row for each switch, in the spec's order, and
+ * `Colors` before `Back up waypoints`, then `Calibrate` and the version, inside the frame, which shows how far the list is scrolled.
  * A switch is its row: one tap anywhere on the row turns it, and the tick at the right shows which way it stands.
  *
  * [paneView] says how much of the screen the wearer has in front of them. The screen is built when the three
@@ -166,6 +168,24 @@ fun SettingsScreen(vm: CompassViewModel, paneView: () -> PaneView, onCalibrate: 
                             if (!on) vm.setShowCoordinates(false)
                             else if (vm.locationSource.hasPermission()) vm.setShowCoordinates(true)
                             else ask.launch(LOCATION_PERMISSIONS)
+                        }
+                    }
+                }
+                item(key = "colors") {
+                    // `Standard` or `Watch face`; one tap gives the other. On a watch that gives no color scheme the
+                    // row says so and takes no tap.
+                    val row = colorsRow(switches.colors, watchFaceColorsAvailable)
+                    val gives = row.tapGives
+                    InstrumentRow(
+                        Modifier.clickable(enabled = ready && gives != null, role = Role.Button) { if (gives != null) inView { vm.setColors(gives) } },
+                        fitContent = true,
+                    ) {
+                        Column {
+                            Text(COLORS_LABEL, color = if (gives != null) Ink else Dim, style = styles.label, maxLines = LABEL_LINES, overflow = TextOverflow.Ellipsis)
+                            Text(
+                                row.detail, color = if (gives != null) AccentColor else Dim, style = styles.detail,
+                                maxLines = 1 + DETAIL_SPARE_LINES, overflow = TextOverflow.Ellipsis,
+                            )
                         }
                     }
                 }

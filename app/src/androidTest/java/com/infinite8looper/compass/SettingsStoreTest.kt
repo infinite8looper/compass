@@ -7,12 +7,14 @@ import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStoreFile
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.infinite8looper.compass.data.SettingsStore
 import com.infinite8looper.compass.data.StoredTrail
 import com.infinite8looper.compass.data.defaultUnits
+import com.infinite8looper.compass.nav.ColorMode
 import com.infinite8looper.compass.nav.GeoPoint
 import com.infinite8looper.compass.nav.NorthRef
 import com.infinite8looper.compass.nav.TrailMode
@@ -463,5 +465,76 @@ class SettingsStoreTest {
         val pos = ctx.preferencesDataStoreFile("$file-position").readBytes().decodeToString()
         assertTrue(main.contains("trail_mode")); assertTrue(main.contains("LAYING"))
         assertFalse(pos.contains("trail_mode"))
+    }
+
+    // The `Colors` setting (v3 spec, "Colors"): "A setting `Colors`: `Standard` or `Watch face`. Default `Standard`."
+
+    @Test fun colorsAreStandardUntilSetAndRoundTripBothWays() = withStore { s, file ->
+        assertEquals(ColorMode.STANDARD, s.settings.first().colors)
+        assertEquals(ColorMode.STANDARD, s.colorMode.first())
+        s.setColors(ColorMode.WATCH_FACE)
+        assertEquals(ColorMode.WATCH_FACE, s.settings.first().colors)
+        assertEquals(ColorMode.WATCH_FACE, s.colorMode.first())
+        // In the settings file, the one that is backed up, and not in the position file.
+        assertTrue(ctx.preferencesDataStoreFile(file).readBytes().toString(Charsets.ISO_8859_1).contains("colors"))
+        assertFalse(ctx.preferencesDataStoreFile("$file-position").let { it.exists() && it.readBytes().toString(Charsets.ISO_8859_1).contains("colors") })
+        s.setColors(ColorMode.STANDARD)
+        assertEquals(ColorMode.STANDARD, s.settings.first().colors)
+        assertEquals(ColorMode.STANDARD, s.colorMode.first())
+    }
+    @Test fun colorsChangeNoOtherSettingAndNoOtherSettingChangesThem() = withStore { s, _ ->
+        s.setBackupEnabled(false); s.setTickFeedback(false); s.setBlindNavigation(false); s.setNorth(NorthRef.MAGNETIC)
+        s.setColors(ColorMode.WATCH_FACE)
+        val v = s.settings.first()
+        assertFalse(v.backupEnabled); assertFalse(v.tickFeedback); assertFalse(v.blindNavigation); assertEquals(NorthRef.MAGNETIC, v.north)
+        assertEquals(false, s.readBackupEnabled()); assertEquals(true, s.readBackupOffByWearer())
+        s.setBackupEnabled(true); s.setTickFeedback(true); s.setBreadcrumbTrail(false)
+        assertEquals(ColorMode.WATCH_FACE, s.settings.first().colors)
+    }
+    @Test fun aValueTheColorsCannotBeReadFromIsStandard() = runBlocking {
+        for (write in listOf<(androidx.datastore.preferences.core.MutablePreferences) -> Unit>(
+            { it[stringPreferencesKey("colors")] = "watch face" },
+            { it[stringPreferencesKey("colors")] = "" },
+            { it[booleanPreferencesKey("colors")] = true },
+            { it[longPreferencesKey("colors")] = 1L },
+        )) {
+            val file = "test-settings-${UUID.randomUUID()}"
+            val main = ctx.preferencesDataStoreFile(file)
+            val oldJob = SupervisorJob(); val job = SupervisorJob()
+            try {
+                val raw = PreferenceDataStoreFactory.create(scope = CoroutineScope(Dispatchers.IO + oldJob)) { main }
+                raw.edit { it[booleanPreferencesKey("tick_feedback")] = false; write(it) }
+                oldJob.cancelAndJoin()
+                val store = SettingsStore(ctx, file, CoroutineScope(Dispatchers.IO + job))
+                val v = store.settings.first()
+                assertEquals(ColorMode.STANDARD, v.colors)
+                assertEquals(ColorMode.STANDARD, store.colorMode.first())
+                // The rest of the file is read as it is.
+                assertFalse(v.tickFeedback)
+                // And it can be set again.
+                store.setColors(ColorMode.WATCH_FACE)
+                assertEquals(ColorMode.WATCH_FACE, store.settings.first().colors)
+            } finally { oldJob.cancelAndJoin(); job.cancelAndJoin(); main.delete(); ctx.preferencesDataStoreFile("$file-position").delete() }
+        }
+    }
+    @Test fun colorsAreStandardInADamagedFileAndInOneThatCannotBeRead() = runBlocking {
+        val file = "test-settings-${UUID.randomUUID()}"
+        val f = ctx.preferencesDataStoreFile(file)
+        val job1 = SupervisorJob(); val job2 = SupervisorJob(); val job3 = SupervisorJob()
+        try {
+            val first = SettingsStore(ctx, file, CoroutineScope(Dispatchers.IO + job1))
+            first.setColors(ColorMode.WATCH_FACE)
+            job1.cancelAndJoin()
+            assertTrue("could not make the file unreadable", f.setReadable(false, false))
+            val second = SettingsStore(ctx, file, CoroutineScope(Dispatchers.IO + job2))
+            assertEquals(ColorMode.STANDARD, second.settings.first().colors)
+            assertEquals(ColorMode.STANDARD, second.colorMode.first())
+            job2.cancelAndJoin()
+            f.setReadable(true, false)
+            f.writeBytes(byteArrayOf(0x7f, 0x00, 0x13, -1, -2, 0x55, 0x01, 0x02, 0x03))
+            val third = SettingsStore(ctx, file, CoroutineScope(Dispatchers.IO + job3))
+            assertEquals(ColorMode.STANDARD, third.colorMode.first())
+            assertEquals(ColorMode.STANDARD, third.settings.first().colors)
+        } finally { f.setReadable(true, false); job1.cancelAndJoin(); job2.cancelAndJoin(); job3.cancelAndJoin(); f.delete(); ctx.preferencesDataStoreFile("$file-position").delete() }
     }
 }

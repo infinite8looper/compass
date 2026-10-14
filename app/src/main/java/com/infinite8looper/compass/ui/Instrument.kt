@@ -51,37 +51,46 @@ import com.infinite8looper.compass.nav.PANE_TICK_LENGTH_CURRENT
 import com.infinite8looper.compass.nav.menuTextSize
 import com.infinite8looper.compass.nav.Pane
 import com.infinite8looper.compass.nav.ScrollArc
+import com.infinite8looper.compass.nav.ColorMode
+import com.infinite8looper.compass.nav.STANDARD_PALETTE
 import com.infinite8looper.compass.nav.WatchScheme
-import com.infinite8looper.compass.nav.ringColor
-import com.infinite8looper.compass.nav.roleColors
+import com.infinite8looper.compass.nav.paletteFor
+import com.infinite8looper.compass.nav.waypointRgb
 import com.infinite8looper.compass.nav.rowInset
 import com.infinite8looper.compass.nav.SOFT_TINT_ALPHA_255
 import com.infinite8looper.compass.nav.softLineColor
 
 // The colors the screens share, each named for what it is used for. A screen takes a color from here by its
 // role, so a role's color is changed in this one place.
+//
+// They follow the `Colors` setting (nav/WatchColors.kt, [paletteFor]). With `Standard` they are the app's own: the
+// blue pointer, the red north, the app's grays and the full wheel of hues for waypoints, and nothing is read from
+// the watch for them. With `Watch face`, on a watch whose system gives apps a color scheme taken from its watch
+// face, the accent, north and the error color come from that scheme's primary, tertiary and error color, the ink
+// and the grays from its colors for text and outlines, and the waypoints' colors from a ring of the three roles,
+// all after the checks in nav/WatchColors.kt. They are held as state, so a place that reads one while composing is
+// composed again when it changes, and a place that reads one while drawing is drawn again: nothing has to be told.
+// Setting them to what they already are changes nothing.
+private val palette = mutableStateOf(STANDARD_PALETTE)
+
+/** Whether the watch gives a color scheme, so that `Watch face` can be chosen; read with the colors. */
+private val watchFaceColors = mutableStateOf(false)
 
 /** The light color of text, heavy ticks and outlines. */
-internal val Ink = Color(0xFFE8EAED)
+internal val Ink: Color get() = opaque(palette.value.grays.ink)
 /** Secondary text and prompts. */
-internal val Dim = Color(0xFF9E9E9E)
+internal val Dim: Color get() = opaque(palette.value.grays.dim)
 /** Fine ticks, and anything that is switched off or not the current one. */
-internal val Faint = Color(0xFF6E6E6E)
-
-// Three of the colors follow the watch: on a watch whose system gives apps a color scheme taken from its watch
-// face, the accent is that scheme's primary color, north its tertiary and the error color its error color, after
-// the checks in nav/WatchColors.kt. On any other watch they are the app's own blue and red. They are held as
-// state, so a place that reads one while composing is composed again when it changes, and a place that reads one
-// while drawing is drawn again: nothing has to be told. Setting them to what they already are changes nothing.
-// The waypoints' colors are made from these three ([waypointColor]) and follow them the same way.
-private val roles = mutableStateOf(roleColors(null))
+internal val Faint: Color get() = opaque(palette.value.grays.faint)
+/** The degree numbers on the dial. */
+internal val LabelGray: Color get() = opaque(palette.value.grays.label)
 
 /** The heading pointer, and anything that is on or can be acted on. */
-val AccentColor: Color get() = opaque(roles.value.accent)
+val AccentColor: Color get() = opaque(palette.value.roles.accent)
 /** North on the dial. */
-val NorthColor: Color get() = opaque(roles.value.north)
-/** A failure, and deleting. Without a scheme it has the same value as [NorthColor]; it is a separate role. */
-val ErrorColor: Color get() = opaque(roles.value.error)
+val NorthColor: Color get() = opaque(palette.value.roles.north)
+/** A failure, and deleting. With `Standard` it has the same value as [NorthColor]; it is a separate role. */
+val ErrorColor: Color get() = opaque(palette.value.roles.error)
 
 private fun opaque(rgb: Int): Color = Color(0xFF000000.toInt() or rgb)
 
@@ -90,32 +99,51 @@ private fun opaque(rgb: Int): Color = Color(0xFF000000.toInt() or rgb)
  * library reports one only on API level 35 and above, and only while the system's setting for dynamic color is on.
  */
 fun watchScheme(context: Context): WatchScheme? =
-    dynamicColorScheme(context)?.let { WatchScheme(it.primary.toArgb(), it.tertiary.toArgb(), it.error.toArgb()) }
+    dynamicColorScheme(context)?.let {
+        WatchScheme(
+            it.primary.toArgb(), it.tertiary.toArgb(), it.error.toArgb(),
+            it.onSurface.toArgb(), it.onSurfaceVariant.toArgb(), it.outline.toArgb(),
+        )
+    }
+
+/** Whether `Watch face` can be chosen on this watch: whether the library gives a color scheme. Read with the colors. */
+val watchFaceColorsAvailable: Boolean get() = watchFaceColors.value
 
 /**
- * Reads the watch's color scheme and sets the three colors that follow it. The activity calls this before it shows
- * anything and each time it comes back on screen, so a scheme that changed while the app was out of sight is in
- * the app when the wearer returns.
+ * Sets the colors for the `Colors` setting [mode]. The activity calls this before it shows anything, each time it
+ * comes back on screen (a scheme can change while the app is out of sight) and when the setting changes.
+ *
+ * With `Standard` the library is asked only whether it gives a scheme, for the settings row, and what it gives is
+ * not kept: the colors are the app's own. With `Watch face` the colors are made from the scheme, or are the app's
+ * own where there is none.
  */
-fun followWatchColors(context: Context) {
-    roles.value = roleColors(watchScheme(context))
+fun followWatchColors(context: Context, mode: ColorMode) {
+    when (mode) {
+        ColorMode.STANDARD -> {
+            watchFaceColors.value = dynamicColorScheme(context) != null
+            palette.value = STANDARD_PALETTE
+        }
+        ColorMode.WATCH_FACE -> {
+            val scheme = watchScheme(context)
+            watchFaceColors.value = scheme != null
+            palette.value = paletteFor(mode, scheme)
+        }
+    }
 }
 
 /** A confirmation that something was done, such as a waypoint saved: a soft green. */
 val ConfirmColor = Color(0xFF7FD99A)
 
 /**
- * A waypoint's own color: its line and arrow on the dial, and its mark wherever it is listed. It is the color at the
- * waypoint's place on a ring that fades from the accent to north, on to the error color and back to the accent
- * ([ringColor]); [position] is the waypoint's stored value, from 0 to 360, the accent being at 0.
+ * A waypoint's own color: its line and arrow on the dial, and its mark wherever it is listed. [position] is the
+ * waypoint's stored value, from 0 to 360, kept as it is whatever the setting. With `Standard` it is that hue on the
+ * full wheel ([wheelColor]). With `Watch face` it is the color at that place on a ring that fades from the accent to
+ * north, on to the error color and back to the accent ([ringColor]), the accent being at 0.
  *
- * The three colors are the ones that follow the watch, read as they are at this moment, so a waypoint's color
- * follows the watch too: read while drawing, it is drawn again when one of them changes, and read while composing,
- * composed again. Nothing is allocated.
+ * The colors are read as they are at this moment, so a waypoint's color follows the setting and the watch: read while
+ * drawing, it is drawn again when they change, and read while composing, composed again. Nothing is allocated.
  */
-fun waypointColor(position: Float): Color = opaque(ringAt(position))
-
-private fun ringAt(position: Float): Int = roles.value.let { ringColor(position / 360f, it.accent, it.north, it.error) }
+fun waypointColor(position: Float): Color = opaque(waypointRgb(palette.value, position))
 
 /**
  * The breadcrumb trail: its ticks on the dial, the crumb that is walked to, and its marks wherever it is listed. One
@@ -130,7 +158,7 @@ val CrumbColor = Color(0xFF8FA6BF)
  * saturation, drawn at 0.6 of full strength, and made brighter where it would otherwise not read as a line on
  * black ([softLineColor]).
  */
-fun softTint(position: Float): Color = Color((SOFT_TINT_ALPHA_255 shl 24) or softLineColor(ringAt(position)))
+fun softTint(position: Float): Color = Color((SOFT_TINT_ALPHA_255 shl 24) or softLineColor(waypointRgb(palette.value, position)))
 
 // The parts the screens share, drawn in fractions of the screen's radius.
 

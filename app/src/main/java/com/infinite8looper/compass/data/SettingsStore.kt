@@ -8,7 +8,9 @@ import java.io.IOException
 import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStoreFile
+import com.infinite8looper.compass.nav.ColorMode
 import com.infinite8looper.compass.nav.GeoPoint
+import com.infinite8looper.compass.nav.colorModeOf
 import com.infinite8looper.compass.nav.NorthRef
 import com.infinite8looper.compass.nav.TrailMode
 import com.infinite8looper.compass.nav.trailModeOf
@@ -21,6 +23,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
@@ -41,6 +44,8 @@ data class Settings(
     val blindNavigation: Boolean = true, val breadcrumbTrail: Boolean = BREADCRUMB_TRAIL_DEFAULT,
     /** The breadcrumb trail's mode as it is stored. What the trail is doing also depends on [breadcrumbTrail] and on the crumbs. */
     val trailMode: TrailMode = TrailMode.OFF,
+    /** The `Colors` setting. */
+    val colors: ColorMode = ColorMode.STANDARD,
 )
 
 /** The breadcrumb trail as the settings file holds it: the stored mode and the Breadcrumb trail switch. */
@@ -107,7 +112,24 @@ class SettingsStore(
             // never touched the switch and a restored backup with no value for it included.
             breadcrumbTrail = p[BREADCRUMB_TRAIL] ?: BREADCRUMB_TRAIL_DEFAULT,
             trailMode = trailModeOf(p[TRAIL_MODE]),
+            colors = colorsIn(p),
         )
+    }
+
+    /**
+     * The `Colors` setting alone, for the activity, which colors the screens from it. A new value only when it
+     * changes. A file that cannot be read gives `Standard`, as does a value that cannot be read ([colorsIn]).
+     */
+    val colorMode: Flow<ColorMode> = settingsData.map { colorsIn(it) }.distinctUntilChanged()
+
+    /**
+     * The `Colors` setting in [p]: `Standard` where nothing is stored, and where what is stored is not one of the two
+     * names, or is not text at all (reading a key as text where something else is stored throws).
+     */
+    private fun colorsIn(p: Preferences): ColorMode = try {
+        colorModeOf(p[COLORS])
+    } catch (e: ClassCastException) {
+        ColorMode.STANDARD
     }
 
     // The breadcrumb trail's stored mode and its switch are also held here, in memory, as this store last read or
@@ -168,6 +190,7 @@ class SettingsStore(
     suspend fun setTickFeedback(on: Boolean) { store.edit { it[TICK_FEEDBACK] = on } }
     suspend fun setShowCoordinates(on: Boolean) { store.edit { it[SHOW_COORDINATES] = on } }
     suspend fun setBlindNavigation(on: Boolean) { store.edit { it[BLIND_NAVIGATION] = on } }
+    suspend fun setColors(mode: ColorMode) { store.edit { it[COLORS] = mode.name } }
     /** Switching the breadcrumb trail off also ends laying or retracing, in the same write. The crumbs are not touched. */
     suspend fun setBreadcrumbTrail(on: Boolean) {
         writeTrail { it[BREADCRUMB_TRAIL] = on; if (!on) it.remove(TRAIL_MODE) }
@@ -247,6 +270,7 @@ class SettingsStore(
         private val BLIND_NAVIGATION = booleanPreferencesKey("blind_navigation")
         private val BREADCRUMB_TRAIL = booleanPreferencesKey("breadcrumb_trail")
         private val TRAIL_MODE = stringPreferencesKey("trail_mode")
+        private val COLORS = stringPreferencesKey("colors")
         private val FOCUSED = longPreferencesKey("focused_id")
         private val LAT = doublePreferencesKey("last_lat")
         private val LON = doublePreferencesKey("last_lon")

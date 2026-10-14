@@ -25,6 +25,12 @@ const val MIN_CONTRAST = 4.5
  */
 const val MIN_SATURATION = 0.15f
 
+/**
+ * Under this saturation a color is a gray. A scheme's primary under it, once it reads, is not used; the ink and the
+ * grays taken from a scheme ([graysFor]) are held under it. The grays of the schemes the emulators gave had up to 0.085.
+ */
+const val GRAY_SATURATION = 0.10f
+
 /** North is at least this many degrees of hue from the pointer. */
 const val MIN_HUE_APART = 60f
 
@@ -42,8 +48,14 @@ const val NORTH_MIN_SATURATION = 0.5f
 const val ERROR_MIN_HUE_APART = 60f
 const val ERROR_MIN_SATURATION_APART = 0.3f
 
-/** The three colors the app reads from the watch's color scheme. */
-data class WatchScheme(val primary: Int, val tertiary: Int, val error: Int)
+/**
+ * The colors the app reads from the watch's color scheme: the three roles, and the scheme's colors for text
+ * ([onSurface]), secondary text ([onSurfaceVariant]) and outlines ([outline]), each null where the scheme gives none.
+ */
+data class WatchScheme(
+    val primary: Int, val tertiary: Int, val error: Int,
+    val onSurface: Int? = null, val onSurfaceVariant: Int? = null, val outline: Int? = null,
+)
 
 /** The colors of the three roles: the pointer and what is on or can be acted on; north; a failure and deleting. */
 data class RoleColors(val accent: Int, val north: Int, val error: Int)
@@ -58,6 +70,10 @@ data class RoleColors(val accent: Int, val north: Int, val error: Int)
  *   which keeps its hue.
  * - It must be a color: one with less than [MIN_SATURATION], as it stands or once lightened, is not used. A gray
  *   pointer could not be told from the ticks, nor a gray switch that is on from one that is off.
+ *
+ * The primary alone is kept when it is pale (v3): one under [MIN_SATURATION] once it reads, but at or over
+ * [GRAY_SATURATION], is deepened to [MIN_SATURATION], with its hue and its brightness kept ([deepened]). Only a primary
+ * under [GRAY_SATURATION], which is a gray, is not used.
  *
  * A scheme whose primary is not used is not used at all: all three colors are the app's own, so the app's blue
  * never stands beside a north from the watch. A tertiary or an error color that is not used gives only its own
@@ -76,10 +92,45 @@ data class RoleColors(val accent: Int, val north: Int, val error: Int)
  */
 fun roleColors(scheme: WatchScheme?): RoleColors {
     val own = RoleColors(FALLBACK_ACCENT, FALLBACK_NORTH, FALLBACK_ERROR)
-    val accent = scheme?.let { usable(it.primary) } ?: return own
+    val accent = scheme?.let { usableAccent(it.primary) } ?: return own
     val north = northFor(accent, usable(scheme.tertiary) ?: FALLBACK_NORTH)
     val error = usable(scheme.error)?.takeUnless { looksLike(it, accent) } ?: FALLBACK_ERROR
     return RoleColors(accent, north, error)
+}
+
+/**
+ * The accent made from the scheme's primary [rgb]: lightened until it reads on black; then, if that leaves less than
+ * [MIN_SATURATION] but at least [GRAY_SATURATION], deepened to [MIN_SATURATION] ([deepened]); null when it is a gray.
+ */
+private fun usableAccent(rgb: Int): Int? {
+    val lit = readable(rgb and 0xFFFFFF)
+    val saturation = saturationOf(lit)
+    return when {
+        saturation >= MIN_SATURATION -> lit
+        saturation < GRAY_SATURATION -> null
+        else -> deepened(lit)
+    }
+}
+
+/**
+ * [rgb], a pale color that reads on black, with its saturation raised to [MIN_SATURATION]: the same hue and the same
+ * brightest channel, the others lowered. Checked on the color returned, in whole red, green and blue: where rounding
+ * leaves it a hair under the saturation it aims a little higher, and where lowering the other channels took it under
+ * [MIN_CONTRAST] it is made brighter.
+ */
+private fun deepened(rgb: Int): Int {
+    val hue = hueOf(rgb)
+    var saturation = MIN_SATURATION
+    var value = valueOf(rgb)
+    repeat(NORTH_PASSES) {
+        val made = fromHsv(hue, saturation, value)
+        when {
+            contrastOnBlack(made) < MIN_CONTRAST -> if (value < 1f) value = minOf(1f, value + NORTH_STEP) else return rgb
+            saturationOf(made) < MIN_SATURATION -> saturation = minOf(1f, saturation + NORTH_STEP)
+            else -> return made
+        }
+    }
+    return rgb
 }
 
 /** [rgb] lightened until it reads on black, or null when that leaves a gray. */
@@ -192,10 +243,108 @@ private fun valueOf(rgb: Int): Float = maxChannel(rgb) / 255f
 private fun maxChannel(rgb: Int): Int = maxOf(rgb shr 16 and 0xFF, rgb shr 8 and 0xFF, rgb and 0xFF)
 private fun minChannel(rgb: Int): Int = minOf(rgb shr 16 and 0xFF, rgb shr 8 and 0xFF, rgb and 0xFF)
 
-private fun fromHsv(hue: Float, saturation: Float, value: Float): Int {
+internal fun fromHsv(hue: Float, saturation: Float, value: Float): Int {
     fun channel(n: Float): Int {
         val k = (n + hue / 60f) % 6f
         return ((value - value * saturation * maxOf(0f, minOf(k, 4f - k, 1f))) * 255f).roundToInt()
     }
     return (channel(5f) shl 16) or (channel(3f) shl 8) or channel(1f)
+}
+
+// The `Colors` setting: `Standard` or `Watch face`.
+
+/** The two choices of the `Colors` setting. */
+enum class ColorMode { STANDARD, WATCH_FACE }
+
+/**
+ * The setting as the settings file holds it, the name of a [ColorMode]. Nothing stored, and anything that is not
+ * exactly the name of [ColorMode.WATCH_FACE], is [ColorMode.STANDARD].
+ */
+fun colorModeOf(stored: String?): ColorMode = if (stored == ColorMode.WATCH_FACE.name) ColorMode.WATCH_FACE else ColorMode.STANDARD
+
+/** The app's own ink, secondary text, faint ticks and the dial's degree numbers: the colors of `Standard`. */
+const val STANDARD_INK = 0xE8EAED
+const val STANDARD_DIM = 0x9E9E9E
+const val STANDARD_FAINT = 0x6E6E6E
+const val STANDARD_LABEL = 0x7C7C7C
+
+/** The light color of text, heavy ticks and outlines; secondary text; fine ticks and what is off; the dial's numbers. */
+data class Grays(val ink: Int, val dim: Int, val faint: Int, val label: Int)
+
+/** How a waypoint's stored place, 0 to 360, becomes its color: the full wheel of hues, or the ring of the three roles. */
+enum class WaypointColors { WHEEL, RING }
+
+/** Every color the screens take from the setting. */
+data class Palette(val roles: RoleColors, val grays: Grays, val waypoints: WaypointColors)
+
+/** `Standard`: north red, the pointer blue, the app's own grays, and the full wheel for waypoints. */
+val STANDARD_PALETTE = Palette(
+    RoleColors(FALLBACK_ACCENT, FALLBACK_NORTH, FALLBACK_ERROR),
+    Grays(STANDARD_INK, STANDARD_DIM, STANDARD_FAINT, STANDARD_LABEL),
+    WaypointColors.WHEEL,
+)
+
+/**
+ * The colors for the setting [mode] on a watch whose scheme is [scheme]. `Standard` is [STANDARD_PALETTE] whatever
+ * [scheme] is. `Watch face` is the roles of [roleColors], the ink and the grays of [graysFor] and the ring for the
+ * waypoints; with no scheme it cannot be chosen, and the colors are those of `Standard`.
+ */
+fun paletteFor(mode: ColorMode, scheme: WatchScheme?): Palette =
+    if (mode == ColorMode.STANDARD || scheme == null) STANDARD_PALETTE
+    else Palette(roleColors(scheme), graysFor(scheme), WaypointColors.RING)
+
+/**
+ * The ink and the grays on a watch whose scheme is [scheme]: the ink from its `onSurface`, the secondary text from
+ * `onSurfaceVariant`, and the faint ticks and the dial's numbers from `outline`. A color the scheme does not give
+ * keeps the app's own.
+ *
+ * What is taken from the scheme's color is its hue and its saturation, the saturation held under [GRAY_SATURATION]
+ * so that a gray never looks like the accent. The brightness is the least at which it has at least the contrast
+ * with black of the app's own color for that role, so each reads as well as the app's own, and the four keep their
+ * order from lightest to darkest. Where even full brightness does not read that well (a strong blue beside the
+ * app's near-white ink), it keeps full brightness and gives up as little of its saturation as reading needs.
+ */
+fun graysFor(scheme: WatchScheme?): Grays {
+    val own = STANDARD_PALETTE.grays
+    if (scheme == null) return own
+    return Grays(
+        ink = scheme.onSurface?.let { grayLike(it, own.ink) } ?: own.ink,
+        dim = scheme.onSurfaceVariant?.let { grayLike(it, own.dim) } ?: own.dim,
+        faint = scheme.outline?.let { grayLike(it, own.faint) } ?: own.faint,
+        label = scheme.outline?.let { grayLike(it, own.label) } ?: own.label,
+    )
+}
+
+/** The hue and (held under [GRAY_SATURATION]) the saturation of [from], at the least brightness that reads on black as well as [own]. */
+private fun grayLike(from: Int, own: Int): Int {
+    val rgb = from and 0xFFFFFF
+    val hue = hueOf(rgb)
+    // A hair under the bound, so that the rounding of the channels does not carry it over.
+    val saturation = minOf(saturationOf(rgb), GRAY_SATURATION - 0.01f)
+    val target = contrastOnBlack(own)
+    // At full brightness a dark hue such as blue can read less well than the app's ink: it then keeps full
+    // brightness and has as much of its saturation as still reads, found by halving (white, with none, reads best).
+    if (contrastOnBlack(fromHsv(hue, saturation, 1f)) < target) {
+        var less = 0f
+        var more = saturation
+        repeat(16) {
+            val mid = (less + more) / 2f
+            if (contrastOnBlack(fromHsv(hue, mid, 1f)) >= target) less = mid else more = mid
+        }
+        return fromHsv(hue, less, 1f)
+    }
+    // Otherwise a darker color never reads better, so the least brightness that is enough is found by halving.
+    var low = 0
+    var high = 255
+    while (high - low > 1) {
+        val mid = (low + high) / 2
+        if (contrastOnBlack(fromHsv(hue, saturation, mid / 255f)) >= target) high = mid else low = mid
+    }
+    return fromHsv(hue, saturation, high / 255f)
+}
+
+/** A waypoint's color in [palette] for its stored place [position], 0 to 360. It allocates nothing. */
+fun waypointRgb(palette: Palette, position: Float): Int = when (palette.waypoints) {
+    WaypointColors.WHEEL -> wheelColor(position)
+    WaypointColors.RING -> palette.roles.let { ringColor(position / 360f, it.accent, it.north, it.error) }
 }
