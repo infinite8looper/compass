@@ -64,7 +64,7 @@ import kotlin.math.abs
  * - in view, it also takes the crown, the side button, the vertical swipe and the long press, gives the tick and
  *   the confirming tap and the blind navigation pulses, and counts the time a logging result is shown.
  *
- * The screen is built once, with the app, and stays while the ring of screens turns. The screen's keep-awake switch
+ * The screen is built when the three screens are put up and stays while the ring of screens turns. The screen's keep-awake switch
  * is not set here: it has to hold on the other screens too.
  *
  * [onOpenList] is what a long press does, and [onSidePress] what a single press of a side button does. A double

@@ -51,8 +51,8 @@ import com.infinite8looper.compass.nav.accuracyLabel
  * then `Calibrate` and the version, inside the frame, which shows how far the list is scrolled.
  * A switch is its row: one tap anywhere on the row turns it, and the tick at the right shows which way it stands.
  *
- * [paneView] says how much of the screen the wearer has in front of them. The screen is built once, with the app,
- * and stays while the ring of screens turns, hidden or not, so what has a consequence asks it first: a tap acts
+ * [paneView] says how much of the screen the wearer has in front of them. The screen is built when the three
+ * screens are put up and stays while the ring of screens turns, hidden or not, so what has a consequence asks it first: a tap acts
  * only while the screen is in view. Its list is where it was left when the ring comes round to it again.
  * `Calibrate` shows the accuracy the magnetometer last reported while the compass or calibration had it running;
  * this screen does not run the sensor.

@@ -10,7 +10,7 @@ class PanesTest {
         assertEquals(Pane.COMPASS, paneOf(start))
         assertEquals(0, PANE_PAGES % 3)
         assertTrue(start > 1_000_000 && PANE_PAGES - start > 1_000_000)
-        // Every page number below the count is a whole number as a Float, which the pager's semantics use.
+        // Every page number below the count is a whole number as a Float.
         assertEquals(PANE_PAGES - 1, (PANE_PAGES - 1).toFloat().toInt())
     }
     @Test fun thePanesAreSettingsCompassWaypointsFromLeftToRight() {
@@ -304,5 +304,104 @@ class PanesTest {
         for (view in PaneView.entries) assertEquals(PaneView.HIDDEN, pageViewUnder(TopScreen.BACKUP_OFF, view))
         assertEquals(PaneView.HIDDEN, pageViewUnder(TopScreen.BACKUP_OFF, pageView(start, start, 0f, start, false)))
         for (compass in listOf(true, false)) assertFalse(headingWanted(TopScreen.BACKUP_OFF, compass, appOnScreen = true))
+    }
+
+    // Where the ring stands, counted in pages, and where a swipe that is let go comes to rest.
+
+    @Test fun thePageNearestAPlaceInTheRowChangesHalfWayBetweenTwoPages() {
+        assertEquals(start, nearestPage(start.toDouble()))
+        assertEquals(start, nearestPage(start + 0.49))
+        assertEquals(start, nearestPage(start - 0.5))
+        assertEquals(start + 1, nearestPage(start + 0.5))
+        assertEquals(start - 1, nearestPage(start - 0.51))
+        // A page number of millions keeps a fraction of a pixel: a four-hundredth of a page is still told apart.
+        assertEquals(start + 1, nearestPage(start + 0.5025))
+        assertEquals(start, nearestPage(start + 0.4975))
+        // Never outside the row.
+        assertEquals(0, nearestPage(-0.3))
+        assertEquals(PANE_PAGES - 1, nearestPage(PANE_PAGES - 0.6))
+        assertEquals(PANE_PAGES - 1, nearestPage(PANE_PAGES + 2.0))
+    }
+    @Test fun aSwipeLetGoSlowlySettlesOnTheNearestPage() {
+        val fling = 800f
+        assertEquals(start, restPage(start + 0.3, 0f, fling))
+        assertEquals(start + 1, restPage(start + 0.6, 0f, fling))
+        assertEquals(start, restPage(start - 0.4, 0f, fling))
+        assertEquals(start - 1, restPage(start - 0.6, 0f, fling))
+        // Slower than a fling either way, the distance decides, not the direction.
+        assertEquals(start, restPage(start + 0.3, 799f, fling))
+        assertEquals(start + 1, restPage(start + 0.6, -799f, fling))
+        assertEquals(start, restPage(start.toDouble(), 0f, fling))
+    }
+    @Test fun aSwipeLetGoQuicklyTurnsToTheNextPageOnItsSide() {
+        val fling = 800f
+        assertEquals(start + 1, restPage(start + 0.05, 800f, fling))
+        assertEquals(start - 1, restPage(start - 0.05, -800f, fling))
+        assertEquals(start + 1, restPage(start + 0.9, 5_000f, fling))
+        assertEquals(start - 1, restPage(start - 0.9, -5_000f, fling))
+    }
+    @Test fun aQuickLetGoAgainstTheWayTheRowWasCarriedGoesBackToThePageItLeft() {
+        val fling = 800f
+        // Carried 0.3 toward the next page and flicked back: the page it came from, not the one before it.
+        assertEquals(start, restPage(start + 0.3, -2_000f, fling))
+        assertEquals(start, restPage(start - 0.3, 2_000f, fling))
+        // Carried past half way and flicked back: still the page it came from.
+        assertEquals(start, restPage(start + 0.7, -2_000f, fling))
+    }
+    @Test fun aQuickLetGoNeverGoesFurtherThanTheNextPageHoweverFast() {
+        for (v in listOf(800f, 4_000f, 50_000f, Float.MAX_VALUE)) {
+            assertEquals(start + 1, restPage(start + 0.2, v, 800f))
+            assertEquals(start - 1, restPage(start - 0.2, -v, 800f))
+        }
+        // Let go exactly on a page, there is nothing to turn.
+        assertEquals(start, restPage(start.toDouble(), 3_000f, 800f))
+    }
+    @Test fun aLetGoAtTheEndsOfTheRowStaysInTheRow() {
+        assertEquals(0, restPage(0.0, -3_000f, 800f))
+        assertEquals(0, restPage(0.2, -3_000f, 800f))
+        assertEquals(PANE_PAGES - 1, restPage(PANE_PAGES - 1.0, 3_000f, 800f))
+        assertEquals(PANE_PAGES - 1, restPage(PANE_PAGES - 1.2, 3_000f, 800f))
+    }
+    @Test fun aQuickLetGoComesRoundTheRingEitherWay() {
+        // Three quick swipes the same way show the same screen again, and each lands one screen on.
+        var place = start.toDouble()
+        val seen = ArrayList<Pane>()
+        repeat(3) { place = restPage(place + 0.2, 2_000f, 800f).toDouble(); seen += paneOf(place.toInt()) }
+        assertEquals(listOf(Pane.WAYPOINTS, Pane.SETTINGS, Pane.COMPASS), seen)
+        seen.clear()
+        repeat(3) { place = restPage(place - 0.2, -2_000f, 800f).toDouble(); seen += paneOf(place.toInt()) }
+        assertEquals(listOf(Pane.SETTINGS, Pane.WAYPOINTS, Pane.COMPASS), seen)
+    }
+    @Test fun underAFingerTheRowIsHeadedForThePageOnTheSideItIsCarriedTo() {
+        val after = 0.03f
+        // Still in its place: headed nowhere else.
+        assertEquals(start, headedPage(start, 0f, movedForward = true, headedAfter = after))
+        assertEquals(start, headedPage(start, 0.02f, movedForward = true, headedAfter = after))
+        assertEquals(start, headedPage(start, -0.02f, movedForward = false, headedAfter = after))
+        // Carried toward the next page, and toward the one before.
+        assertEquals(start + 1, headedPage(start, 0.1f, movedForward = true, headedAfter = after))
+        assertEquals(start - 1, headedPage(start, -0.1f, movedForward = false, headedAfter = after))
+        // Carried out and then back the other way: headed for the page it left.
+        assertEquals(start, headedPage(start, 0.1f, movedForward = false, headedAfter = after))
+        assertEquals(start, headedPage(start, -0.1f, movedForward = true, headedAfter = after))
+        // Past half way the nearest page is the next one, and the row is headed there while it is still carried on.
+        assertEquals(start + 1, headedPage(start + 1, -0.4f, movedForward = true, headedAfter = after))
+        assertEquals(start, headedPage(start + 1, -0.4f, movedForward = false, headedAfter = after))
+        // Never outside the row.
+        assertEquals(0, headedPage(0, -0.1f, movedForward = false, headedAfter = after))
+        assertEquals(PANE_PAGES - 1, headedPage(PANE_PAGES - 1, 0.1f, movedForward = true, headedAfter = after))
+    }
+    @Test fun aScreenStandsOnThePageThatShowsItNearestTheOneInView() {
+        // What the ring lays its three screens out by: from any page, each pane is on that page or next to it,
+        // and it is in view exactly when the row rests on its page.
+        for (page in listOf(start - 1, start, start + 1, start + 2)) {
+            val pages = Pane.entries.map { pageToward(page, it) }
+            assertEquals(setOf(page - 1, page, page + 1), pages.toSet())
+            for (pane in Pane.entries) {
+                assertEquals(pane, paneOf(pageToward(page, pane)))
+                val view = pageView(pageToward(page, pane), page, 0f, page, false)
+                assertEquals(if (paneOf(page) == pane) PaneView.IN_VIEW else PaneView.HIDDEN, view)
+            }
+        }
     }
 }

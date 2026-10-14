@@ -96,8 +96,8 @@ import androidx.compose.runtime.snapshotFlow
  * The waypoints, one of the three screens that sit side by side: a header that counts the targets, `Log here`, and
  * a row for each waypoint, newest first, inside the frame, which shows how far the list is scrolled.
  *
- * [paneView] says how much of the screen the wearer has in front of them. The screen is built once, with the app,
- * and stays while the ring of screens turns, hidden or not, so what has a consequence asks it first: a tap or a long press acts only while the screen
+ * [paneView] says how much of the screen the wearer has in front of them. The screen is built when the three
+ * screens are put up and stays while the ring of screens turns, hidden or not, so what has a consequence asks it first: a tap or a long press acts only while the screen
  * is in view, the logging result's time is counted only then, and the clock that marks distances as old runs only
  * while some of the screen is showing.
  *

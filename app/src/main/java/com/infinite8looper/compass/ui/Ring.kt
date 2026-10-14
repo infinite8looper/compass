@@ -42,12 +42,12 @@ import androidx.wear.compose.foundation.hierarchicalFocusGroup
 import androidx.wear.compose.foundation.pager.PagerDefaults
 import com.infinite8looper.compass.nav.PANE_PAGES
 import com.infinite8looper.compass.nav.Pane
+import com.infinite8looper.compass.nav.headedPage
+import com.infinite8looper.compass.nav.nearestPage
 import com.infinite8looper.compass.nav.pageToward
 import com.infinite8looper.compass.nav.paneOf
+import com.infinite8looper.compass.nav.restPage
 import kotlinx.coroutines.launch
-import kotlin.math.abs
-import kotlin.math.ceil
-import kotlin.math.floor
 import kotlin.math.roundToInt
 
 /**
@@ -58,7 +58,8 @@ import kotlin.math.roundToInt
  * and not on every frame of a swipe.
  *
  * It is the scrolling state of [Ring], which a finger moves through `Modifier.scrollable`; the app moves it with
- * [animateScrollToPage]. One movement runs at a time: a finger stops a slide the app started, and a new slide
+ * [animateScrollToPage]. Which page is nearest, which a finger is carrying the row to and which a let-go swipe
+ * comes to rest on are decided in nav/Panes.kt ([nearestPage], [headedPage], [restPage]). One movement runs at a time: a finger stops a slide the app started, and a new slide
  * stops the one before it.
  */
 @Stable
@@ -97,11 +98,7 @@ class RingState(startPage: Int) : ScrollableState {
         when {
             !isScrollInProgress -> currentPage
             slidingTo != NO_PAGE -> slidingTo
-            abs(currentPageOffsetFraction) >= headedAfter -> {
-                val first = if (currentPageOffsetFraction >= 0f) currentPage else currentPage - 1
-                (if (lastMovedForward) first + 1 else first).coerceIn(0, PANE_PAGES - 1)
-            }
-            else -> currentPage
+            else -> headedPage(currentPage, currentPageOffsetFraction, lastMovedForward, headedAfter)
         }
     }
 
@@ -117,7 +114,7 @@ class RingState(startPage: Int) : ScrollableState {
 
     private fun stand(at: Double) {
         position = at
-        val page = floor(at + 0.5).toInt().coerceIn(0, PANE_PAGES - 1)
+        val page = nearestPage(at)
         currentPage = page
         currentPageOffsetFraction = (at - page).toFloat()
     }
@@ -134,12 +131,7 @@ class RingState(startPage: Int) : ScrollableState {
      */
     internal suspend fun ScrollScope.settle(velocity: Float): Float {
         if (pageWidth <= 0) return velocity
-        val to = when {
-            abs(velocity) < flingAbove -> floor(position + 0.5)
-            velocity > 0f -> ceil(position)
-            else -> floor(position)
-        }.toInt().coerceIn(0, PANE_PAGES - 1)
-        slide(to, velocity, PagerDefaults.SnapAnimationSpec)
+        slide(restPage(position, velocity, flingAbove), velocity, PagerDefaults.SnapAnimationSpec)
         return 0f
     }
 

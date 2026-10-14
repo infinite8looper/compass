@@ -1,6 +1,8 @@
 package com.infinite8looper.compass.nav
 
 import kotlin.math.abs
+import kotlin.math.ceil
+import kotlin.math.floor
 
 /**
  * The three screens that sit side by side, from left to right. They form a ring: to the right of waypoints is
@@ -47,6 +49,37 @@ fun pageToward(page: Int, pane: Pane): Int {
 fun backPage(nearestPage: Int, targetPage: Int, scrollInProgress: Boolean): Int {
     val to = (if (scrollInProgress) targetPage else nearestPage) - 1
     return if (to < 0) to + Pane.entries.size else to
+}
+
+// Where the ring stands is a place in the row counted in pages: a whole number on a page, and between two of them
+// while the row moves. It is a Double: a page number of millions and a fraction of a pixel both fit.
+
+/** The page nearest [position]: the next page once the row is half way to it. Never outside the row. */
+fun nearestPage(position: Double): Int = floor(position + 0.5).coerceIn(0.0, (PANE_PAGES - 1).toDouble()).toInt()
+
+/**
+ * The page the row comes to rest on when a swipe is let go at [position] with [velocity], positive toward the next
+ * page, in the unit of [flingAbove]. Slower than [flingAbove] the row settles on the nearest page, whichever way it
+ * was moving. As fast or faster it turns to the page that lies next the way it is moving: the next page on from
+ * the one it was carried away from, or back to that one if it is flicked against the way it was carried. However
+ * fast, that is one page at most. Never outside the row.
+ */
+fun restPage(position: Double, velocity: Float, flingAbove: Float): Int = when {
+    abs(velocity) < flingAbove -> nearestPage(position)
+    velocity > 0f -> ceil(position).coerceIn(0.0, (PANE_PAGES - 1).toDouble()).toInt()
+    else -> floor(position).coerceIn(0.0, (PANE_PAGES - 1).toDouble()).toInt()
+}
+
+/**
+ * The page the row is headed for while a finger has it, when it is [offsetFraction] of a page from [nearestPage]
+ * and last moved toward the next page or not ([movedForward]): its own page until it is [headedAfter] of a page
+ * out of place, and from then on the page on the side it is being carried to, which is the one it left if the
+ * finger has turned back. Never outside the row.
+ */
+fun headedPage(nearestPage: Int, offsetFraction: Float, movedForward: Boolean, headedAfter: Float): Int {
+    if (abs(offsetFraction) < headedAfter) return nearestPage
+    val before = if (offsetFraction >= 0f) nearestPage else nearestPage - 1
+    return (if (movedForward) before + 1 else before).coerceIn(0, PANE_PAGES - 1)
 }
 
 /** How much of one of the row's pages the wearer has in front of them. */
