@@ -14,9 +14,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.CollectionInfo
 import androidx.compose.ui.semantics.collectionInfo
@@ -28,9 +26,6 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.wear.compose.foundation.BasicSwipeToDismissBox
-import androidx.wear.compose.foundation.GestureInclusion
-import androidx.wear.compose.foundation.pager.HorizontalPager
-import androidx.wear.compose.foundation.pager.PagerState
 import androidx.wear.compose.material3.AppScaffold
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
@@ -41,7 +36,6 @@ import com.infinite8looper.compass.nav.BACKUP_OFF_ROUTE
 import com.infinite8looper.compass.nav.CALIBRATE_ROUTE
 import com.infinite8looper.compass.nav.EDIT_ROUTE
 import com.infinite8looper.compass.nav.LogStatus
-import com.infinite8looper.compass.nav.PANE_PAGES
 import com.infinite8looper.compass.nav.PANES_ROUTE
 import com.infinite8looper.compass.nav.PANE_START_PAGE
 import com.infinite8looper.compass.nav.Pane
@@ -69,7 +63,7 @@ fun CompassApp() {
     // Where the row of three screens stands. It is held here, above the navigation host, so a screen opened from
     // a row comes back to the screen it was opened from. It is not saved with the activity: an app that is
     // started again opens on the compass.
-    val panes = remember { PagerState(currentPage = PANE_START_PAGE, pageCount = { PANE_PAGES }) }
+    val panes = remember { RingState(PANE_START_PAGE) }
     // Whether the compass is the screen in view: the three screens are the route on top, and the row rests on a
     // compass page.
     val route by nav.currentBackStackEntryAsState()
@@ -149,7 +143,7 @@ fun CompassApp() {
     LaunchedEffect(vm, completeKept) { if (!completeKept) vm.dropTrailComplete() }
     AppScaffold(timeText = {}) {
         // The three screens are the host's first destination, which has nothing behind it to swipe back to, so a
-        // right swipe there is only ever the pager's. The screens opened from a row keep the usual swipe back.
+        // right swipe there is only ever the ring's. The screens opened from a row keep the usual swipe back.
         SwipeDismissableNavHost(navController = nav, startDestination = PANES_ROUTE) {
             composable(PANES_ROUTE) {
                 Panes(
@@ -180,14 +174,13 @@ fun CompassApp() {
 /**
  * Settings, the compass and the waypoints side by side, in a ring that a sideways swipe turns either way.
  *
- * The pager is a long row of pages in which the three repeat ([paneOf] says which a page shows), and it keeps the
- * page on either side of the one in view composed, so all three screens exist at all times and a swipe never
- * waits for one to be built. The pager marks the page nearest its resting place as the active one, which is how
- * that screen and no other gets the focus, and with it the crown and the side buttons.
+ * The three screens are composed here once, each in its place in the [Ring], and stay: turning the ring moves them
+ * and builds nothing. Where the ring stands is counted in the pages of a long row in which the three repeat
+ * ([paneOf] says which a page shows), which is what the rules of nav/Panes.kt are written in.
  */
 @Composable
 private fun Panes(
-    vm: CompassViewModel, panes: PagerState, top: () -> TopScreen, log: LogActions, onEdit: (Long) -> Unit, onCalibrate: () -> Unit,
+    vm: CompassViewModel, panes: RingState, top: () -> TopScreen, log: LogActions, onEdit: (Long) -> Unit, onCalibrate: () -> Unit,
     onBackupOff: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -219,18 +212,20 @@ private fun Panes(
         }
     }
 
-    HorizontalPager(state = panes, modifier = Modifier.semantics { collectionInfo = CollectionInfo(rowCount = 1, columnCount = Pane.entries.size) }, beyondViewportPageCount = 1, gestureInclusion = EveryTouchPages) { page ->
-        // How much of this page the wearer has. The pager can have two pages of one pane built at a time (the one
-        // on screen and one it has prepared further along the row), so each page is told about itself. The
-        // navigation host can also draw the three screens behind a screen opened from a row, while that screen is
-        // swiped aside: there every page is hidden, a picture that does nothing ([pageViewUnder]).
-        val view: () -> PaneView = remember(panes, page, top) {
+    Ring(panes, Modifier.semantics { collectionInfo = CollectionInfo(rowCount = 1, columnCount = Pane.entries.size) }) { pane ->
+        // How much of this screen the wearer has: what the rules say of the page that shows it nearest the one
+        // in view, which is that page or the one on either side of it. The navigation host can also draw the
+        // three screens behind a screen opened from a row, while that screen is swiped aside: there every one is
+        // hidden, a picture that does nothing ([pageViewUnder]). Read through a derived state, so a screen that
+        // asks is told when the answer changes and not on every frame of a swipe.
+        val view: () -> PaneView = remember(panes, pane, top) {
             val state = derivedStateOf {
-                pageViewUnder(top(), pageView(page, panes.currentPage, panes.currentPageOffsetFraction, panes.targetPage, panes.isScrollInProgress))
+                val nearest = panes.currentPage
+                pageViewUnder(top(), pageView(pageToward(nearest, pane), nearest, panes.currentPageOffsetFraction, panes.targetPage, panes.isScrollInProgress))
             }
             return@remember { state.value }
         }
-        when (paneOf(page)) {
+        when (pane) {
             // The frames of the settings and waypoints screens hold their pane ticks.
             Pane.SETTINGS -> SettingsScreen(vm, paneView = view, onCalibrate = onCalibrate, onBackupOff = onBackupOff)
             Pane.COMPASS -> CompassScreen(
@@ -266,14 +261,6 @@ private fun KeepAwake(vm: CompassViewModel, compassInView: () -> Boolean) {
         view.keepScreenOn = awake
         onDispose { view.keepScreenOn = false }
     }
-}
-
-/**
- * The pager takes a swipe wherever it starts. Its own default leaves the left edge of its first page to a
- * swipe-to-dismiss handler, and here no swipe leaves the three screens.
- */
-private val EveryTouchPages = object : GestureInclusion {
-    override fun ignoreGestureStart(offset: Offset, layoutCoordinates: LayoutCoordinates): Boolean = false
 }
 
 /**

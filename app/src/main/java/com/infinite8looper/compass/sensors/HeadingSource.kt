@@ -22,6 +22,13 @@ class HeadingSource(context: Context) {
 
     val isSupported: Boolean get() = rotation != null
 
+    /**
+     * The heading as the rotation vector sensor gives it, with the magnetometer's last accuracy and field strength,
+     * for as long as the flow is collected. The sensors' events are delivered on the app's sensor thread
+     * ([SensorThread]), not on the main thread: the arithmetic for a reading is done there, on values only that
+     * thread touches, and the reading is handed to the collector through the flow, which keeps the newest one.
+     * When the collection ends the listener is taken off and the thread is given back.
+     */
     fun readings(): Flow<HeadingReading> = callbackFlow {
         val rot = rotation
         if (rot == null) { close(); return@callbackFlow }
@@ -47,8 +54,12 @@ class HeadingSource(context: Context) {
                 if (sensor.type == Sensor.TYPE_MAGNETIC_FIELD) accuracy = value
             }
         }
-        sensors.registerListener(listener, rot, SensorManager.SENSOR_DELAY_GAME)
-        magnet?.let { sensors.registerListener(listener, it, SensorManager.SENSOR_DELAY_UI) }
-        awaitClose { sensors.unregisterListener(listener) }
+        val handler = SensorThread.acquire()
+        sensors.registerListener(listener, rot, SensorManager.SENSOR_DELAY_GAME, handler)
+        magnet?.let { sensors.registerListener(listener, it, SensorManager.SENSOR_DELAY_UI, handler) }
+        awaitClose {
+            sensors.unregisterListener(listener)
+            SensorThread.release()
+        }
     }.conflate()
 }

@@ -34,11 +34,27 @@ android {
         }
     }
     buildTypes {
+        // DIAGNOSTICS switches on what is there for looking into the app on a watch and is in no build for a store:
+        // true in the debug build and in the watch build, false in the release build.
+        debug {
+            buildConfigField("boolean", "DIAGNOSTICS", "true")
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
             signingConfig = signingConfigs.findByName("release")
+            buildConfigField("boolean", "DIAGNOSTICS", "false")
+        }
+        // The build for trying the app on a watch: made as the release build is (minified, resources shrunk, not
+        // debuggable) and signed with this machine's debug key, the one the debug build is signed with, so it
+        // installs with no keystore and replaces a debug build in place (the application id is the same). It is
+        // for testing and is not a build to publish. `./gradlew assembleWatch`.
+        create("watch") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += "release"
+            buildConfigField("boolean", "DIAGNOSTICS", "true")
         }
     }
     compileOptions {

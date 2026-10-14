@@ -64,8 +64,8 @@ import kotlin.math.abs
  * - in view, it also takes the crown, the side button, the vertical swipe and the long press, gives the tick and
  *   the confirming tap and the blind navigation pulses, and counts the time a logging result is shown.
  *
- * The pager may build this screen twice, once where the wearer sees it and once further along its row, so nothing
- * here may count on being the only one: what there is one of (the screen's keep-awake switch) is not set here.
+ * The screen is built once, with the app, and stays while the ring of screens turns. The screen's keep-awake switch
+ * is not set here: it has to hold on the other screens too.
  *
  * [onOpenList] is what a long press does, and [onSidePress] what a single press of a side button does. A double
  * press, which there is only with the breadcrumb trail setting on, switches the trail.
@@ -74,17 +74,21 @@ import kotlin.math.abs
 fun CompassScreen(
     vm: CompassViewModel, paneView: () -> PaneView, onOpenList: () -> Unit, onSidePress: () -> Unit, onCalibrate: () -> Unit,
 ) {
+    remember { ScreenCompositions.built[Pane.COMPASS.ordinal]++ }
+    SideEffect { ScreenCompositions.composed[Pane.COMPASS.ordinal]++ }
     val view = LocalView.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    // Read where the screen is composed, so it is a derived state: the screen is composed again when it changes,
-    // which is when the compass comes onto the screen or has left it, and not while the row moves.
-    val onScreen by remember(paneView) { derivedStateOf { paneView() != PaneView.HIDDEN } }
+    // Whether any of the compass is on the screen. It is read in the effects below and never where the screen is
+    // composed: the compass coming onto the screen in a swipe, or leaving it, composes nothing.
+    val onScreen = remember(paneView) { derivedStateOf { paneView() != PaneView.HIDDEN } }
 
     // Held as a State and read only in the frame loop and derived states, so sensor events do not recompose.
     // The sensor is listened to only while the compass is on screen; hidden, it keeps the last reading it had.
     val readingState = remember(vm) { mutableStateOf(vm.heading.value) }
     LaunchedEffect(vm, lifecycle, onScreen) {
-        if (onScreen) lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { vm.heading.collect { readingState.value = it } }
+        snapshotFlow { onScreen.value }.collectLatest { on ->
+            if (on) lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { vm.heading.collect { readingState.value = it } }
+        }
     }
     val nav by vm.nav.collectAsStateWithLifecycle()
     val navState = rememberUpdatedState(nav)
@@ -221,7 +225,9 @@ fun CompassScreen(
     }
     val showingMagnetic = nav.north == NorthRef.MAGNETIC || nav.declination == null
     val stale by produceState(false, nav.fixElapsedMs, onScreen) {
-        while (onScreen) { value = isStale(SystemClock.elapsedRealtime(), nav.fixElapsedMs); delay(1_000) }
+        snapshotFlow { onScreen.value }.collectLatest { on ->
+            while (on) { value = isStale(SystemClock.elapsedRealtime(), nav.fixElapsedMs); delay(1_000) }
+        }
     }
 
     // What the crown has scrolled toward the next step of the focus, and how far a step is on this screen's density.
@@ -248,7 +254,7 @@ fun CompassScreen(
     BoxWithConstraints(
         Modifier.fillMaxSize().background(Color.Black)
             // The crown and the side buttons come to whichever of the three screens has the focus, which the
-            // pager gives to the one nearest its resting place. The compass acts on them only once it is in view:
+            // ring gives to the one nearest its resting place. The compass acts on them only once it is in view:
             // until then a turn or a press is taken and dropped, so it reaches nothing else either.
             .onRotaryScrollEvent { e ->
                 if (paneView() == PaneView.IN_VIEW) {
@@ -267,13 +273,13 @@ fun CompassScreen(
             }
             // A plain focus target, not `focusable()`. Observed on the API 35 emulator: with `focusable()` here,
             // every slide the app itself made onto the compass (Back from waypoints, a second Back on through it)
-            // was cancelled just as the compass took the focus, which the pager gives a page half way through a
+            // was cancelled just as the compass took the focus, which the pager the screens then stood in gave a page half way through a
             // slide (6 of 6); with `focusTarget()` and nothing else changed, none was (0 of 9). `focusable()`
             // asks to be brought into view when it takes the focus, which is the likely cause.
             .requestFocusOnHierarchyActive().focusTarget()
             // Three gestures start on the dial, and a touch becomes at most one of them. A sideways swipe is the
-            // pager's, around this screen. The two below are the compass's own: a vertical swipe moves the focus
-            // among the targets, and a long press opens the waypoints. Whichever of the pager and the vertical
+            // ring's, around this screen. The two below are the compass's own: a vertical swipe moves the focus
+            // among the targets, and a long press opens the waypoints. Whichever of the ring and the vertical
             // swipe first sees the finger travel its own way takes the touch, and the other then sees it as taken
             // and lets go, so a swipe that wanders is one or the other. Either ends the wait for a long press.
             .pointerInput(vm, paneView) {
@@ -301,22 +307,32 @@ fun CompassScreen(
         // Like the dial, the readout is laid out in fractions of the dial radius. The number is pinned at the
         // center and every other line has a fixed slot above or below it, so nothing moves when a line appears,
         // and every slot is narrow enough to stay inside the circle the cardinal letters sweep around.
+        // The readout is composed apart from the screen's own function, and counts as the screen.
+        SideEffect { ScreenCompositions.composed[Pane.COMPASS.ordinal]++ }
         val r = minOf(maxWidth, maxHeight) / 2
         val density = LocalDensity.current
-        fun style(fraction: Float, weight: FontWeight = FontWeight.Normal) = with(density) {
-            val size = (r * fraction).toSp()
-            TextStyle(
-                fontSize = size, lineHeight = size * 1.1f, fontWeight = weight, textAlign = TextAlign.Center,
-                platformStyle = PlatformTextStyle(includeFontPadding = false),
-                lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None),
+        // The readout's text styles depend on the dial's radius alone, and are made once for it: a line that
+        // changes is composed again with the style it had.
+        val styles = remember(r, density) {
+            fun style(fraction: Float, weight: FontWeight = FontWeight.Normal) = with(density) {
+                val size = (r * fraction).toSp()
+                TextStyle(
+                    fontSize = size, lineHeight = size * 1.1f, fontWeight = weight, textAlign = TextAlign.Center,
+                    platformStyle = PlatformTextStyle(includeFontPadding = false),
+                    lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None),
+                )
+            }
+            ReadoutStyles(
+                body = style(READOUT_BODY_SIZE), detail = style(READOUT_DETAIL_SIZE),
+                heading = style(READOUT_HEADING_SIZE, FontWeight.Light), coordinates = style(COORDINATES_SIZE),
             )
         }
-        val bodyStyle = style(READOUT_BODY_SIZE)
+        val bodyStyle = styles.body
         fun Modifier.slot(y: Float, width: Float) = align(Alignment.Center).offset(y = r * y).width(r * width)
         // Where the rows stand. With the coordinates switched on there are two rows more, the latitude at the top
         // and the longitude at the bottom, and the rows between stand a little closer to the heading to make room.
         // Which set it is depends on the setting alone, so no row moves while the compass is in use.
-        val rows = readoutRows(nav.showCoordinates)
+        val rows = remember(nav.showCoordinates) { readoutRows(nav.showCoordinates) }
 
         // The dial steps back while the hint asks for something: its value is the last one taken, not a live one.
         val dialAlpha = animateFloatAsState(if (holdFlat) DIAL_DIMMED else 1f, tween(250), label = "dial")
@@ -365,9 +381,9 @@ fun CompassScreen(
             val laying = nav.trail.mode == TrailMode.LAYING
             if (showingMagnetic || laying) {
                 Row(Modifier.slot(rows.top, 0.6f), Arrangement.Center, Alignment.CenterVertically) {
-                    if (showingMagnetic) Text("MAG", color = Dim, style = style(READOUT_DETAIL_SIZE), maxLines = 1)
+                    if (showingMagnetic) Text("MAG", color = Dim, style = styles.detail, maxLines = 1)
                     if (showingMagnetic && laying) Spacer(Modifier.width(r * 0.06f))
-                    if (laying) Text(trailLabel(nav.trail.count), color = CrumbColor, style = style(READOUT_DETAIL_SIZE), maxLines = 1, softWrap = false)
+                    if (laying) Text(trailLabel(nav.trail.count), color = CrumbColor, style = styles.detail, maxLines = 1, softWrap = false)
                 }
             }
             // The middle slot holds the heading, or, while the heading cannot be trusted, the hint that says why.
@@ -381,7 +397,7 @@ fun CompassScreen(
                     running = { paneView() != PaneView.HIDDEN },
                 )
                 else -> {
-                    HeadingNumber({ headingShown }, showingMagnetic, style(READOUT_HEADING_SIZE, FontWeight.Light), Modifier.slot(0f, 2 * READOUT_RADIUS))
+                    HeadingNumber({ headingShown }, showingMagnetic, styles.heading, Modifier.slot(0f, 2 * READOUT_RADIUS))
                     if (calibrate) Text("Calibrate", color = Dim, style = bodyStyle, maxLines = 1, modifier = Modifier.slot(rows.prompt, 0.6f))
                 }
             }
@@ -403,19 +419,21 @@ fun CompassScreen(
             else Text(
                 // For the crumb walked to, a fix too poor to consume it has its accuracy after the distance,
                 // dim: the wearer standing on a crumb that stays sees why.
-                text = if (main.note == null) AnnotatedString(main.words) else buildAnnotatedString {
-                    append(main.words); append(' ')
-                    withStyle(SpanStyle(color = Dim)) { append(main.note) }
+                text = remember(main.words, main.note) {
+                    if (main.note == null) AnnotatedString(main.words) else buildAnnotatedString {
+                        append(main.words); append(' ')
+                        withStyle(SpanStyle(color = Dim)) { append(main.note) }
+                    }
                 },
                 color = color, style = bodyStyle, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.slot(rows.main, 0.78f),
             )
         }
-        lines.detail?.let { StatusLine(it.words, toneColor(it.tone), style(READOUT_DETAIL_SIZE), Modifier.slot(rows.detail, 0.62f), view = paneView) }
+        lines.detail?.let { StatusLine(it.words, toneColor(it.tone), styles.detail, Modifier.slot(rows.detail, 0.62f), view = paneView) }
 
         // The watch's own position, when the setting asks for it: two small, quiet lines, the latitude above
         // everything else in the readout and the longitude below it. They stay through a save, a failure, the
         // calibrate prompt and a swipe, and are left out only in the hold-flat state.
-        val coordinateStyle = style(COORDINATES_SIZE)
+        val coordinateStyle = styles.coordinates
         lines.latitude?.let {
             Text(it.words, color = toneColor(it.tone), style = coordinateStyle, maxLines = 1, softWrap = false, modifier = Modifier.slot(rows.latitude, 0.6f))
         }
@@ -448,6 +466,9 @@ internal fun StatusLine(text: String, color: Color, style: TextStyle, modifier: 
         autoSize = TextAutoSize.StepBased(minFontSize = style.fontSize * STATUS_SMALLEST, maxFontSize = style.fontSize, stepSize = 0.25.sp),
     )
 }
+
+/** The text styles of the compass's readout, made once for a dial radius. */
+private class ReadoutStyles(val body: TextStyle, val detail: TextStyle, val heading: TextStyle, val coordinates: TextStyle)
 
 /** How small a line of the logging status is drawn, as a share of its full size, before it is cut short or slides. */
 private const val STATUS_SMALLEST = 0.75f

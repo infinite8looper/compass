@@ -9,9 +9,9 @@ import kotlin.math.abs
 enum class Pane { SETTINGS, COMPASS, WAYPOINTS }
 
 /**
- * The ring is laid out as a long row of pages in which the three panes repeat, so a swipe the same way always
- * finds a next page. The app opens in the middle of the row, on a compass page, a million and a half swipes
- * from either end.
+ * Where the ring stands is counted along a long row of pages in which the three panes repeat, so a swipe the same
+ * way always finds a next page. The app opens in the middle of the row, on a compass page, a million and a half
+ * swipes from either end.
  */
 const val PANE_PAGES = 3_000_000
 const val PANE_START_PAGE = PANE_PAGES / 2 + 1
@@ -76,9 +76,9 @@ private const val PANE_ON_SCREEN = 0.001f
  * the way. What a page starts when it comes into view therefore starts when the movement has ended.
  *
  * This is the one definition of "in view" for the three screens: everything a screen does only while it is the
- * one in view asks this. It is asked about a page, not about a pane, because the same pane is on every third page
- * and the pager may have built two pages of one pane at once, the one the wearer sees and one further along the
- * row; only the first of them is anywhere near the screen.
+ * one in view asks this. It is asked about a page, not about a pane, because the same pane is on every third page:
+ * a screen asks about the page that shows it nearest the one in view ([pageToward]), the only one of them that is
+ * anywhere near the screen.
  */
 fun pageView(page: Int, nearestPage: Int, offsetFraction: Float, targetPage: Int, scrollInProgress: Boolean): PaneView = when {
     page == nearestPage ->

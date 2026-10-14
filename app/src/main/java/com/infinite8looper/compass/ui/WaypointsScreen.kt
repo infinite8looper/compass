@@ -41,6 +41,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
@@ -88,13 +89,15 @@ import com.infinite8looper.compass.nav.scrollArc
 import com.infinite8looper.compass.nav.statusDetailContinues
 import com.infinite8looper.compass.nav.statusText
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import androidx.compose.runtime.snapshotFlow
 
 /**
  * The waypoints, one of the three screens that sit side by side: a header that counts the targets, `Log here`, and
  * a row for each waypoint, newest first, inside the frame, which shows how far the list is scrolled.
  *
- * [paneView] says how much of the screen the wearer has in front of them. The pager may build this screen while it
- * is hidden, and twice, so what has a consequence asks it first: a tap or a long press acts only while the screen
+ * [paneView] says how much of the screen the wearer has in front of them. The screen is built once, with the app,
+ * and stays while the ring of screens turns, hidden or not, so what has a consequence asks it first: a tap or a long press acts only while the screen
  * is in view, the logging result's time is counted only then, and the clock that marks distances as old runs only
  * while some of the screen is showing.
  *
@@ -122,12 +125,18 @@ fun WaypointsScreen(
     vm: CompassViewModel, paneView: () -> PaneView, onEdit: (Long) -> Unit, onLogHere: () -> Unit, onSidePress: () -> Unit,
     onDropCrumb: () -> Unit,
 ) {
+    remember { ScreenCompositions.built[Pane.WAYPOINTS.ordinal]++ }
+    SideEffect { ScreenCompositions.composed[Pane.WAYPOINTS.ordinal]++ }
     val nav by vm.nav.collectAsStateWithLifecycle()
     val listState = rememberScalingLazyListState()
-    val onScreen by remember(paneView) { derivedStateOf { paneView() != PaneView.HIDDEN } }
+    // Whether any of the screen is showing. Read in the clock below and never where the screen is composed: the
+    // screen coming onto the display in a swipe, or leaving it, composes nothing.
+    val onScreen = remember(paneView) { derivedStateOf { paneView() != PaneView.HIDDEN } }
     // The same check the compass uses: a fix that has stopped arriving makes the distances old.
     val stale by produceState(false, nav.fixElapsedMs, onScreen) {
-        while (onScreen) { value = isStale(SystemClock.elapsedRealtime(), nav.fixElapsedMs); delay(1_000) }
+        snapshotFlow { onScreen.value }.collectLatest { on ->
+            while (on) { value = isStale(SystemClock.elapsedRealtime(), nav.fixElapsedMs); delay(1_000) }
+        }
     }
     val status by vm.logStatus.collectAsStateWithLifecycle()
     LogResultTimer(vm, paneView)

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -50,8 +51,9 @@ import com.infinite8looper.compass.nav.accuracyLabel
  * then `Calibrate` and the version, inside the frame, which shows how far the list is scrolled.
  * A switch is its row: one tap anywhere on the row turns it, and the tick at the right shows which way it stands.
  *
- * [paneView] says how much of the screen the wearer has in front of them. The pager may build this screen while it
- * is hidden, and twice, so what has a consequence asks it first: a tap acts only while the screen is in view.
+ * [paneView] says how much of the screen the wearer has in front of them. The screen is built once, with the app,
+ * and stays while the ring of screens turns, hidden or not, so what has a consequence asks it first: a tap acts
+ * only while the screen is in view. Its list is where it was left when the ring comes round to it again.
  * `Calibrate` shows the accuracy the magnetometer last reported while the compass or calibration had it running;
  * this screen does not run the sensor.
  *
@@ -60,6 +62,8 @@ import com.infinite8looper.compass.nav.accuracyLabel
  */
 @Composable
 fun SettingsScreen(vm: CompassViewModel, paneView: () -> PaneView, onCalibrate: () -> Unit, onBackupOff: () -> Unit) {
+    remember { ScreenCompositions.built[Pane.SETTINGS.ordinal]++ }
+    SideEffect { ScreenCompositions.composed[Pane.SETTINGS.ordinal]++ }
     // The switches come from the settings file alone. The screen state the other screens share can stay unloaded
     // for as long as the crumbs cannot be read with the trail setting on, and a switch does not wait for that: the
     // trail's own switch least of all, since turning it off is what ends that wait.

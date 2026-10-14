@@ -20,10 +20,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -276,15 +274,19 @@ internal const val ROW_RING = 0.80f
 /** How much of a list's height, at its top and again at its bottom, the rows fade out over. */
 private const val LIST_FADE = 0.2f
 
-/** Fades what it is put on out toward its top and bottom edges: for a list whose rows scroll in and out of the frame. */
-internal fun Modifier.fadeTopAndBottom(): Modifier =
-    graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }.drawWithContent {
+/**
+ * Fades what it is put on out toward its top and bottom edges: for a list whose rows scroll in and out of the frame.
+ * The fade is the screen's black drawn over the rows, thinning to nothing a fifth of the way in from each edge, so
+ * the rows are drawn straight to the screen and through no buffer of their own. It is for a list on black. The
+ * gradient is made once for a size, and a scroll makes nothing.
+ */
+internal fun Modifier.fadeTopAndBottom(): Modifier = drawWithCache {
+    val fade = Brush.verticalGradient(0f to Color.Black, LIST_FADE to Color.Transparent, 1f - LIST_FADE to Color.Transparent, 1f to Color.Black)
+    onDrawWithContent {
         drawContent()
-        drawRect(
-            Brush.verticalGradient(0f to Color.Transparent, LIST_FADE to Color.Black, 1f - LIST_FADE to Color.Black, 1f to Color.Transparent),
-            blendMode = BlendMode.DstIn,
-        )
+        drawRect(fade)
     }
+}
 
 private val TickLength = 22.dp
 private val TickStub = 7.dp
@@ -318,9 +320,11 @@ fun TickToggle(on: Boolean, modifier: Modifier = Modifier, color: () -> Color = 
  * top and bottom its end can run under the tick.
  *
  * With [fitContent], [content] has all the width up to the tick instead, which is what a row in the middle of the
- * screen has free, and whatever the ends coming in leave no room for fades out at its right end, while drawing: a
- * row away from the middle shows the start of a long line, and all of it once it is scrolled to the middle. For
- * rows whose text is fixed and long.
+ * screen has free, and whatever the ends coming in leave no room for fades out at its right end: a row away from
+ * the middle shows the start of a long line, and all of it once it is scrolled to the middle. For rows whose text
+ * is fixed and long. The fade is the screen's black on a layer of its own over the text, thinning to nothing to
+ * the left of where the tick starts; scrolling moves that layer and draws neither it nor the text again, and the
+ * text goes through no buffer. It is for a row on black.
  *
  * With [centered], [content] sits in the middle of the row instead and nothing moves: for a header, or a row that
  * is one word.
@@ -347,23 +351,27 @@ fun InstrumentRow(
     ) {
         if (centered) Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { content() }
         else {
-            Box(
-                Modifier.weight(1f).then(
-                    if (fitContent) Modifier.graphicsLayer { translationX = inset.floatValue; compositingStrategy = CompositingStrategy.Offscreen }
-                        .drawWithContent {
-                            drawContent()
-                            // Both ends have come in by the inset, so the tick now starts that much twice over
-                            // before the end of this box. The text is gone where the tick starts and whole a
-                            // gap before that, which in the middle of the screen is where the text ends anyway.
-                            val tick = size.width - 2f * inset.floatValue
-                            if (tick < size.width) drawRect(
-                                Brush.horizontalGradient(listOf(Color.Black, Color.Transparent), tick - ROW_FIT_GAP.toPx(), tick),
-                                blendMode = BlendMode.DstIn,
-                            )
+            if (fitContent) Box(Modifier.weight(1f).graphicsLayer { translationX = inset.floatValue }, contentAlignment = Alignment.CenterStart) {
+                Box(Modifier.padding(end = ROW_FIT_GAP)) { content() }
+                // Both ends have come in by the inset, so the tick now starts that much twice over before the
+                // end of this box. The text is gone where the tick starts and whole a gap before that, which in
+                // the middle of the screen is where the text ends anyway. The cover is drawn once, as it stands
+                // in the middle of the screen: thinning to nothing over the gap before the end of the box, and
+                // solid from there on for as far as the two ends can ever come in. Its layer is moved left by
+                // twice the inset, which is all a scroll does to it.
+                Spacer(
+                    Modifier.matchParentSize().graphicsLayer { translationX = -2f * inset.floatValue }.drawWithCache {
+                        val gap = ROW_FIT_GAP.toPx()
+                        val fade = Brush.horizontalGradient(listOf(Color.Transparent, Color.Black), size.width - gap, size.width)
+                        val solid = Size(2f * radius.toPx(), size.height)
+                        onDrawBehind {
+                            drawRect(fade, Offset(size.width - gap, 0f), Size(gap, size.height))
+                            drawRect(Color.Black, Offset(size.width, 0f), solid)
                         }
-                        .padding(end = ROW_FIT_GAP)
-                    else Modifier.graphicsLayer { translationX = inset.floatValue }.padding(end = radius * ROW_TEXT_ROOM)
-                ),
+                    }
+                )
+            } else Box(
+                Modifier.weight(1f).graphicsLayer { translationX = inset.floatValue }.padding(end = radius * ROW_TEXT_ROOM),
                 contentAlignment = Alignment.CenterStart,
             ) { content() }
             if (trailing != null) Box(Modifier.graphicsLayer { translationX = -inset.floatValue }) { trailing() }
