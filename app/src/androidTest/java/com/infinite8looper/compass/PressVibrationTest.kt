@@ -160,6 +160,42 @@ class PressVibrationTest {
         }
     }
 
+    /** The system's status of a recorded vibration, lower case: `finished`, `cancelled_superseded`, ... */
+    private fun statusOf(line: String): String =
+        (Regex("\\|\\s*([a-z_]+)\\s*\\| duration").find(line) ?: Regex("status: ([A-Za-z_]+)").find(line))?.groupValues?.get(1)?.lowercase() ?: "?"
+    private fun startOf(line: String): String =
+        Regex("^\\s*(?:startTime: )?(\\d\\d-\\d\\d \\d\\d:\\d\\d:\\d\\d\\.\\d+)").find(line)!!.groupValues[1]
+
+    /**
+     * An instant save finishes tens of milliseconds after its press. Its confirming vibration waits until the press's
+     * has played, so neither is cut short and both are felt (Task 3's record showed the press `cancelled_superseded`
+     * by the confirming vibration about 40 ms after it).
+     */
+    @Test fun anInstantSavesConfirmingVibrationDoesNotCutThePressShort() = runBlocking {
+        ActivityScenario.launch(MainActivity::class.java).use {
+            shows("the compass") { compassInView() }
+            swipeLeft(); shows("the waypoints") { onScreen("Log here") }
+            // A position in hand, so the save is instant (the feed sends one each second).
+            delay(3_000)
+            val mark = System.currentTimeMillis()
+            assertTrue(rowOf("Log here").performAction(AccessibilityNodeInfo.ACTION_CLICK))
+            val writtenAt = waypointWrittenAt(1)
+            assertTrue("the save took ${writtenAt - mark} ms, not an instant save", writtenAt - mark < 150)
+            delay(2_000)
+            val lines = vibrations(mark, mark + 3_000)
+            val all = "recorded: $lines"
+            assertTrue("no vibration was cut short; $all", lines.none { statusOf(it) != "finished" })
+            if (Build.VERSION.SDK_INT >= 35) {
+                val press = lines.single { "performHapticFeedback(constant=1)" in it }
+                val confirm = lines.single { "performHapticFeedback(constant=16)" in it }
+                val pressAt = stamp.parse(startOf(press))!!.time; val confirmAt = stamp.parse(startOf(confirm))!!.time
+                assertTrue("the confirming vibration came ${confirmAt - pressAt} ms after the press; $all", confirmAt - pressAt >= 140)
+            } else {
+                assertEquals(all, 2, lines.size)
+            }
+        }
+    }
+
     @Test fun theLogHereAndDropCrumbRowsAreAnsweredWithAVibrationBeforeTheRowIsWritten() = runBlocking {
         ActivityScenario.launch(MainActivity::class.java).use {
             shows("the compass") { compassInView() }

@@ -12,8 +12,12 @@
 # 0 LONG_PRESS); API 33 and 34 record only the effect, and the line says so.
 # The totals sort the entries into the app's three kinds, by constant where there is one and by effect where not:
 # locks (CONFIRM; two thuds or a click), heartbeats (CONTEXT_CLICK; the tick effect), ticks (the tick tap's
-# constant; the texture tick effect). Where the vibrator has no texture tick (the API 37 emulator) a tick tap is
-# played as the tick effect, which only the constant tells from a heartbeat.
+# constant; the texture tick effect), and the dial's three where they play as composition primitives (the table
+# in app/src/main/java/com/infinite8looper/compass/ui/Vibrations.kt): thin (TICK), thick (THUD), target (two
+# CLICKs). Where the vibrator has no texture tick (the API 37 emulator) a tick tap is played as the tick effect, which
+# only the constant tells from a heartbeat. Where the watch lacks a primitive the dial's row plays its constant
+# instead: a thin line as the tick tap's constant (counted as a tick), a thick line as VIRTUAL_KEY (1, the press's
+# constant, counted as other) and the target as CONTEXT_CLICK (counted as a heartbeat).
 # The system keeps a limited number of entries per kind of use and later folds old ones together, so read soon
 # after the thing happened: a long run of tick taps pushes older entries out (20 are kept on API 33).
 source "$(dirname "$0")/emulator-only.sh" || exit 1
@@ -35,10 +39,15 @@ import re, sys
 # API 33 and 34:
 #   startTime: MM-DD HH:MM:SS.mmm, endTime: ..., status: S, effect: ..., originalEffect: ..., uid: ..., opPkg: ...
 mark, pkg = sys.argv[1], sys.argv[2]
-names = {"16": "CONFIRM", "6": "CONTEXT_CLICK", "27": "SEGMENT_FREQUENT_TICK", "4": "CLOCK_TICK", "0": "LONG_PRESS"}
+names = {"16": "CONFIRM", "6": "CONTEXT_CLICK", "27": "SEGMENT_FREQUENT_TICK", "4": "CLOCK_TICK", "0": "LONG_PRESS",
+         "1": "VIRTUAL_KEY"}
 kinds = {"16": "lock", "6": "heartbeat", "27": "tick", "4": "tick"}
 def kind(constant, what):
     if constant: return kinds.get(constant, "other")
+    played = re.findall(r"Primitive[={](?:primitive=)?([A-Z_]+)", what)
+    if played == ["TICK"]: return "thin"
+    if played == ["THUD"]: return "thick"
+    if played == ["CLICK", "CLICK"]: return "target"
     if "THUD" in what or re.search(r"(effect=|Prebaked=)CLICK", what): return "lock"
     if "TEXTURE_TICK" in what: return "tick"
     if re.search(r"(effect=|Prebaked=)TICK", what): return "heartbeat"
@@ -62,5 +71,5 @@ for t, c, status, what in rows:
     print(t, names.get(c, "constant=" + c) if c else "(no constant recorded)", status, what)
 k = [kind(c, what) for _, c, _, what in rows]
 print("total", len(rows), " locks", k.count("lock"), " heartbeats", k.count("heartbeat"), " ticks", k.count("tick"),
-      " other", k.count("other"), " not finished", sum(1 for r in rows if r[2] != "finished"))
+      " thin", k.count("thin"), " thick", k.count("thick"), " target", k.count("target"), " other", k.count("other"), " not finished", sum(1 for r in rows if r[2] != "finished"))
 ' "$2" "$PKG"
