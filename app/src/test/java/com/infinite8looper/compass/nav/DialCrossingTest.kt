@@ -166,6 +166,19 @@ class DialCrossingTest {
         assertTrue(dialVibrationDue(DialCrossing.THIN, t, t - 150 * ms, null, 0L, lastTargetNanos = t - TICK_QUIET_AFTER_TARGET_NANOS))
     }
 
+    @Test fun theLinesStayQuietForAsLongAsTheTargetsVibrationLasts() {
+        val ms = 1_000_000L
+        val t = 10_000 * ms
+        // At least 150 ms; longer where the vibrator says the target's vibration lasts longer (the emulators play each
+        // primitive for 100 ms, so two clicks 50 ms apart last 250 ms).
+        assertEquals(TICK_QUIET_AFTER_TARGET_NANOS, targetQuietNanos(lengthMs = 90))
+        assertEquals(TICK_QUIET_AFTER_TARGET_NANOS, targetQuietNanos(lengthMs = 0))
+        assertEquals(250 * ms, targetQuietNanos(lengthMs = 250))
+        assertFalse(dialVibrationDue(DialCrossing.THIN, t, t - 200 * ms, null, 0L, lastTargetNanos = t - 200 * ms, targetQuietNanos = 250 * ms))
+        assertTrue(dialVibrationDue(DialCrossing.THIN, t, t - 250 * ms, null, 0L, lastTargetNanos = t - 250 * ms, targetQuietNanos = 250 * ms))
+        assertTrue(dialVibrationDue(DialCrossing.TARGET, t, t - 10 * ms, null, 0L, lastTargetNanos = t - 200 * ms, targetQuietNanos = 250 * ms))
+    }
+
     /** The compass screen's frame loop for the dial vibrations, with the same pure functions in the same order. */
     private class Frames(var target: Float?, val blindNavigation: Boolean = false, val tickFeedback: Boolean = true, var positionStale: Boolean = false) {
         var nowNanos = 1_000_000_000L

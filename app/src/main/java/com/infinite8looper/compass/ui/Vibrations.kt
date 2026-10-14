@@ -111,6 +111,12 @@ class Vibrations private constructor(private val view: View) {
     fun branch(feel: Feel): VibrationBranch =
         if (prepared?.effects?.get(feel.ordinal) != null) VibrationBranch.PRIMITIVES else VibrationBranch.CONSTANT
 
+    /**
+     * How long [feel] lasts as it plays here, in milliseconds: its primitives' durations (`getPrimitiveDurations`)
+     * and delays where it plays as primitives, else [CONSTANT_LENGTH_MS], what the emulators' CONFIRM lasts.
+     */
+    fun lengthMs(feel: Feel): Int = prepared?.lengthsMs?.get(feel.ordinal)?.takeIf { it >= 0 } ?: CONSTANT_LENGTH_MS
+
     /** Plays [feel] now. */
     fun play(feel: Feel) {
         val ready = prepared
@@ -147,10 +153,12 @@ class Vibrations private constructor(private val view: View) {
     }
 
     /** What is asked of the vibrator once for the process: it, and each row's composition where it supports the row. */
-    private class Prepared(val vibrator: Vibrator, val effects: Array<VibrationEffect?>)
+    private class Prepared(val vibrator: Vibrator, val effects: Array<VibrationEffect?>, val lengthsMs: IntArray)
 
     companion object {
         private const val TAG = "Vibrations"
+        /** The length taken for a row played as its constant, whose length the app cannot ask: the emulators' CONFIRM, 300 ms. */
+        const val CONSTANT_LENGTH_MS = 300
         @Volatile private var prepared: Prepared? = null
         @Volatile private var preparing = false
 
@@ -165,7 +173,9 @@ class Vibrations private constructor(private val view: View) {
             Thread({
                 val vibrator = app.getSystemService(VibratorManager::class.java)?.defaultVibrator?.takeIf { it.hasVibrator() }
                 if (vibrator != null) {
-                    prepared = Prepared(vibrator, Array(Feel.entries.size) { i -> composition(vibrator, Feel.entries[i]) })
+                    val effects = Array(Feel.entries.size) { i -> composition(vibrator, Feel.entries[i]) }
+                    val lengths = IntArray(Feel.entries.size) { i -> if (effects[i] == null) -1 else lengthOf(vibrator, Feel.entries[i]) }
+                    prepared = Prepared(vibrator, effects, lengths)
                 }
                 if (BuildConfig.DIAGNOSTICS) {
                     val effects = prepared?.effects
@@ -183,6 +193,9 @@ class Vibrations private constructor(private val view: View) {
             else VibrationEffect.startComposition().apply {
                 for (p in feel.primitives.indices) addPrimitive(feel.primitives[p], feel.scales[p], feel.delaysMs[p])
             }.compose()
+
+        @SuppressLint("WrongConstant")
+        private fun lengthOf(vibrator: Vibrator, feel: Feel): Int = vibrator.getPrimitiveDurations(*feel.primitives).sum() + feel.delaysMs.sum()
 
         /** The player for the window [view] is in, kept as a tag of the window's root view and gone with it. */
         fun of(view: View): Vibrations {
