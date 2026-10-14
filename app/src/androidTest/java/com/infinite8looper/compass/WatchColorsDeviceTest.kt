@@ -8,6 +8,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.infinite8looper.compass.nav.ColorMode
+import com.infinite8looper.compass.nav.MIN_HUE_APART
+import com.infinite8looper.compass.nav.hueApart
 import com.infinite8looper.compass.nav.Palette
 import com.infinite8looper.compass.nav.RoleColors
 import com.infinite8looper.compass.nav.STANDARD_PALETTE
@@ -102,8 +104,11 @@ class WatchColorsDeviceTest {
             assertEquals(graysFor(scheme), p.grays)
             assertNotEquals(STANDARD_PALETTE.grays.ink, p.grays.ink)
             assertColors(p)
-            // A waypoint's stored place is on the ring of the three roles.
-            assertEquals(Color(0xFF000000.toInt() or ringColor(137.5f / 360f, p.roles.accent, p.roles.north, p.roles.error)), waypointColor(137.5f))
+            // A waypoint's stored place is on the ring of the accent, north and a third anchor apart from both (the
+            // owner, 2026-10-14: "for themed colors make sure the wheel has *3* anchorpoints"); until then the third
+            // was always the error color.
+            assertEquals(Color(0xFF000000.toInt() or ringColor(137.5f / 360f, p.roles.accent, p.roles.north, p.ringThird)), waypointColor(137.5f))
+            assertTrue(hueApart(p.ringThird, p.roles.accent) >= MIN_HUE_APART && hueApart(p.ringThird, p.roles.north) >= MIN_HUE_APART)
         } else {
             assertNull(scheme)
             assertColors(STANDARD_PALETTE)

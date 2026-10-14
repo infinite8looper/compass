@@ -21,7 +21,10 @@ class ColorRingTest {
     private fun rolesOf(primary: Int, tertiary: Int, error: Int) = roleColors(WatchScheme(primary, tertiary, error))
 
     // The two schemes the Wear OS 7.0 emulator's system made from the seeds 2F8BFF and 00AA55 (its primary,
-    // tertiary and error colors as `cmd overlay lookup` gave them), and the app's own colors.
+    // tertiary and error colors as `cmd overlay lookup` gave them), and the app's own colors. The tests here are of
+    // the ring with the three role colors as its anchors; the app's waypoints take the third from the palette
+    // (`Palette.ringThird`), which is the error color only where that is apart in hue from both others, so the app
+    // no longer draws a ring of the blue, the red and the red (ColorsSettingTest).
     private val own = roleColors(null)
     private val schemeA = rolesOf(0xB7CFFF, 0xD3C8FF, 0xFFBEB9)
     private val schemeB = rolesOf(0xBBEFC2, 0xDCE9A1, 0xFFBEB9)
@@ -280,23 +283,27 @@ class ColorRingTest {
     }
 
     @Test fun theValuesNewWaypointsAreGivenLandOnDifferentColors() {
-        // The stored values of the first eight waypoints, as before; on the app's own ring each has a color of its own
-        // except those that fall in the red third.
+        // The stored values of the first eight waypoints. They start at 108.325, the middle of the widest gap
+        // between the app's red and blue: the owner (2026-10-14), "in standard (non-theme) colors use the full color
+        // wheel and start with something away from the existing red/blue colors". Until then they started at 0. On
+        // a ring of the blue, the red and the red each has a color of its own except those that fall in the red third.
         val first = (0 until 8).map { hueForIndex(it) }
-        assertEquals(listOf(0f, 137.508f, 275.016f, 52.524f, 190.032f, 327.54f, 105.048f, 242.556f), first.map { (it * 1000).roundToInt() / 1000f })
+        assertEquals(listOf(108.325f, 245.833f, 23.341f, 160.849f, 298.357f, 75.865f, 213.373f, 350.881f), first.map { (it * 1000).roundToInt() / 1000f })
         val colors = first.map { hex(ringColor(it / 360f, blue, red, red)) }
-        assertEquals(listOf(1, 4), colors.indices.filter { colors[it] == hex(red) })
+        assertEquals(listOf(3, 6), colors.indices.filter { colors[it] == hex(red) })
         assertEquals(7, colors.toSet().size)
     }
 
     private companion object {
         const val LOWEST_SOFT_A = 4.55
-        const val LOWEST_SOFT_B = 5.41
+        // The accents of the two schemes are deepened to 0.30 (the owner, 2026-10-14: "Deepen to ~0.3
+        // saturation"); until then they were 0xB7CFFF and 0xBBEFC2, and LOWEST_SOFT_B was 5.41 and LOWEST_A 8.30.
+        const val LOWEST_SOFT_B = 5.24
         /** Degrees of hue between a soft line that was brightened and the color it was made from. */
         const val SOFT_LINE_HUE_TOLERANCE = 2f
-        const val LOWEST_A = 8.30
+        const val LOWEST_A = 8.27
         const val LOWEST_B = 13.28
-        const val ROLES_A = "#B7CFFF #D57FFF #FFBEB9"
-        const val ROLES_B = "#BBEFC2 #DAE974 #FFBEB9"
+        const val ROLES_A = "#B2CCFF #D47FFF #FFBEB9"
+        const val ROLES_B = "#A7EFB1 #D9E974 #FFBEB9"
     }
 }

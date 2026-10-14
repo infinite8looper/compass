@@ -10,8 +10,13 @@ class WatchColorsTest {
     private val paleBlue = 0xB7CFFF
     private val paleViolet = 0xD3C8FF
     private val paleRed = 0xFFBEB9
+    // paleBlue and 0xB8FEC4 as accents: their saturations, 0.28 and 0.27, are raised to 0.30. The owner (2026-10-14),
+    // on a pale accent: "Deepen to ~0.3 saturation". Until then each was the accent as it was.
+    private val paleBlueAccent = 0xB2CCFF
+    private val paleGreenAccent = 0xB1FEBE
 
     private fun roles(primary: Int, tertiary: Int, error: Int = paleRed) = roleColors(WatchScheme(primary, tertiary, error))
+    private fun brightest(rgb: Int) = maxOf(rgb shr 16 and 0xFF, rgb shr 8 and 0xFF, rgb and 0xFF)
 
     // Without a scheme, and with the app's own pair
 
@@ -25,12 +30,13 @@ class WatchColorsTest {
         assertEquals(RoleColors(blue, red, red), roles(blue, red, red))
     }
     @Test fun aSchemeThatReadsAndIsWellApartIsUsedAsItIs() {
-        assertEquals(RoleColors(0xB8FEC4, 0xFF7AA8, paleRed), roles(0xB8FEC4, 0xFF7AA8))
-        assertEquals(RoleColors(paleBlue, 0xFF6B4A, paleRed), roles(paleBlue, 0xFF6B4A))
+        assertEquals(RoleColors(paleGreenAccent, 0xFF7AA8, paleRed), roles(0xB8FEC4, 0xFF7AA8))
+        assertEquals(RoleColors(paleBlueAccent, 0xFF6B4A, paleRed), roles(paleBlue, 0xFF6B4A))
+        assertEquals(RoleColors(0x9FC0FF, 0xFF6B4A, paleRed), roles(0x9FC0FF, 0xFF6B4A))
     }
     @Test fun onlyTheRedGreenAndBlueOfASchemeColorCount() {
         assertEquals(roles(0xB8FEC4, 0xFF7AA8), roleColors(WatchScheme(0xFFB8FEC4.toInt(), 0xFFFF7AA8.toInt(), 0xFFFFBEB9.toInt())))
-        assertEquals(RoleColors(0xB8FEC4, 0xFF7AA8, paleRed), roleColors(WatchScheme(0x00B8FEC4, 0x80FF7AA8.toInt(), 0x10FFBEB9)))
+        assertEquals(RoleColors(paleGreenAccent, 0xFF7AA8, paleRed), roleColors(WatchScheme(0x00B8FEC4, 0x80FF7AA8.toInt(), 0x10FFBEB9)))
     }
 
     // Contrast against black
@@ -76,7 +82,9 @@ class WatchColorsTest {
         assertEquals(0xFF, accent and 0xFF)
     }
     @Test fun aColorThatAlreadyReadsIsNotTouched() {
-        assertEquals(paleBlue, roles(paleBlue, paleRed).accent)
+        // paleBlue itself is now deepened (see paleBlueAccent); what it is deepened to is not touched again.
+        assertEquals(paleBlueAccent, roles(paleBlueAccent, paleRed).accent)
+        assertEquals(0x9FC0FF, roles(0x9FC0FF, paleRed).accent)
         // A color exactly as light as it has to be.
         val edge = roles(0x000080, paleRed).accent
         assertEquals(edge, roles(edge, paleRed).accent)
@@ -109,24 +117,32 @@ class WatchColorsTest {
         // A gray with a little warmth is still a gray among the ink and the dim text.
         assertEquals(blue, roles(0x8A8580, paleRed).accent)
     }
-    @Test fun aPaleColorThatIsStillAColorIsKept() {
+    @Test fun aPrimaryWithTheAccentsLeastSaturationIsUsedAsItIs() {
+        // The owner (2026-10-14), on a pale accent: "Deepen to ~0.3 saturation". Until then a primary of 0.15 or
+        // more was used as it was (0xD6D6FF, 0.16, and paleViolet, 0.22); now one of 0.30 or more is.
         assertEquals(0.15f, MIN_SATURATION, 0f)
-        assertEquals(paleViolet, roles(paleViolet, paleRed).accent)
-        // Just over the least saturation, at full brightness, is used as it is.
-        assertEquals(0xD6D6FF, roles(0xD6D6FF, paleRed).accent)  // 0.16
+        assertEquals(0.30f, ACCENT_MIN_SATURATION, 0f)
+        assertEquals(blue, roles(blue, paleRed).accent)
+        assertNotEquals(0xB3B3FF, roles(0xB3B3FF, paleRed).accent)   // 0.298: deepened
+        for (kept in listOf(0xB2B2FF, 0x9FC0FF, 0xFF9999)) {    // 0.30, 0.38, 0.40
+            assertTrue(saturationOf(kept) >= ACCENT_MIN_SATURATION)
+            assertEquals("%06X".format(kept), kept, roles(kept, paleRed).accent)
+        }
     }
-    @Test fun aPalePrimaryJustUnderTheLeastSaturationIsDeepenedAndKept() {
-        // v3 spec ("Colors"): "A pale primary is deepened and kept, not thrown away." Until v3 these two gave the
-        // blue: 0xDBDBFF (0.14) and the Wear OS 5.1 image's fixed primary 0xD9E2FF (0.149).
-        for (pale in listOf(0xDBDBFF, 0xD9E2FF)) {
+    @Test fun aPalePrimaryIsDeepenedToTheAccentsLeastSaturationAndKept() {
+        // v3 spec ("Colors"): "A pale primary is deepened and kept, not thrown away." Until v3 0xDBDBFF (0.14) and
+        // the Wear OS 5.1 image's fixed primary 0xD9E2FF (0.149) gave the blue. How deep, the owner (2026-10-14):
+        // "Deepen to ~0.3 saturation". So every primary from the saturation of a gray up to 0.30 is raised to 0.30:
+        // until then these were raised only to 0.15 (the first two) or used as they were (the others).
+        for (pale in listOf(0xDBDBFF, 0xD9E2FF, 0xE5E5FF, 0xD6D6FF, paleViolet, paleBlue, 0xBBEFC2)) {
             val accent = roles(pale, paleRed).accent
             val what = "%06X -> %06X".format(pale, accent)
             assertNotEquals(what, blue, accent)
-            // Deepened just to the least saturation: the same hue and the same brightness.
-            assertTrue(what, saturationOf(accent) >= MIN_SATURATION)
-            assertTrue(what, saturationOf(accent) < MIN_SATURATION + 0.01f)
+            // Deepened just to that saturation: the same hue and the same brightness.
+            assertTrue(what, saturationOf(accent) >= ACCENT_MIN_SATURATION)
+            assertTrue(what, saturationOf(accent) < ACCENT_MIN_SATURATION + 0.01f)
             assertEquals(what, hueOf(pale), hueOf(accent), 1.5f)
-            assertEquals(what, 0xFF, accent and 0xFF)
+            assertEquals(what, brightest(pale), brightest(accent))
             assertTrue(what, contrastOnBlack(accent) >= MIN_CONTRAST)
         }
     }
@@ -138,7 +154,7 @@ class WatchColorsTest {
         assertNotEquals(blue, roles(0xE5E5FF, paleRed).accent)   // 0.102
     }
     @Test fun aGrayTertiaryGivesTheRedAndAGrayErrorGivesTheRed() {
-        assertEquals(RoleColors(paleBlue, red, red), roles(paleBlue, 0x808080, error = 0x909090))
+        assertEquals(RoleColors(paleBlueAccent, red, red), roles(paleBlue, 0x808080, error = 0x909090))
         assertEquals(red, roles(paleBlue, 0x101010).north)
     }
     @Test fun aSchemeOfGraysGivesTheBlueAndTheRed() {
@@ -158,7 +174,7 @@ class WatchColorsTest {
     @Test fun aTertiaryEqualToThePrimaryIsTurnedAwayFromIt() {
         for (same in listOf(0x76FD9D, paleBlue, blue, red, 0x00A0C8, 0xFFD000)) {
             val roles = roles(same, same)
-            assertEquals(roles.toString(), same, roles.accent)
+            assertEquals(roles.toString(), if (same == paleBlue) paleBlueAccent else same, roles.accent)
             assertEquals(roles.toString(), MIN_HUE_APART, hueApart(roles.accent, roles.north), 1.5f)
             assertTrue(roles.toString(), contrastOnBlack(roles.north) >= MIN_CONTRAST)
             assertTrue(roles.toString(), saturationOf(roles.north) >= MIN_SATURATION)
@@ -198,7 +214,7 @@ class WatchColorsTest {
         // 32 degrees apart, both pale: the pair the system made from a blue seed.
         assertEquals(32f, hueApart(paleBlue, paleViolet), 0.5f)
         val roles = roles(paleBlue, paleViolet)
-        assertEquals(paleBlue, roles.accent)
+        assertEquals(paleBlueAccent, roles.accent)
         assertEquals(MIN_HUE_APART, hueApart(roles.accent, roles.north), 1.5f)
         assertEquals(hueOf(paleBlue) + MIN_HUE_APART, hueOf(roles.north), 1.5f)
         assertEquals(NORTH_MIN_SATURATION, saturationOf(roles.north), 0.01f)
@@ -224,8 +240,9 @@ class WatchColorsTest {
         assertEquals(0xFF7F7F, roles(paleBlue, 0xFF8080).north)
     }
     @Test fun theAccentAndTheErrorColorAreNotDeepened() {
+        // The accent is deepened only to its own least saturation, not to north's.
         val roles = roles(paleBlue, paleRed, error = paleRed)
-        assertEquals(paleBlue, roles.accent)
+        assertEquals(paleBlueAccent, roles.accent)
         assertEquals(paleRed, roles.error)
         assertNotEquals(paleRed, roles.north)
     }
@@ -277,8 +294,8 @@ class WatchColorsTest {
         assertEquals(paleRed, roles.error)
     }
     @Test fun aRejectedTertiaryOrErrorColorAloneCostsOnlyItsOwnRole() {
-        assertEquals(RoleColors(paleBlue, red, paleRed), roles(paleBlue, 0x808080, paleRed))
-        assertEquals(paleBlue, roles(paleBlue, 0xFF7AA8, 0x909090).accent)
+        assertEquals(RoleColors(paleBlueAccent, red, paleRed), roles(paleBlue, 0x808080, paleRed))
+        assertEquals(paleBlueAccent, roles(paleBlue, 0xFF7AA8, 0x909090).accent)
         assertEquals(0xFF7AA8, roles(paleBlue, 0xFF7AA8, 0x909090).north)
         assertEquals(red, roles(paleBlue, 0xFF7AA8, 0x909090).error)
     }
@@ -291,7 +308,8 @@ class WatchColorsTest {
         // The pink scheme: 13 degrees of hue and 0.02 of saturation apart.
         assertEquals(13f, hueApart(0xFFBEC7, 0xFFBEB9), 1f)
         val pink = roles(0xFFBEC7, 0xFDC3EF, 0xFFBEB9)
-        assertEquals(0xFFBEC7, pink.accent)
+        // 0xFFBEC7 has 0.25 and is deepened to 0.30 (the owner, 2026-10-14: "Deepen to ~0.3 saturation").
+        assertEquals(0xFFB2BD, pink.accent)
         assertEquals(red, pink.error)
         // Close in hue and as pale: 43 degrees apart at the same saturation.
         assertEquals(red, roles(0x76FF76, 0xFF7AA8, 0xD8FF76).error)
@@ -307,10 +325,13 @@ class WatchColorsTest {
     @Test fun anErrorColorCloseInHueButFarInSaturationIsKept() {
         // A strong red pointer and the pale red: 1 degree apart, 0.48 of saturation apart.
         assertEquals(paleRed, roles(0xFF5040, 0x808080, paleRed).error)
-        // A pale pink pointer and a strong red: 0.31 apart.
-        assertEquals(0xFF7070, roles(0xFFBEC7, 0xFDC3EF, 0xFF7070).error)
+        // A pale pink pointer and a strong red: 0.31 apart. The pointer is 0xFFB2BD, 0.30, since the owner's
+        // "Deepen to ~0.3 saturation" (2026-10-14); until then it was 0xFFBEC7, 0.25, and these two were 0xFF7070
+        // and 0xFF7575, as far from that.
+        assertEquals(0.302f, saturationOf(roles(0xFFBEC7, 0xFDC3EF).accent), 0.001f)
+        assertEquals(0xFF6363, roles(0xFFBEC7, 0xFDC3EF, 0xFF6363).error)
         // 0.29 apart is not enough.
-        assertEquals(red, roles(0xFFBEC7, 0xFDC3EF, 0xFF7575).error)
+        assertEquals(red, roles(0xFFBEC7, 0xFDC3EF, 0xFF6868).error)
     }
     @Test fun theErrorColorIsNotComparedWithNorth() {
         // North is made from a tertiary equal to the error color, and both stand.
@@ -368,6 +389,7 @@ class WatchColorsTest {
             assertTrue(what, contrastOnBlack(roles.north) >= MIN_CONTRAST)
             assertTrue(what, contrastOnBlack(roles.error) >= MIN_CONTRAST)
             assertTrue(what, saturationOf(roles.accent) >= MIN_SATURATION)
+            assertTrue(what, saturationOf(roles.accent) >= ACCENT_MIN_SATURATION)
             assertTrue(what, saturationOf(roles.north) >= NORTH_MIN_SATURATION)
             assertTrue(what, hueApart(roles.accent, roles.north) >= MIN_HUE_APART)
             if (roles != roleColors(null)) used++

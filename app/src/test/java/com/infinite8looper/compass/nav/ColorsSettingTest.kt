@@ -85,27 +85,143 @@ class ColorsSettingTest {
         }
     }
     @Test fun aWaypointKeepsItsStoredPlaceInBothModes() {
-        val watchFace = paletteFor(ColorMode.WATCH_FACE, api37Blue)
-        assertEquals(WaypointColors.RING, watchFace.waypoints)
-        for (place in listOf(0f, 52.5f, 137.5f, 190f, 275f, 359f)) {
-            assertEquals(wheelColor(place), waypointRgb(STANDARD_PALETTE, place))
-            val r = watchFace.roles
-            assertEquals(ringColor(place / 360f, r.accent, r.north, r.error), waypointRgb(watchFace, place))
+        // The ring's third anchor is the palette's (the owner, 2026-10-14: "for themed colors make sure the wheel
+        // has *3* anchorpoints"); until then it was always the error color.
+        for (scheme in recorded) {
+            val watchFace = paletteFor(ColorMode.WATCH_FACE, scheme)
+            assertEquals(WaypointColors.RING, watchFace.waypoints)
+            for (place in listOf(0f, 52.5f, 137.5f, 190f, 275f, 359f)) {
+                assertEquals(wheelColor(place), waypointRgb(STANDARD_PALETTE, place))
+                val r = watchFace.roles
+                assertEquals(ringColor(place / 360f, r.accent, r.north, watchFace.ringThird), waypointRgb(watchFace, place))
+            }
         }
+    }
+
+    // Where new waypoints start. The owner (2026-10-14): "in standard (non-theme) colors use the full color wheel
+    // and start with something away from the existing red/blue colors."
+
+    @Test fun theFirstNewWaypointStartsInTheMiddleOfTheWidestGapBetweenNorthsRedAndThePointersBlue() {
+        // The red's hue is 3.2 degrees and the blue's 213.5: the gap through yellow and green is 210.3 wide, and its
+        // middle is 108.3.
+        assertEquals(3.19f, hueOf(FALLBACK_NORTH), 0.01f)
+        assertEquals(213.46f, hueOf(FALLBACK_ACCENT), 0.01f)
+        assertEquals(108.33f, widestGapMiddle(FALLBACK_NORTH, FALLBACK_ACCENT), 0.01f)
+        assertEquals(widestGapMiddle(FALLBACK_NORTH, FALLBACK_ACCENT), hueForIndex(0), 0.001f)
+        val first = wheelColor(hueForIndex(0))
+        assertTrue("%06X".format(first), hueApart(first, FALLBACK_NORTH) >= 100f)
+        assertTrue("%06X".format(first), hueApart(first, FALLBACK_ACCENT) >= 100f)
+    }
+    @Test fun afterTheFirstTheWaypointsGoOnRoundTheFullWheelByTheGoldenAngle() {
+        for (i in 1 until 50) assertEquals("$i", normalizeDeg(hueForIndex(0) + i * 137.508f), hueForIndex(i), 0.01f)
+        // Every hue is reached: the first 50 leave no gap of the wheel wider than 15 degrees.
+        val sorted = (0 until 50).map { hueForIndex(it) }.sorted()
+        val gaps = sorted.zipWithNext { a, b -> b - a } + (sorted.first() + 360f - sorted.last())
+        assertTrue("$gaps", gaps.max() < 15f)
+    }
+    @Test fun theWidestGapIsFoundEitherWayRoundAndForOneHue() {
+        // 0 and 90: the gap from 90 round to 360 is the wider; 300 and 30 (across the top): the gap from 30 to 300.
+        assertEquals(225f, widestGapMiddle(0xFF0000, fromHsv(90f, 1f, 1f)), 0.5f)
+        assertEquals(165f, widestGapMiddle(fromHsv(300f, 1f, 1f), fromHsv(30f, 1f, 1f)), 0.5f)
+        assertEquals(165f, widestGapMiddle(fromHsv(30f, 1f, 1f), fromHsv(300f, 1f, 1f)), 0.5f)
+        // One hue twice: the whole wheel is the gap, and its middle is opposite.
+        assertEquals(180f, widestGapMiddle(0xFF0000, 0xFF0000), 0.5f)
+    }
+
+    // The ring's three anchors. The owner (2026-10-14): "for themed colors make sure the wheel has *3* anchorpoints--
+    // otherwise the wheel will have repetitions (i.e., not actually a wheel)".
+
+    private fun assertThreeAnchorsApart(what: String, p: Palette) {
+        val a = p.roles.accent; val n = p.roles.north; val t = p.ringThird
+        val all = "$what -> %06X %06X %06X".format(a, n, t)
+        assertTrue(all, hueApart(a, n) >= MIN_HUE_APART)
+        assertTrue(all, hueApart(a, t) >= MIN_HUE_APART)
+        assertTrue(all, hueApart(n, t) >= MIN_HUE_APART)
+        // The third reads on black and is a color, as the error color it stands in for has to.
+        assertTrue(all, contrastOnBlack(t) >= MIN_CONTRAST)
+        assertTrue(all, saturationOf(t) >= MIN_SATURATION)
+    }
+    @Test fun theRingOfEveryRecordedSchemeHasThreeAnchorsApartInHue() {
+        for (scheme in recorded) assertThreeAnchorsApart("$scheme", paletteFor(ColorMode.WATCH_FACE, scheme))
+    }
+    @Test fun theRingOfManyRandomSchemesHasThreeAnchorsApartInHue() {
+        val random = java.util.Random(20261015L)
+        repeat(20_000) {
+            val scheme = WatchScheme(random.nextInt(0x1000000), random.nextInt(0x1000000), random.nextInt(0x1000000))
+            assertThreeAnchorsApart("$scheme", paletteFor(ColorMode.WATCH_FACE, scheme))
+        }
+    }
+    @Test fun theSchemesErrorColorIsTheThirdAnchorWhereItIsApartFromBoth() {
+        // Seed 2F8BFF: the error color 0xFFBEB9 (hue 4) is 144 degrees from the accent and 84 from north.
+        val p = paletteFor(ColorMode.WATCH_FACE, api37Blue)
+        assertEquals(0xFFBEB9, p.roles.error)
+        assertEquals(0xFFBEB9, p.ringThird)
+        assertEquals(0xFFBEB9, paletteFor(ColorMode.WATCH_FACE, api37Green).ringThird)
+    }
+    @Test fun whereTheErrorColorIsNotApartTheThirdIsMadeInTheWidestGapAndTheErrorColorIsUnchanged() {
+        // API 35: the error color 0xF2B8B5 (hue 3) is only 58 degrees from north (hue 305).
+        val p = paletteFor(ColorMode.WATCH_FACE, api35)
+        assertTrue(hueApart(p.roles.error, p.roles.north) < MIN_HUE_APART)
+        assertEquals(0xF2B8B5, p.roles.error)
+        assertNotEquals(p.roles.error, p.ringThird)
+        assertEquals(widestGapMiddle(p.roles.accent, p.roles.north), hueOf(p.ringThird), 1.5f)
+        assertThreeAnchorsApart("api35", p)
+    }
+    @Test fun aSchemeWhosePrimaryGivesWayStillHasAThirdAnchorAndNotARepeatedRed() {
+        // A gray primary: the roles are the app's own blue, red and red; the ring is not blue, red, red.
+        val p = paletteFor(ColorMode.WATCH_FACE, WatchScheme(0x808080, 0xFF7AA8, 0xFFBEB9))
+        assertEquals(RoleColors(FALLBACK_ACCENT, FALLBACK_NORTH, FALLBACK_ERROR), p.roles)
+        assertEquals(widestGapMiddle(FALLBACK_ACCENT, FALLBACK_NORTH), hueOf(p.ringThird), 1.5f)
+        assertThreeAnchorsApart("gray primary", p)
+    }
+
+    // The accent and the ink. The owner (2026-10-14), on a pale accent: "Deepen to ~0.3 saturation".
+
+    /**
+     * The measure: the accent's saturation is at least [ACCENT_INK_SATURATION_APART] more than the ink's. Both are
+     * near white where the scheme is pale, and the ink takes its hue from the scheme, so they can share a hue: what
+     * tells them apart is how much color each has. The accent has at least 0.30 and the ink under 0.09.
+     */
+    private fun assertAccentApartFromInk(what: String, p: Palette) {
+        val apart = saturationOf(p.roles.accent) - saturationOf(p.grays.ink)
+        assertTrue("$what -> %06X %06X: %.3f".format(p.roles.accent, p.grays.ink, apart), apart >= ACCENT_INK_SATURATION_APART)
+    }
+    @Test fun theAccentIsToldApartFromTheInkOnTheRecordedSchemes() {
+        assertEquals(0.2f, ACCENT_INK_SATURATION_APART, 0f)
+        for (scheme in recorded) assertAccentApartFromInk("$scheme", paletteFor(ColorMode.WATCH_FACE, scheme))
+        assertAccentApartFromInk("standard", STANDARD_PALETTE)
+    }
+    @Test fun theAccentIsToldApartFromTheInkOnManyRandomSchemes() {
+        val random = java.util.Random(20261016L)
+        repeat(20_000) {
+            val scheme = WatchScheme(
+                random.nextInt(0x1000000), random.nextInt(0x1000000), random.nextInt(0x1000000),
+                random.nextInt(0x1000000), random.nextInt(0x1000000), random.nextInt(0x1000000),
+            )
+            assertAccentApartFromInk("$scheme", paletteFor(ColorMode.WATCH_FACE, scheme))
+        }
+        // The palest a primary can be and still be used, with an ink of its own hue.
+        assertAccentApartFromInk("pale", paletteFor(ColorMode.WATCH_FACE, WatchScheme(0xE5E5FF, 0xFDD7FA, 0xF2B8B5, onSurface = 0xE5E5FF)))
     }
 
     // Watch face: the roles
 
     @Test fun watchFaceTakesTheRolesFromTheScheme() {
         for (scheme in recorded) assertEquals(roleColors(scheme), paletteFor(ColorMode.WATCH_FACE, scheme).roles)
-        assertEquals(RoleColors(0xB7CFFF, roleColors(api37Blue).north, 0xFFBEB9), paletteFor(ColorMode.WATCH_FACE, api37Blue).roles)
+        // The primary 0xB7CFFF has 0.28 and is deepened to 0.30 (the owner, 2026-10-14: "Deepen to ~0.3
+        // saturation"); until then it was the accent as it was.
+        val r = paletteFor(ColorMode.WATCH_FACE, api37Blue).roles
+        assertEquals(RoleColors(r.accent, roleColors(api37Blue).north, 0xFFBEB9), r)
+        assertEquals(hueOf(0xB7CFFF), hueOf(r.accent), 1.5f)
+        assertEquals(ACCENT_MIN_SATURATION, saturationOf(r.accent), 0.01f)
     }
     @Test fun thePalePrimaryOfTheApi35ImageIsDeepenedAndKept() {
-        // v3 spec: "A pale primary is deepened and kept, not thrown away."
+        // v3 spec: "A pale primary is deepened and kept, not thrown away." How deep, the owner (2026-10-14):
+        // "Deepen to ~0.3 saturation"; until then to 0.15.
         val roles = paletteFor(ColorMode.WATCH_FACE, api35).roles
         assertNotEquals(standardRoles, roles)
-        assertTrue("%06X".format(roles.accent), saturationOf(roles.accent) >= MIN_SATURATION)
-        assertTrue("%06X".format(roles.accent), saturationOf(roles.accent) < MIN_SATURATION + 0.01f)
+        assertTrue("%06X".format(roles.accent), saturationOf(roles.accent) >= ACCENT_MIN_SATURATION)
+        assertTrue("%06X".format(roles.accent), saturationOf(roles.accent) < ACCENT_MIN_SATURATION + 0.01f)
         assertEquals(hueOf(0xD9E2FF), hueOf(roles.accent), 1.5f)
         assertEquals(0xFF, roles.accent and 0xFF)
         assertTrue(contrastOnBlack(roles.accent) >= MIN_CONTRAST)

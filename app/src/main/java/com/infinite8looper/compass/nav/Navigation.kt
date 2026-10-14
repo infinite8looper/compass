@@ -117,9 +117,17 @@ fun nextArrived(current: Boolean, meters: Double, units: Units): Boolean = when 
 
 /**
  * The value stored for the color of waypoint number [index] (the first is 0): golden-angle steps round the 360
- * degrees of the ring the colors come from ([ringColor]), so neighbors are far apart on it and no value repeats.
+ * degrees of the full wheel ([wheelColor]) or the ring ([ringColor]) the colors come from, so neighbors are far apart
+ * on it and no value repeats. The first is [FIRST_WAYPOINT_PLACE]. A waypoint keeps the value it was given.
  */
-fun hueForIndex(index: Int): Float = normalizeDeg(index * 137.508f)
+fun hueForIndex(index: Int): Float = normalizeDeg(FIRST_WAYPOINT_PLACE + index * 137.508f)
+
+/**
+ * Where the first new waypoint is put on the wheel: the middle of the widest gap of hue between the app's red north
+ * and blue pointer (108.3 degrees, a green), the hue furthest from both. The owner (2026-10-14): "in standard
+ * (non-theme) colors use the full color wheel and start with something away from the existing red/blue colors."
+ */
+val FIRST_WAYPOINT_PLACE: Float = widestGapMiddle(FALLBACK_NORTH, FALLBACK_ACCENT)
 
 fun shouldHoldFlat(pitchDeg: Float): Boolean = pitchDeg > 70f
 /**

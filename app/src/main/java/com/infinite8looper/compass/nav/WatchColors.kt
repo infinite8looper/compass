@@ -26,6 +26,19 @@ const val MIN_CONTRAST = 4.5
 const val MIN_SATURATION = 0.15f
 
 /**
+ * The least saturation of the accent (v3): a pale primary is deepened to it. The owner (2026-10-14), on a pale
+ * accent: "Deepen to ~0.3 saturation", about what the Wear OS 7.0 emulator's schemes have (0.22 to 0.28).
+ */
+const val ACCENT_MIN_SATURATION = 0.30f
+
+/**
+ * How much more saturation the accent has than the ink, at least: the accent has [ACCENT_MIN_SATURATION] or more
+ * and the ink taken from a scheme is held under [GRAY_SATURATION] less a hair ([graysFor]), so where both are near
+ * white and share a hue the accent still has the color the ink lacks.
+ */
+const val ACCENT_INK_SATURATION_APART = 0.2f
+
+/**
  * Under this saturation a color is a gray. A scheme's primary under it, once it reads, is not used; the ink and the
  * grays taken from a scheme ([graysFor]) are held under it. The grays of the schemes the emulators gave had up to 0.085.
  */
@@ -71,9 +84,9 @@ data class RoleColors(val accent: Int, val north: Int, val error: Int)
  * - It must be a color: one with less than [MIN_SATURATION], as it stands or once lightened, is not used. A gray
  *   pointer could not be told from the ticks, nor a gray switch that is on from one that is off.
  *
- * The primary alone is kept when it is pale (v3): one under [MIN_SATURATION] once it reads, but at or over
- * [GRAY_SATURATION], is deepened to [MIN_SATURATION], with its hue and its brightness kept ([deepened]). Only a primary
- * under [GRAY_SATURATION], which is a gray, is not used.
+ * The primary alone is kept when it is pale (v3): one under [ACCENT_MIN_SATURATION] once it reads, but at or over
+ * [GRAY_SATURATION], is deepened to [ACCENT_MIN_SATURATION], with its hue and its brightness kept ([deepened]). Only a
+ * primary under [GRAY_SATURATION], which is a gray, is not used.
  *
  * A scheme whose primary is not used is not used at all: all three colors are the app's own, so the app's blue
  * never stands beside a north from the watch. A tertiary or an error color that is not used gives only its own
@@ -100,33 +113,34 @@ fun roleColors(scheme: WatchScheme?): RoleColors {
 
 /**
  * The accent made from the scheme's primary [rgb]: lightened until it reads on black; then, if that leaves less than
- * [MIN_SATURATION] but at least [GRAY_SATURATION], deepened to [MIN_SATURATION] ([deepened]); null when it is a gray.
+ * [ACCENT_MIN_SATURATION] but at least [GRAY_SATURATION], deepened to [ACCENT_MIN_SATURATION] ([deepened]); null
+ * when it is a gray.
  */
 private fun usableAccent(rgb: Int): Int? {
     val lit = readable(rgb and 0xFFFFFF)
     val saturation = saturationOf(lit)
     return when {
-        saturation >= MIN_SATURATION -> lit
+        saturation >= ACCENT_MIN_SATURATION -> lit
         saturation < GRAY_SATURATION -> null
         else -> deepened(lit)
     }
 }
 
 /**
- * [rgb], a pale color that reads on black, with its saturation raised to [MIN_SATURATION]: the same hue and the same
- * brightest channel, the others lowered. Checked on the color returned, in whole red, green and blue: where rounding
+ * [rgb], a pale color that reads on black, with its saturation raised to [ACCENT_MIN_SATURATION]: the same hue and
+ * the same brightest channel, the others lowered. Checked on the color returned, in whole red, green and blue: where rounding
  * leaves it a hair under the saturation it aims a little higher, and where lowering the other channels took it under
  * [MIN_CONTRAST] it is made brighter.
  */
 private fun deepened(rgb: Int): Int {
     val hue = hueOf(rgb)
-    var saturation = MIN_SATURATION
+    var saturation = ACCENT_MIN_SATURATION
     var value = valueOf(rgb)
     repeat(NORTH_PASSES) {
         val made = fromHsv(hue, saturation, value)
         when {
             contrastOnBlack(made) < MIN_CONTRAST -> if (value < 1f) value = minOf(1f, value + NORTH_STEP) else return rgb
-            saturationOf(made) < MIN_SATURATION -> saturation = minOf(1f, saturation + NORTH_STEP)
+            saturationOf(made) < ACCENT_MIN_SATURATION -> saturation = minOf(1f, saturation + NORTH_STEP)
             else -> return made
         }
     }
@@ -274,8 +288,13 @@ data class Grays(val ink: Int, val dim: Int, val faint: Int, val label: Int)
 /** How a waypoint's stored place, 0 to 360, becomes its color: the full wheel of hues, or the ring of the three roles. */
 enum class WaypointColors { WHEEL, RING }
 
-/** Every color the screens take from the setting. */
-data class Palette(val roles: RoleColors, val grays: Grays, val waypoints: WaypointColors)
+/**
+ * Every color the screens take from the setting. [ringThird] is the third anchor of the ring the waypoints' colors
+ * come from with [WaypointColors.RING], after the accent and north ([ringThirdFor]).
+ */
+data class Palette(
+    val roles: RoleColors, val grays: Grays, val waypoints: WaypointColors, val ringThird: Int = ringThirdFor(roles),
+)
 
 /** `Standard`: north red, the pointer blue, the app's own grays, and the full wheel for waypoints. */
 val STANDARD_PALETTE = Palette(
@@ -346,5 +365,45 @@ private fun grayLike(from: Int, own: Int): Int {
 /** A waypoint's color in [palette] for its stored place [position], 0 to 360. It allocates nothing. */
 fun waypointRgb(palette: Palette, position: Float): Int = when (palette.waypoints) {
     WaypointColors.WHEEL -> wheelColor(position)
-    WaypointColors.RING -> palette.roles.let { ringColor(position / 360f, it.accent, it.north, it.error) }
+    WaypointColors.RING -> palette.roles.let { ringColor(position / 360f, it.accent, it.north, palette.ringThird) }
+}
+
+/**
+ * The third anchor of the ring of [roles], after the accent and north, so that the ring has three colors apart in
+ * hue and is a wheel without repeats. The owner (2026-10-14): "for themed colors make sure the wheel has *3*
+ * anchorpoints-- otherwise the wheel will have repetitions (i.e., not actually a wheel)".
+ *
+ * It is the error color where that is at least [MIN_HUE_APART] of hue from both the accent and north. Otherwise
+ * (the app's own red is north's red, and a scheme's error color can lie near north) it is a color made at the
+ * middle of the widest gap of hue between the accent and north ([widestGapMiddle]), which is at least 90 degrees
+ * from each: with the mean of their two saturations, at least [MIN_SATURATION], at full brightness, and lightened
+ * until it reads on black, as the error color has to. The error color itself, the one errors are drawn in, is not
+ * changed.
+ */
+fun ringThirdFor(roles: RoleColors): Int {
+    val error = roles.error and 0xFFFFFF
+    if (hueApart(error, roles.accent) >= MIN_HUE_APART && hueApart(error, roles.north) >= MIN_HUE_APART) return error
+    val saturation = maxOf(MIN_SATURATION, (saturationOf(roles.accent) + saturationOf(roles.north)) / 2f)
+    var made = readable(fromHsv(widestGapMiddle(roles.accent, roles.north), saturation, 1f))
+    // Lightening lowers the saturation; at full brightness every hue reads by about 0.6 of saturation, so this is
+    // reached only by a hue that had to be lightened a great deal, and is then given a little more.
+    var more = saturation
+    while (saturationOf(made) < MIN_SATURATION && more < 1f) {
+        more = minOf(1f, more + NORTH_STEP * 8)
+        made = readable(fromHsv(widestGapMiddle(roles.accent, roles.north), more, 1f))
+    }
+    return made
+}
+
+/**
+ * The hue in the middle of the wider of the two gaps between the hues of [a] and [b], in degrees from 0 up to 360:
+ * the hue furthest from both. For one hue twice, the one opposite it.
+ */
+fun widestGapMiddle(a: Int, b: Int): Float {
+    val from = hueOf(a and 0xFFFFFF)
+    val to = hueOf(b and 0xFFFFFF)
+    // The gap from [from] round to [to] the way the hues increase, 0 up to 360; the other gap is the rest.
+    val gap = ((to - from) % 360f + 360f) % 360f
+    val middle = if (gap == 0f || gap >= 180f) from + (if (gap == 0f) 360f else gap) / 2f else to + (360f - gap) / 2f
+    return ((middle % 360f) + 360f) % 360f
 }
