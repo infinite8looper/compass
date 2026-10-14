@@ -139,7 +139,7 @@ private fun rememberLeaveOnce(onDone: () -> Unit): () -> Unit {
 
 /**
  * Everything about one waypoint, on one screen, in fractions of the screen's radius:
- * - the frame is the color wheel: the ring the waypoints' colors come from ([waypointColor]). A finger that goes
+ * - the frame is the color wheel: the waypoints' colors in the order of their places ([waypointColor]). A finger that goes
  *   down on it and moves along it, or taps it, picks the color under it, and the crown turns the color;
  * - a row above the middle shows and switches whether the waypoint is a target;
  * - the name is in the middle, and a tap on it opens the system's text input;
@@ -363,10 +363,11 @@ private class HueWrites(initial: Float, private val store: (Float) -> Unit) {
 }
 
 /**
- * The frame as a color wheel: the ring the waypoints' colors come from ([waypointColor]), which fades from the
- * accent at 12 o'clock to north a third of the way round clockwise, on to the error color at two thirds and back to
- * the accent, and a line across the ring at the waypoint's place on it, drawn like a focused target's line on the
- * dial. [hue] is that place, the waypoint's stored value from 0 to 360. [hue] and [shown] are read while drawing. An
+ * The frame as a color wheel: the waypoints' colors in the order of their places, 0 at 12 o'clock and clockwise
+ * ([waypointColor]), and a line across the wheel at the waypoint's place on it, drawn like a focused target's line on
+ * the dial. With `Colors` at `Standard` it is the full wheel of hues, red at 12 o'clock; with `Watch face` it is the
+ * ring that fades from the accent at 12 o'clock to north a third of the way round, on to the error color at two
+ * thirds and back to the accent. [hue] is that place, the waypoint's stored value from 0 to 360. [hue] and [shown] are read while drawing. An
  * accessibility service sets the place through [onHue].
  */
 @Composable
@@ -375,7 +376,7 @@ private fun ColorWheel(hue: () -> Float, shown: () -> Boolean, onHue: (Float) ->
         Modifier.fillMaxSize()
             // The place on the ring is read where the description is made and where the wheel is drawn, not where
             // this is composed, so turning the color composes nothing again. The description gives the place as a
-            // number: what color is there depends on the watch's colors.
+            // number: what color is there depends on the `Colors` setting and the watch's colors.
             .semantics {
                 val current = hue()
                 contentDescription = "Color"
@@ -387,7 +388,7 @@ private fun ColorWheel(hue: () -> Float, shown: () -> Boolean, onHue: (Float) ->
                 val r = size.minDimension / 2f
                 val c = Offset(size.width / 2f, size.height / 2f)
                 // A sweep starts at 3 o'clock, so the list is a quarter turn on to put the ring's start at the top.
-                // The three colors the ring is made of are read here, and this is made again when one changes.
+                // The colors are read here, and this is made again when the setting or the watch's colors change.
                 val wheel = Brush.sweepGradient((0..360 step 10).map { waypointColor(((it + 90) % 360).toFloat()) }, c)
                 val mid = r * (WHEEL_BAND_OUTER + WHEEL_BAND_INNER) / 2f
                 val band = Stroke(r * (WHEEL_BAND_OUTER - WHEEL_BAND_INNER))

@@ -4,7 +4,7 @@ Every picture here is a capture from an emulator, taken on 2026-10-13 from the d
 
 - `<state>-large.png` is from `Wear_OS_Large_Round` (API 35, 454 x 454) and `<state>-small.png` from `Wear_OS_Small_Round` (API 35, 384 x 384). They were made with `scripts/screenshot-matrix.sh`, a section at a time (`scripts/screenshot-matrix.sh large trail`); the section named in each row is the argument that makes that row's pictures again. The `coords` and `settings` pictures are from a later build than the rest, in which the rows under the heading stand a little differently with `Show coordinates` on.
 - The position fed is 43.7022, -72.2896 (`scripts/geo-feed.sh`). Waypoints are put in the app's database with `scripts/seed-targets.sh <bearing>:<place on the color ring>:<meters>`. "Three targets" is `60:137.5:400 200:275:1500 300:52.5:5000`. A heading is set with the emulator's magnetic-field sensor and corrected until the compass shows it.
-- The emulators give no color scheme, so the accent is blue and north and the error color are red, except in the `accent-` pictures.
+- The emulators give no color scheme, so the accent is blue and north and the error color are red, except in the `accent-` and `colors-watchface-` pictures. The pictures taken before the `Colors` setting (all but the `colors-` ones) show the waypoints' colors on the v2 ring of the blue and the red; with `Standard`, the default since then, a waypoint's place is a hue on the full wheel, as the `colors-standard-` pictures show.
 - The emulators report only high magnetometer accuracy and a position accuracy of 5 m; what that leaves unseen is listed at the end.
 
 ## Compass
@@ -149,11 +149,23 @@ adb -s emulator-5554 shell settings put secure theme_customization_overlay_packa
 
 The app follows when it next comes back on screen (Home, then open it again). `settings delete global dynamic_color_theme_enabled` switches the scheme off; this image also reads the setting as unset after every boot.
 
+## Colors
+
+Taken on 2026-10-14 from the debug build, by hand (adb, `scripts/swipe.sh`, `scripts/tap-text.sh`): eight targets seeded with `scripts/seed-targets.sh 20:0 65:45 110:90 155:135 200:180 245:225 290:270 335:315` (each 45 degrees of place apart, 20 degrees of bearing off it), the position fed, the watch laid flat at a magnetic heading of 40. Each picture with four frames is the compass, the settings at the `Colors` row, the waypoints list and the edit screen of `Waypoint 5` (place 180), opened with a long press. `dynamic_color_theme_enabled` was put to 1 or 0 with `adb shell settings put global`; the API 37 image had the seed `2F8BFF` written as in "Other emulators".
+
+| State | File | How it was produced |
+|-|-|-|
+| `Standard` (4 frames) | `colors-standard-large`, `colors-standard-small` | API 35, the setting at 1: the colors do not depend on it |
+| `Watch face`, the API 35 image's scheme (4 frames) | `colors-watchface-large`, `colors-watchface-small` | API 35, the setting at 1, the row tapped to `Watch face`; the pale primary deepened and kept |
+| `Watch face`, seed `2F8BFF` (4 frames) | `colors-watchface-api37-large` | `Wear_OS_Newest` (API 37), the setting at 1 |
+| The top of the settings, `Standard` and `Watch face` (2 frames) | `colors-settings-top-large`, `colors-settings-top-small` | API 35: the fades at the list's ends and at the rows' ticks, over the black field, in both modes |
+| No scheme: the compass with `Watch face` stored, and the row (2 frames) | `colors-not-available-large`, `colors-not-available-small`, `colors-not-available-api37-large` | API 35 and 37, the setting put to 0 with `Watch face` stored |
+
 ## Not shown, because an emulator cannot produce it
 
 - The `Calibrate` prompt on the compass, and the calibration frame at less than full (accuracy below high).
 - The accuracy note after a crumb's distance (`9 m ±20 m`) and `Saving…` with an accuracy that is not yet good enough: the emulator's position accuracy is always 5 m.
-- A color scheme that follows the watch face.
+- A color scheme that follows the watch face: the `Watch face` pictures have a scheme the system made from the API 35 image's fixed colors or from a seed written with `adb`.
 - Anything felt: the tick tap, the two blind navigation pulses, the confirming tap.
 - The side button. The emulator images describe no button (`WearableButtons`), so the app handles no side key on them; the settings row that speaks of a double press was not pictured.
 - The double pinch (the one-handed primary gesture).

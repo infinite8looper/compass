@@ -11,7 +11,7 @@ import kotlin.math.roundToInt
  * round, [third] at two thirds, and [first] again at the full turn. [position] is in turns and wraps, so 1.25 and
  * -0.75 are 0.25; a position that is not a number is 0.
  *
- * The app gives it a waypoint's stored value over 360 and the three colors that follow the watch (the accent, north
+ * With `Colors` at `Watch face` the app gives it a waypoint's stored value over 360 and the three colors that follow the watch (the accent, north
  * and the error color), so every waypoint's color is one of the ring's. Two anchors that are the same color, as the
  * app's own north and error colors are, give that color for the whole third between them.
  *

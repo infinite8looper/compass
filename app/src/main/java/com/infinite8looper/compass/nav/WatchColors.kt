@@ -4,7 +4,7 @@ import kotlin.math.abs
 import kotlin.math.pow
 import kotlin.math.roundToInt
 
-// The three colors that follow the watch, decided from numbers. A color here is its red, green and blue as one
+// The colors that follow the watch with `Colors` at `Watch face`, and the setting itself, decided from numbers. A color here is its red, green and blue as one
 // number, 0xRRGGBB; anything above those 24 bits is ignored.
 
 /** The app's own colors, used where the watch gives none, or gives one that cannot do the job. */

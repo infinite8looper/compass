@@ -147,8 +147,8 @@ fun waypointColor(position: Float): Color = opaque(waypointRgb(palette.value, po
 
 /**
  * The breadcrumb trail: its ticks on the dial, the crumb that is walked to, and its marks wherever it is listed. One
- * muted blue-gray for every crumb. It does not follow the watch's color scheme and is not on the ring the waypoints'
- * colors come from; with a pale scheme a waypoint's color can come near it.
+ * muted blue-gray for every crumb. It does not follow the `Colors` setting or the watch's color scheme and is not
+ * on the wheel or the ring the waypoints' colors come from; with a pale scheme a waypoint's color can come near it.
  */
 val CrumbColor = Color(0xFF8FA6BF)
 
