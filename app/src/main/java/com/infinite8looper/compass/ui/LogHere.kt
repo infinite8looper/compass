@@ -3,7 +3,6 @@ package com.infinite8looper.compass.ui
 import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import android.view.HapticFeedbackConstants
 import android.view.KeyEvent
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -67,7 +66,7 @@ internal fun rememberLogHere(vm: CompassViewModel): LogActions {
     return remember(vm, ask, view) {
         fun start(by: Int, vibrate: Boolean = true) {
             // The press is answered at once, before the permission or a position is asked for.
-            if (vibrate) view.performHapticFeedback(PRESS_HAPTIC)
+            if (vibrate) Vibrations.of(view).press()
             if (vm.locationSource.hasPermission()) save(by)
             else { askedBy = by; ask.launch(LOCATION_PERMISSIONS) }
         }
@@ -79,19 +78,13 @@ internal fun rememberLogHere(vm: CompassViewModel): LogActions {
     }
 }
 
-/**
- * The vibration that answers a press that saves, on every route but the one-handed gesture, whose library plays its
- * own: the system's feedback for a press of a key on the screen.
- */
-internal const val PRESS_HAPTIC = HapticFeedbackConstants.VIRTUAL_KEY
-
 private const val LOG_HERE = 0
 private const val SIDE_PRESS = 1
 private const val DROP_CRUMB_ROW = 2
 
 /**
  * The ways a position is saved, each asking for the permission first where it is not held and each answered with a
- * vibration at once ([PRESS_HAPTIC]): [logHere] is the `Log here` row, which always saves a waypoint; [sidePress] is
+ * vibration at once ([Feel.PRESS], [Vibrations.press]): [logHere] is the `Log here` row, which always saves a waypoint; [sidePress] is
  * what saves from the compass (a double tap on the dial, the accessibility action) and a single press of the side
  * button on a watch that has one, which drops a crumb instead while a breadcrumb trail is being laid; [dropCrumb] is
  * the `Drop crumb` row, which drops a crumb while a trail is being laid and does nothing otherwise; and
@@ -116,7 +109,8 @@ internal fun logStatusColor(status: LogStatus): Color = when (status) {
  * A result is shown for its time, counted only while the screen is in view and resumed. A result that arrives
  * while neither is (settings is in view, a screen opened from a row is on top, the watch is asleep) waits in the
  * view model, and a showing that is cut short, by a swipe as much as by sleep, starts again from the beginning on
- * whichever of the two is in view next. The confirming tap comes once, when a saved result is first shown. The
+ * whichever of the two is in view next. The confirming tap ([Feel.SAVED]) comes once, when a saved result is first
+ * shown, and not before the press's vibration has played out ([Vibrations.saved]). The
  * press number is part of the key, so a new result that reads the same as the last gets its own time.
  */
 @Composable
@@ -132,7 +126,7 @@ internal fun LogResultTimer(vm: CompassViewModel, paneView: () -> PaneView) {
             snapshotFlow { paneView() == PaneView.IN_VIEW }.collectLatest { showing ->
                 if (!showing) return@collectLatest
                 if (vm.logResultFirstSeen(logPress) && vm.logStatus.value is LogStatus.Saved) {
-                    view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                    Vibrations.of(view).saved()
                 }
                 delay(showMs)
                 vm.logResultShown(logPress)

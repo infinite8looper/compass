@@ -117,6 +117,10 @@ fun CompassScreen(
         var targetCell = TickCell.Unset
         var settling = TickSettling.Settled
         var lastTap = 0L
+        var lastTargetTap = 0L
+        // The shown heading's side of the focused target's bearing, for the target's vibration.
+        var side = TargetSide.Unset
+        val vibrations = Vibrations.of(view)
         var reference = Float.NaN
         var stale: HeadingReading? = null
         // The facing state for this loop. The blind navigation pulses are decided from it below, on the frame,
@@ -187,19 +191,24 @@ fun CompassScreen(
                 val pulse = pulseBetween(blind, nextBlind, targetChanged)
                 blind = nextBlind
                 if (pulse != null) {
-                    view.performHapticFeedback(if (pulse == Pulse.LOCK) LOCK_HAPTIC else HEARTBEAT_HAPTIC)
+                    vibrations.play(if (pulse == Pulse.LOCK) Feel.LOCK else Feel.HEARTBEAT)
                     lastPulse = pulse
                     lastPulseNanos = now
                 }
 
-                // The frame on which the dial arrives is still part of the catch-up. A tick that falls on a
+                // The dial's vibration: a thin line, a thick line or the target's bearing, the strongest that
+                // applies. The frame on which the dial arrives is still part of the catch-up. One that falls on a
                 // pulse, or just after one, is dropped: the pulse is the one the wearer is to feel.
-                if (isTickCrossing(cell, next) && !wasSettling && !settling.active && !hold && n.tickFeedback &&
-                    inView && tickTapDue(now, lastTap) && tickClearOfPulse(now, lastPulse, lastPulseNanos)
+                val nextSide = nextTargetSide(side, shown.floatValue, n.focused?.dialAngleDeg, targetChanged)
+                val crossing = dialCrossing(cell, next, side, nextSide, n.tickFeedback, n.blindNavigation)
+                if (!wasSettling && !settling.active && !hold && inView &&
+                    dialVibrationDue(crossing, now, lastTap, lastPulse, lastPulseNanos, lastTargetTap)
                 ) {
-                    view.performHapticFeedback(TICK_HAPTIC)
+                    Feel.of(crossing)?.let(vibrations::play)
                     lastTap = now
+                    if (crossing == DialCrossing.TARGET) lastTargetTap = now
                 }
+                side = nextSide
                 cell = next
             } else {
                 // Without a heading nothing is faced.
@@ -568,26 +577,6 @@ private const val PANE_TICKS_FADE_MS = 400
 
 /** How much of the dial's brightness is left while the hold-flat hint shows. */
 private const val DIAL_DIMMED = 0.4f
-
-/**
- * The softest tick the platform maps to a vibration. From API 34 that is the constant made for many choices in
- * quick succession. API 33 does not have it; there the clock tick plays the platform's lightest effect.
- */
-private val TICK_HAPTIC =
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) HapticFeedbackConstants.SEGMENT_FREQUENT_TICK
-    else HapticFeedbackConstants.CLOCK_TICK
-
-/**
- * The blind navigation pulses: the platform's confirmation for the strong one and its context click for the soft
- * one, on every API level the app runs on. Both are haptic feedback, which needs no permission and which the
- * system drops while touch vibration is switched off in the watch's settings.
- * In the platform's own table (API 33 to 35) the confirmation plays the click effect, the context click the tick
- * effect and the tick tap the texture tick, strongest first; a watch's system can replace entries, and the Wear OS
- * emulator images play the confirmation as two thuds. The long press, the platform's heavy click, is not the
- * strong pulse because a vibrator need not support that effect: the emulators' does not, and nothing plays.
- */
-private const val LOCK_HAPTIC = HapticFeedbackConstants.CONFIRM
-private const val HEARTBEAT_HAPTIC = HapticFeedbackConstants.CONTEXT_CLICK
 
 /**
  * The heading number. The text is read here, not in [CompassScreen], so a new whole degree recomposes only this.
