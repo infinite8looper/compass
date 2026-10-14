@@ -1,5 +1,10 @@
 package com.infinite8looper.compass.ui
 
+import androidx.compose.ui.text.TextStyle
+import com.infinite8looper.compass.NavUi
+import androidx.compose.ui.unit.Dp
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.runtime.State
 import android.os.SystemClock
 import android.view.HapticFeedbackConstants
 import androidx.compose.animation.core.Animatable
@@ -125,18 +130,22 @@ fun WaypointsScreen(
 ) {
     remember { ScreenCompositions.countBuilt(Pane.WAYPOINTS) }
     SideEffect { ScreenCompositions.countComposed(Pane.WAYPOINTS) }
-    val nav by vm.nav.collectAsStateWithLifecycle()
+    // The screen state and the logging status, held as States and read only in the rows and the band that show
+    // them: a position every few seconds composes the rows with distances, not the screen.
+    val navState = vm.nav.collectAsStateWithLifecycle()
     val listState = rememberScalingLazyListState()
     // Whether any of the screen is showing. Read in the clock below and never where the screen is composed: the
     // screen coming onto the display in a swipe, or leaving it, composes nothing.
     val onScreen = remember(paneView) { derivedStateOf { paneView() != PaneView.HIDDEN } }
     // The same check the compass uses: a fix that has stopped arriving makes the distances old.
-    val stale by produceState(false, nav.fixElapsedMs, onScreen) {
-        snapshotFlow { onScreen.value }.collectLatest { on ->
-            while (on) { value = isStale(SystemClock.elapsedRealtime(), nav.fixElapsedMs); delay(1_000) }
+    val staleState = remember { mutableStateOf(false) }
+    LaunchedEffect(onScreen) {
+        snapshotFlow { if (onScreen.value) navState.value.fixElapsedMs ?: NOT_ON_SCREEN_OR_NO_FIX else NOT_ON_SCREEN_OR_NO_FIX }.collectLatest { at ->
+            if (at == NOT_ON_SCREEN_OR_NO_FIX) { staleState.value = isStale(SystemClock.elapsedRealtime(), navState.value.fixElapsedMs); return@collectLatest }
+            while (true) { staleState.value = isStale(SystemClock.elapsedRealtime(), at); delay(1_000) }
         }
     }
-    val status by vm.logStatus.collectAsStateWithLifecycle()
+    val statusState = vm.logStatus.collectAsStateWithLifecycle()
     LogResultTimer(vm, paneView)
     // A touch that lands while the screens are still sliding does nothing.
     fun inView(act: () -> Unit) { if (paneView() == PaneView.IN_VIEW) act() }
@@ -150,9 +159,6 @@ fun WaypointsScreen(
     val nameOnStyle = remember(r, density) { density.instrumentText(r * 0.13f, FontWeight.Medium) }
     val distanceStyle = remember(r, density) { density.instrumentText(r * 0.095f) }
 
-    val total = nav.waypoints.size
-    val targets = nav.waypoints.count { it.isTarget }
-    val setsAll = headerTapSetsAll(targets, total)
 
     val pressScope = rememberCoroutineScope()
 
@@ -184,13 +190,11 @@ fun WaypointsScreen(
             }
         }
     }
-    val navState = rememberUpdatedState(nav)
     // On a watch with a button the app can act on: the list inside has the focus while this screen does, so a side
     // button's press passes here first, and does here what it does on the compass. On a watch without, nothing.
     val sideKeys = rememberSideButtonKeys(vm, paneView, doubleEnabled = { navState.value.breadcrumbTrail }, onSinglePress = onSidePress)
     Box(Modifier.fillMaxSize().background(Color.Black).sideKeys(sideKeys)) {
       // The list and what is pinned over it are cut off at one circle inside the frame.
-      val statusShowing = status != LogStatus.Idle
       val bandPx = with(density) { (r * STATUS_BAND).toPx() }
       Box(
           Modifier.fillMaxSize().padding(r * (1f - LIST_RADIUS)).clip(CircleShape)
@@ -198,10 +202,10 @@ fun WaypointsScreen(
               // under it, which cannot be seen: its first contact is taken here, before the list sees it, and
               // the rows then leave the touch alone. The rest of the touch is not taken, so a drag that starts
               // on the band still scrolls the list and still turns to the next screen.
-              .pointerInput(statusShowing, bandPx) {
-                  if (statusShowing) awaitEachGesture {
+              .pointerInput(bandPx) {
+                  awaitEachGesture {
                       val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-                      if (down.position.y < bandPx) down.consume()
+                      if (statusState.value != LogStatus.Idle && down.position.y < bandPx) down.consume()
                   }
               }
       ) {
@@ -215,10 +219,14 @@ fun WaypointsScreen(
             modifier = Modifier.fillMaxSize().fadeTopAndBottom(),
         ) {
             item(key = "header") {
+                val waypoints = navState.value.waypoints
+                val total = waypoints.size
+                val targets = waypoints.count { it.isTarget }
+                val setsAll = headerTapSetsAll(targets, total)
                 InstrumentRow(
                     Modifier.clickable(
                         // Not while a status stands over the top of the list, where the count cannot be read.
-                        enabled = total > 0 && status == LogStatus.Idle, role = Role.Button,
+                        enabled = total > 0 && statusState.value == LogStatus.Idle, role = Role.Button,
                         onClickLabel = if (setsAll) "Set all as targets" else "Clear all targets",
                     ) { inView { vm.setAllTargets(setsAll) } },
                     centered = true,
@@ -231,6 +239,7 @@ fun WaypointsScreen(
                     Text("Log here", color = AccentColor, style = actionStyle, maxLines = 1)
                 }
             }
+            val nav = navState.value
             val trail = nav.trail
             if (nav.breadcrumbTrail || trail.count > 0) item(key = "trail") {
                 val active = trail.mode != TrailMode.OFF
@@ -322,9 +331,11 @@ fun WaypointsScreen(
                             w.name, if (w.isTarget) nameOnStyle else nameStyle, { if (w.isTarget) Ink else Dim },
                             view = paneView,
                         )
-                        nav.distances[w.id]?.let { d ->
+                        val now = navState.value
+                        val stale = staleState.value
+                        now.distances[w.id]?.let { d ->
                             Text(
-                                if (stale) "${formatDistance(d, nav.units)} (old)" else formatDistance(d, nav.units),
+                                if (stale) "${formatDistance(d, now.units)} (old)" else formatDistance(d, now.units),
                                 color = if (stale) Faint else Dim, style = distanceStyle, maxLines = 2, overflow = TextOverflow.Ellipsis,
                             )
                         }
@@ -332,25 +343,7 @@ fun WaypointsScreen(
                 }
             }
         }
-        val current = status
-        if (current != LogStatus.Idle) {
-            val (words, detail) = statusText(current, nav.units)
-            // A black band over the top of the list, soft at its lower edge, with the status on it. It takes no
-            // touch itself; what a touch on it may do is decided above.
-            Column(
-                Modifier.align(Alignment.TopCenter).fillMaxWidth().height(r * STATUS_BAND)
-                    .background(Brush.verticalGradient(0f to Color.Black, STATUS_BAND_SOLID to Color.Black, 1f to Color.Transparent))
-                    .padding(top = r * STATUS_TOP),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                StatusLine(words, logStatusColor(current), headerStyle, Modifier.width(r * STATUS_WIDTH), view = paneView)
-                // A note under the status is dim; a second line that carries the status's words on has its color.
-                if (detail != null) Text(
-                    detail, color = if (statusDetailContinues(current)) logStatusColor(current) else Dim, style = detailStyle,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
+        WaypointsStatusBand(statusState, navState, r, headerStyle, detailStyle, paneView)
       }
         // While the trail's row is held the frame carries a ring in the color of deleting, which drains as the hold
         // goes on, as on the edit screen.
@@ -360,6 +353,38 @@ fun WaypointsScreen(
         )
     }
 }
+
+/**
+ * The logging status pinned over the top of the list. A composable of its own, so that a change of the status or
+ * of the screen state composes the band and not the screen.
+ */
+@Composable
+private fun BoxScope.WaypointsStatusBand(
+    statusState: State<LogStatus>, navState: State<NavUi>, r: Dp, headerStyle: TextStyle, detailStyle: TextStyle, paneView: () -> PaneView,
+) {
+val current = statusState.value
+    if (current != LogStatus.Idle) {
+        val (words, detail) = statusText(current, navState.value.units)
+        // A black band over the top of the list, soft at its lower edge, with the status on it. It takes no
+        // touch itself; what a touch on it may do is decided above.
+        Column(
+            Modifier.align(Alignment.TopCenter).fillMaxWidth().height(r * STATUS_BAND)
+                .background(Brush.verticalGradient(0f to Color.Black, STATUS_BAND_SOLID to Color.Black, 1f to Color.Transparent))
+                .padding(top = r * STATUS_TOP),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            StatusLine(words, logStatusColor(current), headerStyle, Modifier.width(r * STATUS_WIDTH), view = paneView)
+            // A note under the status is dim; a second line that carries the status's words on has its color.
+            if (detail != null) Text(
+                detail, color = if (statusDetailContinues(current)) logStatusColor(current) else Dim, style = detailStyle,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+/** No position, or the screen not on screen: nothing to count the age of. */
+private const val NOT_ON_SCREEN_OR_NO_FIX = Long.MIN_VALUE
 
 /** What the trail's row says while it is held. */
 private const val TRAIL_HOLD_TO_CLEAR = "Hold to clear"

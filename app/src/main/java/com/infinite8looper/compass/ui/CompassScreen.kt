@@ -1,6 +1,8 @@
 package com.infinite8looper.compass.ui
 
 import android.hardware.SensorManager
+import androidx.compose.ui.unit.Dp
+import com.infinite8looper.compass.NavUi
 import android.os.Build
 import android.os.SystemClock
 import android.view.HapticFeedbackConstants
@@ -99,14 +101,16 @@ fun CompassScreen(
             if (on) lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { vm.heading.collect { readingState.value = it } }
         }
     }
-    val nav by vm.nav.collectAsStateWithLifecycle()
-    val navState = rememberUpdatedState(nav)
+    // The screen state, held as a State and read only where it is shown ([CompassReadout]) and in the frame loop:
+    // a position every few seconds composes the readout, not the screen.
+    val navState = vm.nav.collectAsStateWithLifecycle()
     val shown = remember { mutableFloatStateOf(Float.NaN) }
     // The whole degree the heading number shows ([shownDegree]). Written in the frame loop when it changes, so the
     // number's text is made once for each whole degree and nothing is made for it while the dial turns between two.
     val shownWhole = remember { mutableIntStateOf(NO_DEGREE) }
     // Written every frame and read where the screen is composed: only a change of value recomposes.
-    var holdFlat by remember { mutableStateOf(false) }
+    val holdFlatState = remember { mutableStateOf(false) }
+    var holdFlat by holdFlatState
     // Whether the wearer faces the focused target. Written in the frame loop when it changes and read only where
     // the dial draws the focused target's line, so a change redraws that line and recomposes nothing.
     val facingState = remember { mutableStateOf(false) }
@@ -233,19 +237,13 @@ fun CompassScreen(
     // The logging status. Its words, and every other line of the readout that says something about position, are
     // decided in one place ([readout]), below, where the screen is composed: it changes with a press and with a
     // position fix, not with a frame.
-    val logStatus by vm.logStatus.collectAsStateWithLifecycle()
+    val logStatusState = vm.logStatus.collectAsStateWithLifecycle()
 
     LogResultTimer(vm, paneView)
 
-    val headingShown by remember { derivedStateOf { headingText(shownWhole.intValue) } }
-    val lowAccuracy by remember {
+    val headingShown = remember { derivedStateOf { headingText(shownWhole.intValue) } }
+    val lowAccuracy = remember {
         derivedStateOf { readingState.value?.accuracy?.let { it <= SensorManager.SENSOR_STATUS_ACCURACY_LOW } ?: false }
-    }
-    val showingMagnetic = dialIsMagnetic(nav.north, nav.declination)
-    val stale by produceState(false, nav.fixElapsedMs, onScreen) {
-        snapshotFlow { onScreen.value }.collectLatest { on ->
-            while (on) { value = isStale(SystemClock.elapsedRealtime(), nav.fixElapsedMs); delay(1_000) }
-        }
     }
 
     // What the crown has scrolled toward the next step of the focus, and how far a step is on this screen's density.
@@ -379,8 +377,46 @@ fun CompassScreen(
                 heading = style(READOUT_HEADING_SIZE, FontWeight.Light), coordinates = style(COORDINATES_SIZE),
             )
         }
-        val bodyStyle = styles.body
-        fun Modifier.slot(y: Float, width: Float) = align(Alignment.Center).offset(y = r * y).width(r * width)
+        CompassReadout(
+            vm, navState, logStatusState, holdFlatState, headingShown, lowAccuracy, onScreen, paneView, onCalibrate, r, styles,
+            dial = { targets, focused, crumbTicks, modifier ->
+                CompassDial(
+                    headingProvider = { shown.floatValue }, targets = targets, modifier = modifier,
+                    facing = { facingState.value }, focused = focused, crumbTicks = crumbTicks,
+                )
+            },
+        )
+
+        // At the bottom of the readout's own circle, under the lowest line of text: the one place at 6 o'clock
+        // that nothing on the turning dial passes through.
+        PanePosition(Pane.COMPASS.ordinal, radius = PANE_TICKS_ON_COMPASS, scale = PANE_TICKS_SCALE, alpha = { paneTicks.value })
+    }
+}
+
+/**
+ * Everything on the compass that the screen state, the logging status or the hold-flat state decide: the dial's
+ * targets and every line of the readout. A composable of its own, so that a position fix, which comes every few
+ * seconds while the compass is on screen, composes this and not the screen around it.
+ */
+@Composable
+private fun BoxScope.CompassReadout(
+    vm: CompassViewModel, navState: State<NavUi>, logStatusState: State<LogStatus>, holdFlatState: State<Boolean>,
+    headingShownState: State<String>, lowAccuracyState: State<Boolean>, onScreen: State<Boolean>, paneView: () -> PaneView,
+    onCalibrate: () -> Unit, r: Dp, styles: ReadoutStyles,
+    dial: @Composable (targets: List<TargetUi>, focused: TargetUi?, crumbTicks: List<Float>, modifier: Modifier) -> Unit,
+) {
+    val nav = navState.value
+    val logStatus = logStatusState.value
+    val holdFlat = holdFlatState.value
+    val lowAccuracy = lowAccuracyState.value
+    val showingMagnetic = dialIsMagnetic(nav.north, nav.declination)
+    val stale by produceState(false, nav.fixElapsedMs, onScreen) {
+        snapshotFlow { onScreen.value }.collectLatest { on ->
+            while (on) { value = isStale(SystemClock.elapsedRealtime(), nav.fixElapsedMs); delay(1_000) }
+        }
+    }
+    fun Modifier.slot(y: Float, width: Float) = align(Alignment.Center).offset(y = r * y).width(r * width)
+    val bodyStyle = styles.body
         // Where the rows stand. With the coordinates switched on there are two rows more, the latitude at the top
         // and the longitude at the bottom, and the rows between stand a little closer to the heading to make room.
         // Which set it is depends on the setting alone, so no row moves while the compass is in use.
@@ -388,11 +424,7 @@ fun CompassScreen(
 
         // The dial steps back while the hint asks for something: its value is the last one taken, not a live one.
         val dialAlpha = animateFloatAsState(if (holdFlat) DIAL_DIMMED else 1f, tween(250), label = "dial")
-        CompassDial(
-            headingProvider = { shown.floatValue }, targets = nav.targets,
-            modifier = Modifier.graphicsLayer { alpha = dialAlpha.value }, facing = { facingState.value },
-            focused = nav.focused, crumbTicks = nav.trail.tickAngles,
-        )
+        dial(nav.targets, nav.focused, nav.trail.tickAngles, Modifier.graphicsLayer { alpha = dialAlpha.value })
 
         // The lines that say something about position: the row under the heading (a status, the distance, or
         // `No target`), the smaller row under it, and the coordinates. One function decides them all.
@@ -449,7 +481,7 @@ fun CompassScreen(
                     running = { paneView() != PaneView.HIDDEN },
                 )
                 else -> {
-                    HeadingNumber({ headingShown }, showingMagnetic, styles.heading, Modifier.slot(0f, 2 * READOUT_RADIUS))
+                    HeadingNumber({ headingShownState.value }, showingMagnetic, styles.heading, Modifier.slot(0f, 2 * READOUT_RADIUS))
                     if (calibrate) Text("Calibrate", color = Dim, style = bodyStyle, maxLines = 1, modifier = Modifier.slot(rows.prompt, 0.6f))
                 }
             }
@@ -493,10 +525,6 @@ fun CompassScreen(
             Text(it.words, color = toneColor(it.tone), style = coordinateStyle, maxLines = 1, softWrap = false, modifier = Modifier.slot(rows.longitude, 0.5f))
         }
 
-        // At the bottom of the readout's own circle, under the lowest line of text: the one place at 6 o'clock
-        // that nothing on the turning dial passes through.
-        PanePosition(Pane.COMPASS.ordinal, radius = PANE_TICKS_ON_COMPASS, scale = PANE_TICKS_SCALE, alpha = { paneTicks.value })
-    }
 }
 
 /**

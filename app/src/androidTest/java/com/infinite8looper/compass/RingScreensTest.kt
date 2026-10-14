@@ -25,6 +25,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -39,14 +43,17 @@ import org.junit.runner.RunWith
  * screens themselves keep ([ScreenCompositions]), and a list is where it was left when the ring comes round to it
  * again, which is read from the system's accessibility tree.
  *
- * The settings that would bring position fixes (the breadcrumb trail, the coordinates) are off, so nothing but the
- * turning changes what the screens show while the counts are compared. Since v3 location also runs while the
- * compass or the waypoints screen is on screen ("Location runs whenever the compass or the waypoints screen is on
- * screen"), and each position changes what those screens show, so the test that counts compositions switches the
- * watch's location off for its run, before the app starts, and back on after.
+ * The settings that would bring position fixes for the trail and the coordinates are off. Location runs all the
+ * same while the compass or the waypoints screen is on screen (v3), with the position feed of the suite: positions
+ * arrive during the turns, and one is made to arrive while a swipe is held half way. A position composes only the
+ * parts of the screens that show it ([ScreenCompositions] counts the screens), so the counts must not rise for it.
+ * What the screen state did meanwhile is kept and given in a failure's message.
  */
 @RunWith(AndroidJUnit4::class)
 class RingScreensTest {
+    // Location runs for the screens only with the permission held.
+    @get:org.junit.Rule val permission: androidx.test.rule.GrantPermissionRule =
+        androidx.test.rule.GrantPermissionRule.grant(android.Manifest.permission.ACCESS_FINE_LOCATION, android.Manifest.permission.ACCESS_COARSE_LOCATION)
     private val app: Application = ApplicationProvider.getApplicationContext()
     private val dao = WaypointDatabase.get(app).waypoints()
     private val crumbDao = WaypointDatabase.get(app).crumbs()
@@ -184,23 +191,28 @@ class RingScreensTest {
         assertTrue("the list took no scroll at all; on screen: ${wordsOnScreen()}", steps > 0)
     }
 
-    private fun shellRun(command: String) =
-        android.os.ParcelFileDescriptor.AutoCloseInputStream(instrumentation.uiAutomation.executeShellCommand(command)).readBytes()
-
     @Test fun aTurnOfTheRingBuildsNoScreenAndComposesNone() = runBlocking {
-        // No position comes while the counts are compared: location is switched off on the watch for this test.
-        shellRun("settings put secure location_mode 0")
-        try { turnOfTheRingBuildsNoScreenAndComposesNone() } finally { shellRun("settings put secure location_mode 3") }
-    }
-
-    private suspend fun turnOfTheRingBuildsNoScreenAndComposesNone() {
         // The counters are the process's, and an earlier test's activity has counted in them: what this activity
         // builds is counted from here.
         val builtBefore = ScreenCompositions.built.toList()
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            lateinit var vm: CompassViewModel
+            scenario.onActivity { vm = androidx.lifecycle.ViewModelProvider(it)[CompassViewModel::class.java] }
             showsPane(Pane.COMPASS)
+            // A position has come, so location is running, before the counts are taken.
+            withTimeout(60_000) { vm.nav.first { it.fixElapsedMs != null } }
             // Every screen is built with the app, before any turn.
             delay(1_500)
+            val changes = java.util.concurrent.CopyOnWriteArrayList<String>()
+            val start = SystemClock.elapsedRealtime()
+            val watching = launch(Dispatchers.Main) {
+                var last: NavUi? = null
+                vm.nav.collect { now ->
+                    val was = last
+                    if (was != null) changes += "${SystemClock.elapsedRealtime() - start} ms: " + navChanges(was, now)
+                    last = now
+                }
+            }
             val before = counts(scenario)
             assertEquals("screens built when the app has opened (settings, compass, waypoints)", listOf(1, 1, 1), before.built.zip(builtBefore) { now, then -> now - then })
 
@@ -208,21 +220,68 @@ class RingScreensTest {
             for (pane in listOf(Pane.WAYPOINTS, Pane.SETTINGS, Pane.COMPASS)) { swipe(toTheLeft = true); showsPane(pane) }
             val afterSwipes = counts(scenario)
             assertEquals("screens built, after a turn by three swipes (settings, compass, waypoints)", before.built, afterSwipes.built)
-            assertEquals("compositions of each screen, after a turn by three swipes (settings, compass, waypoints)", before.composed, afterSwipes.composed)
+            assertEquals("compositions of each screen, after a turn by three swipes (settings, compass, waypoints); screen state changes: $changes", before.composed, afterSwipes.composed)
 
             // A whole turn the other way, as the app itself slides: three Backs.
             for (pane in listOf(Pane.SETTINGS, Pane.WAYPOINTS, Pane.COMPASS)) { instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK); showsPane(pane) }
             val afterBacks = counts(scenario)
             assertEquals("screens built, after a turn by three Backs (settings, compass, waypoints)", before.built, afterBacks.built)
-            assertEquals("compositions of each screen, after a turn by three Backs (settings, compass, waypoints)", before.composed, afterBacks.composed)
+            assertEquals("compositions of each screen, after a turn by three Backs (settings, compass, waypoints); screen state changes: $changes", before.composed, afterBacks.composed)
 
             // And a swipe to the right, which a turn to the left does not make.
             swipe(toTheLeft = false); showsPane(Pane.SETTINGS)
             swipe(toTheLeft = true); showsPane(Pane.COMPASS)
             val afterBoth = counts(scenario)
             assertEquals("screens built, after a swipe each way (settings, compass, waypoints)", before.built, afterBoth.built)
-            assertEquals("compositions of each screen, after a swipe each way (settings, compass, waypoints)", before.composed, afterBoth.composed)
+            assertEquals("compositions of each screen, after a swipe each way (settings, compass, waypoints); screen state changes: $changes", before.composed, afterBoth.composed)
+
+            // A position that arrives while a swipe is held half way, the compass and the waypoints both passing.
+            val had = vm.nav.value.fixElapsedMs
+            holdHalfASwipe {
+                val came = withTimeoutOrNull(15_000) { vm.nav.first { it.fixElapsedMs != null && it.fixElapsedMs != had } }
+                assertNotNull("no position came while the swipe was held; screen state changes: $changes", came)
+            }
+            showsPane(Pane.COMPASS)
+            val afterHeld = counts(scenario)
+            watching.cancel()
+            assertTrue("no position came during the turns: $changes", changes.count { "fixElapsedMs" in it } >= 2)
+            assertEquals("screens built, after a position came during a held swipe", before.built, afterHeld.built)
+            assertEquals("compositions of each screen, after a position came during a held swipe (settings, compass, waypoints); screen state changes: $changes", before.composed, afterHeld.composed)
         }
+    }
+
+    /** Which fields of the screen state differ between two values, by name. */
+    private fun navChanges(a: NavUi, b: NavUi): String = listOfNotNull(
+        "targets".takeIf { a.targets != b.targets }, "focused".takeIf { a.focused != b.focused }, "units".takeIf { a.units != b.units },
+        "north".takeIf { a.north != b.north }, "declination".takeIf { a.declination != b.declination },
+        "fixElapsedMs".takeIf { a.fixElapsedMs != b.fixElapsedMs }, "waypoints".takeIf { a.waypoints != b.waypoints },
+        "distances".takeIf { a.distances != b.distances }, "loaded".takeIf { a.loaded != b.loaded },
+        "trail".takeIf { a.trail != b.trail }, "noPosition".takeIf { a.noPosition != b.noPosition },
+        "fixAccuracyM".takeIf { a.fixAccuracyM != b.fixAccuracyM }, "position".takeIf { a.position != b.position },
+        "settings".takeIf { a.copy(targets = b.targets, focused = b.focused, units = b.units, north = b.north, declination = b.declination,
+            fixElapsedMs = b.fixElapsedMs, waypoints = b.waypoints, distances = b.distances, loaded = b.loaded, trail = b.trail,
+            noPosition = b.noPosition, fixAccuracyM = b.fixAccuracyM, position = b.position) != b },
+    ).joinToString(",").ifEmpty { "nothing (an equal value)" }
+
+    /**
+     * A finger put down on the compass and moved a third of the way toward the waypoints, held there while [during]
+     * runs, then let go where it is (the ring comes to rest on the nearer page, the compass).
+     */
+    private suspend fun holdHalfASwipe(during: suspend () -> Unit) {
+        val bounds = instrumentation.uiAutomation.rootInActiveWindow.let { root -> Rect().also { root.getBoundsInScreen(it) } }
+        val y = bounds.exactCenterY()
+        val from = bounds.exactCenterX() + bounds.width() * 0.3f
+        val to = bounds.exactCenterX()
+        val down = SystemClock.uptimeMillis()
+        fun send(action: Int, x: Float) {
+            val e = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, x, y, 0)
+            e.source = InputDevice.SOURCE_TOUCHSCREEN
+            assertTrue(instrumentation.uiAutomation.injectInputEvent(e, true))
+            e.recycle()
+        }
+        send(MotionEvent.ACTION_DOWN, from)
+        for (i in 1..12) { SystemClock.sleep(16); send(MotionEvent.ACTION_MOVE, from + (to - from) * i / 12) }
+        try { during() } finally { send(MotionEvent.ACTION_UP, to) }
     }
 
     @Test fun theSettingsListIsWhereItWasAfterATurnOfTheRing() = runBlocking {
