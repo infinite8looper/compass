@@ -25,6 +25,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -93,7 +94,8 @@ private fun HeadingReading?.toView() = CalibrationView(
  * the motion covered, not accuracy, and is labeled so.
  *
  * The screen keeps the display on ([CompassViewModel.setCalibrationAwake]) for two minutes from its opening or from
- * the last segment that lit, whichever is later.
+ * the last segment that lit, whichever is later. The segments lit, and when the last one lit, are kept across a visit
+ * to the check screen; the two minutes count again from the return.
  *
  * In a build with the diagnostics switch on, a row at the bottom, `Check`, opens the check screen ([onCheck]; null
  * where the build has no such screen, and then there is no row).
@@ -112,10 +114,12 @@ fun CalibrationScreen(vm: CompassViewModel, onCheck: (() -> Unit)? = null) {
     val filled = animateFloatAsState(ring.fraction, tween(FILL_MS), label = "ring")
 
     // The regions covered since the screen opened, and when the last new one was: read where they are drawn and in
-    // the effect that keeps the display on, so a reading that adds nothing changes nothing.
-    val covered = remember { mutableIntStateOf(0) }
+    // the effect that keeps the display on, so a reading that adds nothing changes nothing. Both are saved with the
+    // screen's place in the navigation host, so a visit to the check screen and Back find them as they were; the
+    // time of opening is not, so the two minutes count again from the return.
+    val covered = rememberSaveable { mutableIntStateOf(0) }
     val openedAt = remember { SystemClock.elapsedRealtime() }
-    val lastNewAt = remember { mutableLongStateOf(NONE_YET) }
+    val lastNewAt = rememberSaveable { mutableLongStateOf(NONE_YET) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(vm, lifecycle) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {

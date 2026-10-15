@@ -13,6 +13,10 @@
 # Passes when the screen stayed Awake throughout, the share never goes down, ends at 50% (the 12 regions of 24 those poses point into, as
 # CalibrationTest works out), and the 92 microtesla field takes it to 54% (13 of 24) with the warning. At the end it lays the watch flat at a magnetic
 # heading of 40 (scripts/set-heading.sh), the pose scripts/all-suites.sh leaves, and goes Back.
+# In a build with the check screen (the debug and watch builds, whose calibration has the `Check` row), it then opens
+# the check screen, goes Back to calibration, and requires the same share and the screen still kept on (the window
+# manager's screen-bright wake lock held for the app, `dumpsys power`): a visit to the check screen keeps the regions
+# lit. A build without the row (release) skips this part and says so.
 # Exit status 0 when it passed, 1 otherwise. Emulators only.
 source "$(dirname "$0")/emulator-only.sh" || exit 1
 cd "$(dirname "$0")/.." || exit 1
@@ -64,6 +68,24 @@ warned=$(scripts/ui-dump.sh 2>/dev/null | grep -c "Magnetic interference nearby"
 echo "field 46:46:-65 (92 microtesla): ${now:-none}, warning shown: $warned"
 awake
 if [ "$now" != "54%" ] || [ "$warned" -lt 1 ]; then bad=1; echo "  the 92 microtesla field did not light its segment (54%), or no warning" >&2; fi
+# Whether the window manager keeps the screen on for the app (a window of it asks to be kept on).
+kept_on() { $ADB shell dumpsys power | grep -q "SCREEN_BRIGHT_WAKE_LOCK.*'WindowManager.*com\.infinite8looper\.compass"; }
+if scripts/ui-dump.sh 2>/dev/null | grep -q "text='Check'"; then
+  before=$now
+  scripts/tap-text.sh Check > /dev/null
+  sleep 2
+  if ! scripts/ui-dump.sh 2>/dev/null | grep -q "text='Heading source'"; then bad=1; echo "  the check screen did not open" >&2; fi
+  $ADB shell input keyevent KEYCODE_BACK
+  sleep 2
+  after=$(share)
+  if kept_on; then on=yes; else on=no; fi
+  echo "back from the check screen: ${after:-none}, kept on: $on"
+  awake
+  if [ "$after" != "$before" ]; then bad=1; echo "  the share went from $before to ${after:-none} on a visit to the check screen" >&2; fi
+  if [ "$on" != "yes" ]; then bad=1; echo "  calibration did not keep the screen on after the check screen" >&2; fi
+else
+  echo "no Check row (a build without the check screen): the visit to it is not checked"
+fi
 $ADB shell input keyevent KEYCODE_BACK
 finish
 if [ $bad -eq 0 ]; then echo "passed"; else echo "FAILED"; fi
