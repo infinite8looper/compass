@@ -158,6 +158,14 @@ class CompassViewModel(
     /** The calibration screen says here whether it keeps the screen on; the switch itself is set above every screen. */
     fun setCalibrationAwake(awake: Boolean) { calibrationAwakeNow.value = awake }
 
+    private val checkAwakeNow = MutableStateFlow(false)
+
+    /** Whether the check screen asks for the screen to be kept on (nav/Check.kt, [com.infinite8looper.compass.nav.checkAwakeUntil]). */
+    val checkAwake: StateFlow<Boolean> = checkAwakeNow
+
+    /** The check screen says here whether it keeps the screen on; the switch itself is set above every screen. */
+    fun setCheckAwake(awake: Boolean) { checkAwakeNow.value = awake }
+
     /**
      * The latest reading. While the sensor is not running this stays the last one it gave; null before the first.
      * The magnetometer's accuracy and field strength in a reading are the last it reported, across a stop and a

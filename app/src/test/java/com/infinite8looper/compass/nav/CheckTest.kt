@@ -37,6 +37,23 @@ class CheckTest {
         }
     }
 
+    // The display while it is open (owner, 2026-10-15: "Keep on while open", the same rule as calibration's: two
+    // minutes, counted again from each touch).
+
+    @Test fun theCheckScreenKeepsTheDisplayOnForTwoMinutesFromItsOpening() {
+        assertEquals(121_000L, checkAwakeUntil(openedAtMs = 1_000L, lastTouchAtMs = null))
+    }
+    @Test fun eachTouchCountsTheTwoMinutesAgain() {
+        assertEquals(170_000L, checkAwakeUntil(openedAtMs = 1_000L, lastTouchAtMs = 50_000L))
+        assertEquals(400_000L, checkAwakeUntil(openedAtMs = 1_000L, lastTouchAtMs = 280_000L))
+    }
+    @Test fun aTouchFromBeforeTheOpeningCountsForNothing() {
+        assertEquals(121_000L, checkAwakeUntil(openedAtMs = 1_000L, lastTouchAtMs = 0L))
+    }
+    @Test fun theCheckScreenKeepsItOnAsLongAsCalibrationDoes() {
+        assertEquals(CALIBRATION_AWAKE_MS, checkAwakeUntil(openedAtMs = 0L, lastTouchAtMs = null))
+    }
+
     // The row that switches the heading source.
 
     @Test fun theRowGoesRoundTheThreeSourcesFromFused() {

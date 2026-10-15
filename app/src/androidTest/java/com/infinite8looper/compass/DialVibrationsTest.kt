@@ -23,6 +23,7 @@ import com.infinite8looper.compass.ui.VibrationBranch
 import com.infinite8looper.compass.ui.Vibrations
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
@@ -63,6 +64,24 @@ class DialVibrationsTest {
         // The system adds a vibration to its record when it has ended.
         Thread.sleep(1_500)
         return VibrationRecord.lines(mark)
+    }
+
+    /**
+     * The player says when it has asked the vibrator ([Vibrations.asked]), so a screen that shows how each row plays
+     * (the check screen) can show it when the answer comes, however late; and from then on each row's branch is
+     * what this watch supports.
+     */
+    @Test fun thePlayerSaysWhenItHasAskedTheVibratorAndEachRowsBranchIsThenKnown() = runBlocking {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            lateinit var vibrations: Vibrations
+            scenario.onActivity { vibrations = Vibrations.of(it.window.decorView) }
+            withTimeout(10_000) { Vibrations.asked.first { it } }
+            for (feel in Feel.entries) {
+                val expected = if (supportedOnThisWatch(feel)) VibrationBranch.PRIMITIVES else VibrationBranch.CONSTANT
+                assertEquals("$feel", expected, vibrations.branch(feel))
+            }
+        }
+        Unit
     }
 
     @Test fun eachOfTheThreePlaysOnceAsTheTableSaysAndTheyDiffer() {

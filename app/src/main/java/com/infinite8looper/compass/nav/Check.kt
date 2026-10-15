@@ -1,5 +1,6 @@
 package com.infinite8looper.compass.nav
 
+import kotlin.math.max
 import kotlin.math.roundToInt
 
 // The check screen (v3 spec, "Check screen"): reached from calibration only in builds with the diagnostics switch on;
@@ -19,6 +20,12 @@ fun nextHeadingKind(kind: HeadingKind): HeadingKind = when (kind) {
     HeadingKind.MAGNETIC -> HeadingKind.BLEND
     HeadingKind.BLEND -> HeadingKind.FUSED
 }
+
+/**
+ * When the check screen stops keeping the display on: two minutes ([CALIBRATION_AWAKE_MS], as calibration) after its
+ * opening or after the last touch or turn of the crown on it, whichever is later.
+ */
+fun checkAwakeUntil(openedAtMs: Long, lastTouchAtMs: Long?): Long = max(openedAtMs, lastTouchAtMs ?: openedAtMs) + CALIBRATION_AWAKE_MS
 
 /** A heading source's name on the check screen. */
 fun headingKindName(kind: HeadingKind): String = when (kind) {

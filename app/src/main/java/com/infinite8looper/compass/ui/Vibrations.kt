@@ -18,6 +18,8 @@ import com.infinite8looper.compass.nav.DialCrossing
 import com.infinite8looper.compass.nav.NO_PRESS
 import com.infinite8looper.compass.nav.confirmDelayMs
 import com.infinite8looper.compass.nav.targetQuietNanos
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 
 /**
  * The app's vibrations, in one table: the feel of each is set here and nowhere else (every vibration the app asks
@@ -179,6 +181,13 @@ class Vibrations private constructor(private val view: View) {
         private val CONSTANT_TARGET_QUIET_NANOS = targetQuietNanos(CONSTANT_LENGTH_MS)
         @Volatile private var prepared: Prepared? = null
         @Volatile private var preparing = false
+        private val askedNow = MutableStateFlow(false)
+
+        /**
+         * Whether the vibrator has been asked ([prepare]'s thread has ended): from then on [branch] says how each row
+         * plays on this watch. Set once for the process.
+         */
+        val asked: StateFlow<Boolean> = askedNow
 
         /**
          * Asks the vibrator which rows it supports and builds their compositions, once for the process, on a thread
@@ -201,6 +210,7 @@ class Vibrations private constructor(private val view: View) {
                         it.name + " " + (if (effects?.get(it.ordinal) != null) "primitives" else "constant")
                     })
                 }
+                askedNow.value = true
             }, "vibrations").start()
         }
 

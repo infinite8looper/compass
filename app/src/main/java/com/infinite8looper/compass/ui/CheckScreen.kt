@@ -1,5 +1,6 @@
 package com.infinite8looper.compass.ui
 
+import android.os.SystemClock
 import android.os.VibrationEffect.Composition
 import android.os.VibratorManager
 import androidx.compose.foundation.background
@@ -19,6 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -26,6 +28,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.rotary.onPreRotaryScrollEvent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
@@ -47,6 +53,7 @@ import androidx.wear.compose.material3.Text
 import com.infinite8looper.compass.CompassViewModel
 import com.infinite8looper.compass.nav.WatchScheme
 import com.infinite8looper.compass.nav.buttonCountText
+import com.infinite8looper.compass.nav.checkAwakeUntil
 import com.infinite8looper.compass.nav.checkReadout
 import com.infinite8looper.compass.nav.colorHex
 import com.infinite8looper.compass.nav.headingKindInUse
@@ -75,7 +82,7 @@ private fun HeadingReading?.toReadout() = checkReadout(
  *   ([CompassViewModel.setHeadingKind]): fused, magnetic, blend, and round again. It names the source the compass is
  *   on; on a watch that cannot work out the magnetic heading that is the fused one, with `Magnetic unavailable` or
  *   `Blend unavailable` under it ([headingKindInUse], [headingSourceNote]).
- * - Live, while the screen is open: the three headings (the view model works all three out while it is,
+ * - Live, while the screen is open: the three headings, as `Fused heading`, `Magnetic heading` and `Blend heading` (the view model works all three out while it is,
  *   [CompassViewModel.setAllHeadings]), the estimated heading error, the magnetometer's level and field strength.
  * - What the watch returned for its colors: the six colors of the scheme the library gives (as `Watch face` uses
  *   them), each with its swatch, or `None`; read again each time the screen comes back on screen.
@@ -85,7 +92,8 @@ private fun HeadingReading?.toReadout() = checkReadout(
  *   haptic feedback constant here.
  *
  * Each row that only shows a value is read by a screen reader as `label: value`. The screen does what it says only
- * while it is open; nothing of it is stored. A right swipe and Back leave (ui/CompassApp.kt).
+ * while it is open; nothing of it is stored. It keeps the display on ([CompassViewModel.setCheckAwake]) for two
+ * minutes from its opening or from the last touch or turn of the crown on it, whichever is later. A right swipe and Back leave (ui/CompassApp.kt).
  */
 @Composable
 fun CheckScreen(vm: CompassViewModel) {
@@ -115,14 +123,22 @@ fun CheckScreen(vm: CompassViewModel) {
             BooleanArray(PRIMITIVES.size) { i -> vibrator != null && vibrator.hasVibrator() && vibrator.areAllPrimitivesSupported(PRIMITIVES[i].second) }
         }
     }
-    // How each dial row plays: the player knows once it has asked the vibrator, which it does when the activity is made.
-    var branches by remember { mutableStateOf(DIAL.map { vibrations.branch(it.second) }) }
-    LaunchedEffect(vibrations) {
-        repeat(BRANCH_LOOKS) {
-            branches = DIAL.map { vibrations.branch(it.second) }
-            delay(BRANCH_LOOK_MS)
-        }
+    // How each dial row plays: the player knows once it has asked the vibrator, which it starts when the activity is
+    // made; the rows say so when it has, however long that takes.
+    val asked by Vibrations.asked.collectAsStateWithLifecycle()
+    val branches = remember(vibrations, asked) { DIAL.map { vibrations.branch(it.second) } }
+
+    // The display is kept on for two minutes from the opening or from the last touch or turn of the crown, whichever
+    // is later (nav/Check.kt, checkAwakeUntil).
+    val openedAt = remember { SystemClock.elapsedRealtime() }
+    var lastTouchAt by remember { mutableLongStateOf(NONE_YET) }
+    LaunchedEffect(vm, lastTouchAt) {
+        val left = checkAwakeUntil(openedAt, lastTouchAt.takeIf { it != NONE_YET }) - SystemClock.elapsedRealtime()
+        if (left > 0) { vm.setCheckAwake(true); delay(left) }
+        vm.setCheckAwake(false)
     }
+    DisposableEffect(vm) { onDispose { vm.setCheckAwake(false) } }
+    val touched = { lastTouchAt = SystemClock.elapsedRealtime() }
 
     val r = screenRadius()
     val density = LocalDensity.current
@@ -137,7 +153,19 @@ fun CheckScreen(vm: CompassViewModel) {
     }
     val listState = rememberScalingLazyListState()
 
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
+    // A touch is seen before the list or a row takes it, and is left to them; so is a turn of the crown.
+    Box(
+        Modifier.fillMaxSize().background(Color.Black)
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        if (event.type == PointerEventType.Press) touched()
+                    }
+                }
+            }
+            .onPreRotaryScrollEvent { touched(); false },
+    ) {
         Box(Modifier.fillMaxSize().padding(r * (1f - LIST_RADIUS)).clip(CircleShape)) {
             ScalingLazyColumn(
                 state = listState,
@@ -161,9 +189,9 @@ fun CheckScreen(vm: CompassViewModel) {
                         }
                     }
                 }
-                valueRow("Fused", readout.fused, styles)
-                valueRow("Magnetic", readout.magnetic, styles)
-                valueRow("Blend", readout.blend, styles)
+                valueRow("Fused heading", readout.fused, styles)
+                valueRow("Magnetic heading", readout.magnetic, styles)
+                valueRow("Blend heading", readout.blend, styles)
                 valueRow("Error", readout.error, styles)
                 valueRow("Level", readout.level, styles)
                 valueRow("Field", readout.field, styles)
@@ -251,6 +279,5 @@ private val DIAL = listOf("Play thin line" to Feel.THIN, "Play thick line" to Fe
 /** The colored dot beside a color's value. */
 private val SWATCH = 12.dp
 
-/** How often, and how many times, the screen looks whether the player has asked the vibrator yet. */
-private const val BRANCH_LOOK_MS = 250L
-private const val BRANCH_LOOKS = 20
+/** No touch yet. */
+private const val NONE_YET = Long.MIN_VALUE

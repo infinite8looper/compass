@@ -10,6 +10,8 @@ import android.util.Log
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.View
+import android.view.ViewGroup
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ActivityScenario
@@ -162,7 +164,7 @@ class CheckScreenTest {
             openCheck()
             // All three headings are worked out while it is open, whichever source the compass is on. Each is read
             // once it is scrolled onto the screen: the list composes only the rows near it.
-            for (label in listOf("Fused", "Magnetic", "Blend")) {
+            for (label in listOf(FUSED_ROW, MAGNETIC_ROW, BLEND_ROW)) {
                 scrollUntil(label, SOURCE_ROW) { rowVisible(label) }
                 val deadline = SystemClock.uptimeMillis() + 15_000
                 while (!near40(valueOf(label))) {
@@ -199,6 +201,8 @@ class CheckScreenTest {
             instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
             shows("the settings again") { visible("Calibrate") }
             assertEquals(HeadingKind.MAGNETIC, vm.headingKind.value)
+            // Leaving it, the view model no longer works out the headings of the sources the compass is not on.
+            assertFalse("the view model still works out all three headings after the check screen closed", vm.allHeadings.value)
             val reading = withTimeout(15_000) { vm.heading.first { it?.kind == HeadingKind.MAGNETIC } }!!
             assertEquals("$reading", reading.geomagneticDeg, reading.magneticDeg, 0f)
         }
@@ -247,6 +251,9 @@ class CheckScreenTest {
             val buttons = WatchButtons.report(app)
             scrollUntil("Buttons", SOURCE_ROW) { rowVisible("Buttons") }
             assertEquals(if (buttons.buttonCount < 0) "Unknown" else buttons.buttonCount.toString(), valueOf("Buttons"))
+            val sideKeys = buttons.sideKeys.joinToString { "STEM_${it - KeyEvent.KEYCODE_STEM_1 + 1}" }.ifEmpty { "None" }
+            scrollUntil("Side keys", SOURCE_ROW) { rowVisible("Side keys") }
+            assertEquals(sideKeys, valueOf("Side keys"))
             scrollUntil("Assignable button", SOURCE_ROW) { rowVisible("Assignable button") }
             assertEquals(if (buttons.assignable) "Yes" else "No", valueOf("Assignable button"))
             // The one-handed gestures: the system's Wear SDK library, whether the app can reach it, and whether
@@ -265,6 +272,35 @@ class CheckScreenTest {
                 scrollUntil(label, SOURCE_ROW) { rowVisible(label) }
                 assertEquals(label, if (vibrator.areAllPrimitivesSupported(primitive)) "Yes" else "No", valueOf(label))
             }
+        }
+        Unit
+    }
+
+    /** Whether any view of the activity's window asks for the screen to be kept on. */
+    private fun keptOn(scenario: ActivityScenario<MainActivity>): Boolean {
+        var on = false
+        fun walk(v: View) { if (v.keepScreenOn) on = true; if (v is ViewGroup) for (i in 0 until v.childCount) walk(v.getChildAt(i)) }
+        instrumentation.runOnMainSync { scenario.onActivity { walk(it.window.decorView) } }
+        return on
+    }
+
+    /**
+     * The check screen keeps the display on while it is open (owner, 2026-10-15: "Keep on while open", as calibration):
+     * kept on with it on top (calibration under it is not composed then, so this is its own), and let go once the
+     * wearer has left it and calibration for the settings. The two minutes and the touches that count them again are
+     * the rule `checkAwakeUntil` (CheckTest).
+     */
+    @Test fun theScreenIsKeptOnWhileTheCheckScreenIsOpenAndNotAfterLeavingIt() = runBlocking {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            val vm = viewModelOf(scenario)
+            openCheck()
+            assertFalse("calibration is not what keeps it on under the check screen", vm.calibrationAwake.value)
+            assertTrue("the check screen open, the screen not kept on", keptOn(scenario))
+            instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+            shows("calibration again") { visible(INSTRUCTION) }
+            instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+            shows("the settings again") { visible("Calibrate") }
+            assertFalse("back on the settings, the screen still kept on", keptOn(scenario))
         }
         Unit
     }
@@ -297,13 +333,16 @@ class CheckScreenTest {
         const val INSTRUCTION = "Turn your wrist slowly in every direction"
         const val CHECK_ROW = "Check"
         const val SOURCE_ROW = "Heading source"
+        const val FUSED_ROW = "Fused heading"
+        const val MAGNETIC_ROW = "Magnetic heading"
+        const val BLEND_ROW = "Blend heading"
         const val PLAY_THIN = "Play thin line"
         const val PLAY_THICK = "Play thick line"
         const val PLAY_TARGET = "Play target"
         /** Words of the check screen's own, and the labels of its rows that show a value. */
         val CHECK_WORDS = setOf(SOURCE_ROW, "Watch colors", "Inputs", "Vibrations", PLAY_THIN, PLAY_THICK, PLAY_TARGET)
         val CHECK_LABELS = listOf(
-            "Fused", "Magnetic", "Blend", "Error", "Level", "Field", "Color scheme", "Primary", "Tertiary", "Error color", "On surface",
+            FUSED_ROW, MAGNETIC_ROW, BLEND_ROW, "Error", "Level", "Field", "Color scheme", "Primary", "Tertiary", "Error color", "On surface",
             "On surface variant", "Outline", "Buttons", "Side keys", "Assignable button", "Wear SDK", "Wear SDK reached", "One-handed gestures",
             "Click", "Thud", "Spin", "Quick rise", "Slow rise", "Quick fall", "Tick", "Low tick",
         )
