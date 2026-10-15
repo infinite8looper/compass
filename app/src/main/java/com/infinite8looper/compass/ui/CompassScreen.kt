@@ -22,6 +22,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.changedToDownIgnoreConsumed
+import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.rotary.onRotaryScrollEvent
 import androidx.compose.ui.platform.LocalDensity
@@ -252,6 +255,8 @@ fun CompassScreen(
 
     // What the crown has scrolled toward the next step of the focus, and how far a step is on this screen's density.
     var crown by remember { mutableFloatStateOf(0f) }
+    // When the dial's latest touch went down and was let go, by the touch events' own times (see the tap modifier).
+    val touchTimes = remember { LongArray(2) }
     val crownStepPx = with(LocalDensity.current) { CROWN_STEP_DP.dp.toPx() }
     val sidePress by rememberUpdatedState(onSidePress)
     // On a watch with a button the app can act on, a single press of it saves too; on one without, this is nothing.
@@ -316,7 +321,21 @@ fun CompassScreen(
                     },
                 ) { _, dy -> total += dy }
             }
-            // The long press and the double tap are this one's. It is the later of the two modifiers, so it sees
+            // The times of the dial's touches, as the touch events carry them: when a finger went down and when it
+            // was let go. A double tap is judged by these, not by when the app handled the touches, which on a busy
+            // main thread can be a few hundred milliseconds later and would part two quick taps by more than the
+            // double-tap time (the system's own double-tap detector also goes by the events' times). It looks at
+            // every touch in the first pass, before the modifier below handles it, and takes nothing.
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val change = awaitPointerEvent(PointerEventPass.Initial).changes.firstOrNull() ?: continue
+                        if (change.changedToDownIgnoreConsumed()) touchTimes[0] = change.uptimeMillis
+                        if (change.changedToUpIgnoreConsumed()) touchTimes[1] = change.uptimeMillis
+                    }
+                }
+            }
+            // The long press and the double tap are this one's. It comes after the vertical swipe's modifier, so it sees
             // a touch first: once a long press has opened the waypoints it takes the rest of the touch, and a
             // finger that then moves swipes nothing.
             //
@@ -336,12 +355,12 @@ fun CompassScreen(
                 var waiting: DialTap? = null
                 detectTapGestures(
                     onPress = { at ->
-                        downMs = SystemClock.uptimeMillis(); downX = at.x; downY = at.y
+                        downMs = touchTimes[0]; downX = at.x; downY = at.y
                         downInView = paneView() == PaneView.IN_VIEW
                         if (!tryAwaitRelease()) waiting = null
                     },
                     onTap = {
-                        val tap = DialTap(downMs, SystemClock.uptimeMillis(), downX, downY, downInView, paneView() == PaneView.IN_VIEW)
+                        val tap = DialTap(downMs, touchTimes[1], downX, downY, downInView, paneView() == PaneView.IN_VIEW)
                         val step = nextTap(waiting, tap, timeoutMs, minMs, slopPx)
                         waiting = step.waiting
                         if (step.saves) sidePress()

@@ -107,27 +107,41 @@ class DialInputsTest {
     /** A place on the dial that no tap area of its own covers: above the middle, where the name of a target stands. */
     private val dialY get() = cy - screen.height() * 0.2f
 
-    private fun send(action: Int, x: Float, y: Float, downAt: Long) {
-        val e = MotionEvent.obtain(downAt, SystemClock.uptimeMillis(), action, x, y, 0)
+    /**
+     * Sends one touch event that happened at [at] (now, unless told), as its own time says, as a touch screen stamps
+     * the time a finger touched it. With [wait] (the default) it returns once the app has handled it, which on a
+     * busy emulator can be a few hundred milliseconds later; without, at once. Returns the event's time.
+     */
+    private fun send(action: Int, x: Float, y: Float, downAt: Long, wait: Boolean = true, at: Long = SystemClock.uptimeMillis()): Long {
+        val e = MotionEvent.obtain(downAt, at, action, x, y, 0)
         e.source = InputDevice.SOURCE_TOUCHSCREEN
-        assertTrue(automation.injectInputEvent(e, true))
+        assertTrue(automation.injectInputEvent(e, wait))
         e.recycle()
+        return at
     }
 
-    /** One tap: a finger down and up again after [heldMs]. Returns when it was let go. */
-    private fun tap(x: Float = cx, y: Float = dialY, heldMs: Long = 40): Long {
-        val down = SystemClock.uptimeMillis()
-        send(MotionEvent.ACTION_DOWN, x, y, down)
-        SystemClock.sleep(heldMs)
-        send(MotionEvent.ACTION_UP, x, y, down)
-        return SystemClock.uptimeMillis()
+    /** Waits until the clock of the touch events reads [ms]. */
+    private fun sleepUntil(ms: Long) { SystemClock.sleep((ms - SystemClock.uptimeMillis()).coerceAtLeast(0)) }
+
+    /**
+     * One tap: a finger down at [downAt] (now, unless told) and up again [heldMs] later, by the events' own times,
+     * each sent no sooner than its time. How long the app takes to handle a touch changes neither time. Returns the
+     * time it was let go.
+     */
+    private fun tap(x: Float = cx, y: Float = dialY, heldMs: Long = 40, wait: Boolean = true, downAt: Long = SystemClock.uptimeMillis()): Long {
+        sleepUntil(downAt)
+        send(MotionEvent.ACTION_DOWN, x, y, downAt, wait, at = downAt)
+        sleepUntil(downAt + heldMs)
+        return send(MotionEvent.ACTION_UP, x, y, downAt, wait, at = downAt + heldMs)
     }
 
-    /** Two taps, the second going down [gapMs] after the first was let go. Returns when the second was let go. */
+    /**
+     * Two taps, the second going down [gapMs] after the first was let go, by the events' own times. Returns the time
+     * the second was let go.
+     */
     private fun doubleTap(x: Float = cx, y: Float = dialY, gapMs: Long = 120, secondX: Float = x, secondY: Float = y): Long {
-        tap(x, y)
-        SystemClock.sleep(gapMs)
-        return tap(secondX, secondY)
+        val up = tap(x, y)
+        return tap(secondX, secondY, downAt = up + gapMs)
     }
 
     /** One finger from one place to another in about 200 ms. */
@@ -220,10 +234,27 @@ class DialInputsTest {
             val slop = ViewConfiguration.get(app).scaledDoubleTapSlop
             val far = screen.width() * 0.38f
             assertTrue("the screen is too narrow for two taps further apart than $slop px", 2 * far > slop + 2)
-            tap(x = cx - far, y = cy)
-            SystemClock.sleep(120)
-            doubleTap(x = cx + far, y = cy, gapMs = 120)
+            val strayUp = tap(x = cx - far, y = cy)
+            val up = tap(x = cx + far, y = cy, downAt = strayUp + 120)
+            tap(x = cx + far, y = cy, downAt = up + 120)
             saved(vm, 1, "after a stray tap and then a double tap")
+            assertEquals(1, dao.observeAll().first().size)
+        }
+    }
+
+    @Test fun aDoubleTapIsJudgedByWhenItsTouchesHappenedNotWhenTheyWereHandled() = runBlocking {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            val vm = viewModelOf(scenario)
+            shows("the compass") { compassInView() }
+            // The first tap is handled at once. Then the app's main thread is kept busy for longer than the double-tap
+            // time, as a slow frame on a busy watch can, while the second tap goes down 120 ms after the first was let
+            // go: the app handles it only once the thread is free, well past the double-tap time after the first,
+            // but by the touches' own times the two are a double tap, and it saves.
+            val up = tap()
+            val busyMs = doubleTapMs + 300
+            scenario.onActivity { it.window.decorView.post { SystemClock.sleep(busyMs) } }
+            tap(wait = false, downAt = up + 120)
+            saved(vm, 1, "after a double tap the app handled late")
             assertEquals(1, dao.observeAll().first().size)
         }
     }
