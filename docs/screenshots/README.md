@@ -102,8 +102,14 @@ Every picture here is a capture from an emulator, taken on 2026-10-13 from the d
 | End | `settings-end` | `settings`: scrolled to `Calibrate` |
 | `Breadcrumb trail` and `Show coordinates` on | `settings-trail-coords-on` | `settings`: `Show coordinates` tapped (location already granted; the trail is on by default), scrolled to `Breadcrumb trail` |
 | Every switch off (3 frames: top, middle, end) | `settings-all-off` | `settings`: each row tapped, and `Turn off` answered to the backup's question |
-| Calibration: seven segments of the ring lit, `Covered 29%` (2026-10-15, v3 Task 6) | `calibrate` | `calibration`: `Calibrate` tapped at heading 40, then the fields `0:20:-45 -20:0:-45 0:-20:-45 20:0:-45 45:20:0 0:20:45` set through the console |
+| Calibration: seven segments of the ring lit, `Covered 29%`, and the `Check` row at the bottom (2026-10-15, v3 Tasks 6 and 7) | `calibrate` | `calibration`: `Calibrate` tapped at heading 40, then the fields `0:20:-45 -20:0:-45 0:-20:-45 20:0:-45 45:20:0 0:20:45` set through the console |
 | Interference (2026-10-15) | `calibrate-interference` | `calibration`: then `adb emu sensor set magnetic-field 0:80:-45` (92 microtesla): the share stays 29% |
+| The release build's calibration: no `Check` row (2026-10-15, v3 Task 7) | `calibrate-release` (small only) | by hand: `./gradlew assembleRelease`, the unsigned APK aligned and signed with this machine's debug key in a scratch folder (`zipalign`, `apksigner`), installed in place of the debug build, `Calibrate` tapped; the debug build installed again after |
+| The check screen, its top: `Heading source` and the fused heading (2026-10-15, v3 Task 7) | `check-top` | `check`: `Check` tapped on calibration at heading 40 |
+| The check screen at `Watch colors`: the scheme's colors with their dots (large: `dynamic_color_theme_enabled` 1, the API 35 image's `#D9E2FF` primary), or `None` | `check-watch-colors`, `check-watch-colors-none` (large) | `check`: scrolled; the large one with the setting put to 1 with `adb shell settings put global` and deleted after, the `-none` one and the small one without it |
+| The check screen at `Inputs` | `check-inputs` | `check`: scrolled |
+| The check screen at `Vibrations` | `check-vibrations` | `check`: scrolled |
+| The check screen's end: the three `Play` rows, each saying `Primitives` | `check-end` | `check`: twelve swipes up |
 | The question before backups are turned off | `backup-off-question` | by hand: `Back up waypoints` tapped while it is on |
 
 ## The largest font size
@@ -119,8 +125,9 @@ The system's font scale set to 1.24, the largest step of the Wear OS font size s
 | Settings, further down still | `font-largest-settings-end` | scrolled |
 | Waypoints with the `Drop crumb` row | `font-largest-waypoints` | a second Back, the list scrolled up by one row |
 | Edit, a name on two lines | `font-largest-edit` | a long press on `Trailhead parking lot north` |
-| Calibration (2026-10-15, v3 Task 6) | `font-largest-calibration` | `Calibrate` tapped, the same six fields set as in `calibrate` |
-| Calibration with interference (2026-10-15) | `font-largest-calibration-interference` | `adb emu sensor set magnetic-field 0:80:-45` |
+| Calibration, with the `Check` row (2026-10-15, v3 Tasks 6 and 7) | `font-largest-calibration` | `Calibrate` tapped, the same six fields set as in `calibrate` |
+| Calibration with interference: the warning's last line clear above `Check` (2026-10-15) | `font-largest-calibration-interference` | `adb emu sensor set magnetic-field 0:80:-45` |
+| The check screen, its top and its end (2026-10-15, v3 Task 7) | `font-largest-check-top`, `font-largest-check-end` (small only) | `scripts/screenshot-matrix.sh small calibration check` with the font scale at 1.24, into a scratch folder (`MATRIX_OUT`), and copied |
 | The question before backups are turned off | `font-largest-backup-off-question` | `Back up waypoints` tapped |
 
 ## The three screens

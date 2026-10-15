@@ -269,6 +269,30 @@ class CheckScreenTest {
         Unit
     }
 
+    /** A turn of the crown, as the watch's rotary input device sends it: [scroll] on the scroll axis. */
+    private fun turnCrown(scroll: Float) {
+        val now = SystemClock.uptimeMillis()
+        val props = MotionEvent.PointerProperties().apply { id = 0; toolType = MotionEvent.TOOL_TYPE_UNKNOWN }
+        val coords = MotionEvent.PointerCoords().apply { setAxisValue(MotionEvent.AXIS_SCROLL, scroll) }
+        val e = MotionEvent.obtain(now, now, MotionEvent.ACTION_SCROLL, 1, arrayOf(props), arrayOf(coords), 0, 0, 1f, 1f, 0, 0, InputDevice.SOURCE_ROTARY_ENCODER, 0)
+        assertTrue(instrumentation.uiAutomation.injectInputEvent(e, true))
+        e.recycle()
+    }
+
+    /** The list scrolls with the crown as well as with a finger: turned either way from its top, its first row leaves the screen. */
+    @Test fun theCrownScrollsTheList() = runBlocking {
+        ActivityScenario.launch(MainActivity::class.java).use {
+            openCheck()
+            for (direction in listOf(-1f, 1f)) {
+                repeat(8) { turnCrown(direction); delay(150) }
+                delay(800)
+                if (!visible(SOURCE_ROW)) break
+            }
+            assertFalse("the crown did not scroll the list; on screen: ${wordsOnScreen()}", visible(SOURCE_ROW))
+        }
+        Unit
+    }
+
     private companion object {
         const val INSTRUCTION = "Turn your wrist slowly in every direction"
         const val CHECK_ROW = "Check"

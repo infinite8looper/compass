@@ -18,6 +18,7 @@
 #   edit         a short name, the color being dragged (finger down), `Hold to delete` late in the hold
 #   settings     top, middle, end; `Breadcrumb trail` and `Show coordinates` on; every switch off
 #   calibration  seven segments of the ring lit; interference
+#   check        the check screen, opened from calibration's `Check` row: its top and each of its parts (debug build only)
 #   panes        the three screens side by side; the row half way through a swipe; the compass's three ticks
 # It wipes the app's data (pm clear), puts rows in its database with the device's sqlite3, feeds positions
 # (scripts/geo-feed.sh), sets the virtual sensors, switches the emulator's location setting off and on again, and
@@ -112,9 +113,9 @@ tap() { local r; r=($(row "$1")); [ -n "$r" ] || { echo "no '$1' on screen" >&2;
 tap_row() { local r; r=($(find_row "$1")) || return 1; $ADB shell input tap $r[1] $r[2]; }      # scrolls to the row first
 hold_row() { local r; r=($(find_row "$1")) || return 1; $ADB shell input swipe $r[1] $r[2] $r[1] $r[2] $2; }
 hold() { local r; r=($(row "$1")); [ -n "$r" ] || { echo "no '$1' on screen" >&2; return 1; }; $ADB shell input swipe $r[1] $r[2] $r[1] $r[2] $2; }
-find_row() { # scrolls the list from its top until the row with that text is near the middle
+find_row() { # find_row <text> [tries=14]: scrolls the list from its top until the row with that text is near the middle
   for k in 1 2 3; do $ADB shell input swipe $C $((H * 35 / 100)) $C $((H * 85 / 100)) 150; done; sleep 1
-  for i in $(seq 1 14); do
+  for i in $(seq 1 ${2:-14}); do
     local r=($(row "$1"))
     if [ -n "$r" ] && [ $r[2] -gt $((H * 36 / 100)) ] && [ $r[2] -lt $((H * 57 / 100)) ]; then echo $r; return 0; fi
     $ADB shell input swipe $C $((H * 60 / 100)) $C $((H * 42 / 100)) 600; sleep 0.8
@@ -337,6 +338,21 @@ sec_calibration() {
   $ADB emu sensor set magnetic-field 0:80:-45 > /dev/null; sleep 3; shot calibrate-interference
   magnetic 40; sleep 2; leave_route; from_settings
 }
+sec_check() {
+  # The check screen, from calibration's `Check` row (debug build): its top, then each part scrolled to the middle.
+  fresh granted; magnetic 40; sleep 8; to_settings
+  tap_row "Calibrate" 2>/dev/null || $S/tap-text.sh Calibrate > /dev/null || return 1; sleep 3
+  $S/tap-text.sh Check > /dev/null || return 1; sleep 3
+  shot check-top
+  local part
+  for part in "Watch colors" "Inputs" "Vibrations"; do
+    find_row "$part" 40 > /dev/null || return 1; sleep 1
+    shot check-${${part// /-}:l}
+  done
+  for k in $(seq 1 12); do $ADB shell input swipe $C $((H * 70 / 100)) $C $((H * 30 / 100)) 300; done; sleep 1.5
+  shot check-end
+  leave_route; sleep 1; leave_route; from_settings
+}
 sec_panes() {
   fresh granted; feed $HERE_LAT $HERE_LON; sleep 6; seed $THREE; face 20
   $ADB exec-out "screencap -p 2>/dev/null" > "$tmp/p2.png"
@@ -351,7 +367,7 @@ sec_panes() {
   sleep 2
 }
 
-ALL=(permission truenorth compass moving log coords trail waypoints edit settings calibration panes)
+ALL=(permission truenorth compass moving log coords trail waypoints edit settings calibration check panes)
 [ $# -eq 0 ] && set -- $ALL
 for s in "$@"; do
   if [[ ${ALL[(i)$s]} -gt ${#ALL} ]]; then echo "no section '$s' (sections: $ALL)" >&2; exit 1; fi
