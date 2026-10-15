@@ -235,12 +235,12 @@ private const val GUIDE_TEXT_BOTTOM = -0.50f
 private const val GUIDE_TEXT_ROOM = 0.30f
 private const val GUIDE_WIDTH = 1.2f
 /** The ring of directions covered: its middle and its outer radius. */
-private const val RING_Y = -0.29f
-private const val RING_RADIUS = 0.18f
+private const val RING_Y = -0.305f
+private const val RING_RADIUS = 0.17f
 /** The words either side of the ring: how far their middles are from the screen's middle, and their width. */
 private const val BESIDE_X = 0.48f
 private const val BESIDE_WIDTH = 0.5f
-private const val WORD_Y = 0.035f
+private const val WORD_Y = 0.02f
 private const val FIELD_Y = 0.24f
 private const val WARNING_Y = 0.49f
 private const val WARNING_WIDTH = 1.3f

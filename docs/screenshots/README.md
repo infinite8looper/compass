@@ -119,8 +119,8 @@ The system's font scale set to 1.24, the largest step of the Wear OS font size s
 | Settings, further down still | `font-largest-settings-end` | scrolled |
 | Waypoints with the `Drop crumb` row | `font-largest-waypoints` | a second Back, the list scrolled up by one row |
 | Edit, a name on two lines | `font-largest-edit` | a long press on `Trailhead parking lot north` |
-| Calibration (small: 2026-10-15, v3 Task 6) | `font-largest-calibration` | `Calibrate` tapped, the same six fields set as in `calibrate` |
-| Calibration with interference (small: 2026-10-15) | `font-largest-calibration-interference` | `adb emu sensor set magnetic-field 0:80:-45` |
+| Calibration (2026-10-15, v3 Task 6) | `font-largest-calibration` | `Calibrate` tapped, the same six fields set as in `calibrate` |
+| Calibration with interference (2026-10-15) | `font-largest-calibration-interference` | `adb emu sensor set magnetic-field 0:80:-45` |
 | The question before backups are turned off | `font-largest-backup-off-question` | `Back up waypoints` tapped |
 
 ## The three screens
