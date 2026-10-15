@@ -115,7 +115,7 @@ As built (Task 4, 2026-10-14):
 - The table (`ui/Vibrations.kt`): thin `TICK` at 0.5, thick `THUD` at 1.0, target two `CLICK`s at 0.7 50 ms apart; without primitives `SEGMENT_FREQUENT_TICK` (`CLOCK_TICK` on API 33), `GESTURE_START` and `CONFIRM`, chosen because on the four emulator images they play three different effects, none the press's. The press, the confirming vibration, the lock, the heartbeat and the long press are rows of the same table, as haptic feedback constants.
 - Implementer's ruling, for the owner: the three are played only with `Tick feedback` on.
 - Controller's ruling: the target's vibration is silent while the position is old, as blind navigation is.
-- The target's vibration is not held back by a line played just before it (the line's is cut short); a line is not played while the target's lasts (its primitives' durations, at least 150 ms). Only the pointer's motion passes the target: a new position that moves the bearing past a still pointer gives nothing.
+- The target's vibration is not held back by a line played just before it (the line's is cut short); a line is not played while the target's lasts (its primitives' durations, at least 150 ms), and neither is the target's again (fix round 2: a pointer rocking on the bearing can pass it again sooner, and each new one would cut the one before short). Where the target plays as `CONFIRM`, whose length the app cannot ask, that time is 300 ms, the length of `CONFIRM` on the emulator images. Only the pointer's motion passes the target: a new position that moves the bearing past a still pointer gives nothing.
 
 ## Colors
 

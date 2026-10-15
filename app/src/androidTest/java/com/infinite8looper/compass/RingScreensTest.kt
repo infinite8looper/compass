@@ -45,8 +45,9 @@ import org.junit.runner.RunWith
  *
  * The settings that would bring position fixes for the trail and the coordinates are off. Location runs all the
  * same while the compass or the waypoints screen is on screen (v3), with the position feed of the suite: positions
- * arrive during the turns, and one is made to arrive while a swipe is held with the finger moved 0.3 of the screen's width. A position composes only the
- * parts of the screens that show it ([ScreenCompositions] counts the screens), so the counts must not rise for it.
+ * arrive during the turns, and one is made to arrive while a swipe is held with the finger moved 0.3 of the screen's
+ * width. A position composes only the parts of the screens that show it ([ScreenCompositions] counts the screens),
+ * so the counts must not rise for it.
  * What the screen state did meanwhile is kept and given in a failure's message.
  */
 @RunWith(AndroidJUnit4::class)
