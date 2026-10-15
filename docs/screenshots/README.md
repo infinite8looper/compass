@@ -109,7 +109,7 @@ Every picture here is a capture from an emulator, taken on 2026-10-13 from the d
 | The check screen at `Watch colors`: the scheme's colors with their dots (large: `dynamic_color_theme_enabled` 1, the API 35 image's `#D9E2FF` primary), or `None` | `check-watch-colors`, `check-watch-colors-none` (large) | `check`: scrolled; the large one with the setting put to 1 with `adb shell settings put global` and deleted after, the `-none` one and the small one without it |
 | The check screen at `Inputs` | `check-inputs` | `check`: scrolled |
 | The check screen at `Vibrations` | `check-vibrations` | `check`: scrolled |
-| The check screen's end: the three `Play` rows, each saying `Primitives` | `check-end` | `check`: twelve swipes up |
+| The check screen's end: the `Play` rows, each saying `Primitives` | `check-end` | `check`: twelve swipes up |
 | The question before backups are turned off | `backup-off-question` | by hand: `Back up waypoints` tapped while it is on |
 
 ## The largest font size
