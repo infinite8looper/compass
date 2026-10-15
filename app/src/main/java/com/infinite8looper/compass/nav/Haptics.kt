@@ -126,11 +126,15 @@ fun dialVibrationDue(
     (kind == DialCrossing.TARGET || tickTapDue(nowNanos, lastTapNanos) && nowNanos - lastTargetNanos >= targetQuietNanos)
 
 /**
- * The least time from a press's vibration to the confirming vibration of its save. A save that finishes sooner (an
- * instant save takes tens of milliseconds) has its confirming vibration wait, so that it does not cut the press's
- * short and both are felt.
+ * The least time from a press's vibration being asked for to the confirming vibration of its save. A save that
+ * finishes sooner (an instant save takes tens of milliseconds) has its confirming vibration wait, so that it does not
+ * cut the press's short and both are felt. It covers the press's length and the time the system takes to start it:
+ * on the emulators the press plays for up to 112 ms, and a loaded API 34 emulator started a vibration 67 ms after it
+ * was asked for, so a confirm 150 ms after the press cut it short; 250 ms leaves twice that latency as room. A
+ * confirm about 100 ms later is not felt as late (the owner, v2: "haptic overlap is ok", so the later side is the
+ * safe one).
  */
-const val SAVE_CONFIRM_AFTER_PRESS_MS = 150L
+const val SAVE_CONFIRM_AFTER_PRESS_MS = 250L
 
 /** [confirmDelayMs]'s press time when no press vibration was played. */
 const val NO_PRESS = Long.MIN_VALUE

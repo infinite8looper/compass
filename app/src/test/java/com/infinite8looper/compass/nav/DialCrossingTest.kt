@@ -325,4 +325,15 @@ class DialCrossingTest {
         assertEquals(SAVE_CONFIRM_AFTER_PRESS_MS, confirmDelayMs(nowMs = 9_000, pressAtMs = 10_000))
         assertTrue(SAVE_CONFIRM_AFTER_PRESS_MS in 100L..250L)
     }
+
+    @Test fun theConfirmsWaitCoversThePressAndTheVibratorsStartLatencyWithRoom() {
+        // Measured on the emulators (dumpsys vibrator_manager, 2026-10-14): the press's vibration plays for up to
+        // 112 ms (API 37's TICK; 101-105 ms on API 33, 34 and 35), and the system has started a vibration up to 67 ms
+        // after it was asked for (a loaded API 34; 0-3 ms freshly booted). A confirm due sooner than the press's
+        // length plus that latency cut the press short (DialVibrationsTest on API 34). The wait covers both, with
+        // room: twice the latency seen.
+        val longestPressMs = 112L
+        val longestStartLatencyMs = 67L
+        assertTrue("$SAVE_CONFIRM_AFTER_PRESS_MS", SAVE_CONFIRM_AFTER_PRESS_MS >= longestPressMs + 2 * longestStartLatencyMs)
+    }
 }

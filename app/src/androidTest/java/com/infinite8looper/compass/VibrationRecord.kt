@@ -47,6 +47,14 @@ object VibrationRecord {
     /** When it started, in milliseconds on the record's clock (comparable between lines only). */
     fun startMsOf(line: String): Long = stamp.parse(startOf(line))!!.time
 
+    /**
+     * How long it took, in milliseconds, as the record writes it: from when it was asked for to its end on API 34 and
+     * later (`duration: N ms`, which so holds the time the system took to start it), from its start to its end on
+     * API 33 (`durationMs: N`).
+     */
+    fun durationMsOf(line: String): Long =
+        (Regex("duration:\\s*(\\d+)\\s*ms").find(line) ?: Regex("durationMs: (\\d+)").find(line))!!.groupValues[1].toLong()
+
     /** What was played, without the time, status or the original effect. */
     fun playedOf(line: String): String =
         if ("played:" in line) line.substringAfter("played:").substringBefore("| original").trim()

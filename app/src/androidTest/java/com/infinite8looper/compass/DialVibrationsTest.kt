@@ -136,10 +136,21 @@ class DialVibrationsTest {
     @Test fun aConfirmWaitingForOnePressWaitsForASecondPressToo() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             Thread.sleep(2_000)
-            // Press, an instant save 40 ms later, a second press 80 ms after that: the confirm, due 150 ms after the
-            // first press, would cut the second press short. It waits for the second instead.
+            // A newer press may cut an older press's vibration short: "The system stops a vibration that is playing
+            // when the same app asks for another" (v2 spec), and the owner (v2): "haptic overlap is ok". Only the
+            // confirm is held back for a press. So the second press comes once the first has played out: after how
+            // long a press takes here as the system records it (its length and the time to start it) and 40 ms more.
+            // Until 2026-10-14 it came 120 ms after the first, and on API 34 a press that took 122 ms was cut short by it.
+            val lone = recordOf(scenario) { it.press() }
+            assertEquals("a press alone: $lone", 1, lone.size)
+            val gapMs = VibrationRecord.durationMsOf(lone.single()) + 40
+            // The second press has to come while the confirm still waits for the first.
+            assertTrue("a press takes ${gapMs - 40} ms here: no second press fits before the confirm; $lone", gapMs <= SAVE_CONFIRM_AFTER_PRESS_MS - 20)
+            // Press, an instant save 40 ms later, a second press after the gap: the confirm, due
+            // SAVE_CONFIRM_AFTER_PRESS_MS after the first press, would cut the second press short. It waits for the
+            // second instead.
             val lines = recordOf(scenario) { player ->
-                player.press(); SystemClock.sleep(40); player.saved(); SystemClock.sleep(80); player.press()
+                player.press(); SystemClock.sleep(40); player.saved(); SystemClock.sleep(gapMs - 40); player.press()
             }
             val all = "recorded: $lines"
             assertEquals(all, 3, lines.size)
