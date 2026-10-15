@@ -101,13 +101,6 @@ fun largeHeadingError(wasShown: Boolean, errorDeg: Float?): Boolean =
 fun calibrationPromptDue(accuracy: Int?, largeHeadingError: Boolean): Boolean =
     (accuracy != null && accuracy <= ACCURACY_LOW) || largeHeadingError
 
-/**
- * The prompt for a single reading with nothing shown before it: low accuracy or worse, or an estimated heading error
- * above [LARGE_HEADING_ERROR_DEG].
- */
-fun calibrationPromptDue(accuracy: Int?, headingErrorDeg: Float?): Boolean =
-    calibrationPromptDue(accuracy, largeHeadingError(wasShown = false, errorDeg = headingErrorDeg))
-
 /** SensorManager.SENSOR_STATUS_ACCURACY_LOW. */
 private const val ACCURACY_LOW = 1
 

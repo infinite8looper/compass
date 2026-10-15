@@ -147,17 +147,21 @@ class CalibrationTest {
 
     @Test fun theLargeHeadingErrorThresholdIsThirtyDegrees() { assertEquals(30f, LARGE_HEADING_ERROR_DEG, 0f) }
 
+    /** The prompt for a single reading with nothing shown before it, as the compass works it out (CompassScreen.kt). */
+    private fun firstReadingPrompt(accuracy: Int?, errorDeg: Float?) =
+        calibrationPromptDue(accuracy, largeHeadingError(wasShown = false, errorDeg = errorDeg))
+
     @Test fun thePromptShowsAtALowOrUnreliableMagnetometerAsBefore() {
-        assertTrue(calibrationPromptDue(1, null)); assertTrue(calibrationPromptDue(0, null))
-        assertTrue(calibrationPromptDue(-1, null))   // SENSOR_STATUS_NO_CONTACT is below low too
-        assertFalse(calibrationPromptDue(2, null)); assertFalse(calibrationPromptDue(3, null))
-        assertFalse(calibrationPromptDue(null, null))
+        assertTrue(firstReadingPrompt(1, null)); assertTrue(firstReadingPrompt(0, null))
+        assertTrue(firstReadingPrompt(-1, null))   // SENSOR_STATUS_NO_CONTACT is below low too
+        assertFalse(firstReadingPrompt(2, null)); assertFalse(firstReadingPrompt(3, null))
+        assertFalse(firstReadingPrompt(null, null))
     }
 
     @Test fun thePromptShowsForAHeadingErrorAboveTheThresholdWhateverTheLevel() {
-        assertTrue(calibrationPromptDue(3, 30.01f)); assertTrue(calibrationPromptDue(2, 45f)); assertTrue(calibrationPromptDue(null, 90f))
-        assertFalse(calibrationPromptDue(3, 30f)); assertFalse(calibrationPromptDue(3, 29.9f)); assertFalse(calibrationPromptDue(null, 5f))
-        assertTrue(calibrationPromptDue(1, 5f))
+        assertTrue(firstReadingPrompt(3, 30.01f)); assertTrue(firstReadingPrompt(2, 45f)); assertTrue(firstReadingPrompt(null, 90f))
+        assertFalse(firstReadingPrompt(3, 30f)); assertFalse(firstReadingPrompt(3, 29.9f)); assertFalse(firstReadingPrompt(null, 5f))
+        assertTrue(firstReadingPrompt(1, 5f))
     }
 
     // The large-error prompt has a margin: it shows above 30 degrees and goes only below 25, so an estimate that
