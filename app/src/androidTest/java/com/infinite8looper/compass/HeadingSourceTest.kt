@@ -92,8 +92,11 @@ class HeadingSourceTest {
 
     /**
      * The sensors the heading source has registered right now: in dumpsys sensorservice each connection is a line
-     * naming its listener's class, followed by one line per sensor it has, `<name> 0x<handle> | first flush ...`.
+     * naming its listener's class, followed by one line per sensor it has: `<name> 0x<handle> | first flush ...`
+     * on API 35 and 37, `<name> 0x<handle> | status: active ...` on API 33 and 34.
      */
+    private val sensorLine = Regex("^.+ 0x[0-9a-fA-F]+ \\|")
+
     private fun registeredSensors(): Set<String> {
         val names = mutableSetOf<String>()
         var ours = false
@@ -101,7 +104,7 @@ class HeadingSourceTest {
             val t = line.trim()
             when {
                 "WakeLockRefCount" in t -> ours = "sensors.HeadingSource" in t
-                ours && "| first flush" in t -> names += t.substringBefore(" 0x").trim()
+                ours && sensorLine.containsMatchIn(t) -> names += t.substringBefore(" 0x").trim()
                 ours && !t.startsWith("Session Start") -> ours = false
             }
         }
