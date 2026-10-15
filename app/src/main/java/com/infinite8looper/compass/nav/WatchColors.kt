@@ -367,8 +367,12 @@ private fun grayLike(from: Int, own: Int): Int {
  * waypoint's place ([FIRST_WAYPOINT_PLACE], 108.3) lands on the ring's third anchor, two thirds of the way round,
  * rather than near north (a third) or on the accent (0, the pointer's color). The owner (2026-10-14): "new waypoint
  * should be near some other color". The ring's order and thirds are kept, and no stored place is changed.
+ *
+ * It is worked out when read, not kept in a field of this file: [FIRST_WAYPOINT_PLACE] lives in Navigation.kt and is
+ * made from this file's functions, so a field here could be set while Navigation.kt was still being set up, with the
+ * place still 0 (which happened in the unit tests when Navigation.kt was the first of the two used).
  */
-val RING_READ_OFFSET_TURNS: Float = 2f / 3f - FIRST_WAYPOINT_PLACE / 360f
+val RING_READ_OFFSET_TURNS: Float get() = 2f / 3f - FIRST_WAYPOINT_PLACE / 360f
 
 /**
  * A waypoint's color in [palette] for its stored place [position], 0 to 360: the full wheel at that hue, or the ring
