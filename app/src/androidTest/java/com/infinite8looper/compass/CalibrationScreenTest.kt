@@ -149,6 +149,52 @@ class CalibrationScreenTest {
         Unit
     }
 
+    /** What a screen reader reads of a node: its text, or else its description. */
+    private fun AccessibilityNodeInfo.spoken(): String = (text ?: contentDescription)?.toString().orEmpty()
+
+    /**
+     * What a screen reader reads when it stops on a node: the node's own words, then those of the nodes under it that
+     * it does not stop on by themselves, in order (how TalkBack reads a node that groups its children).
+     */
+    private fun AccessibilityNodeInfo.readAsOne(): String {
+        val words = ArrayList<String>()
+        fun walk(n: AccessibilityNodeInfo, top: Boolean) {
+            if (!top && (n.isScreenReaderFocusable || n.isFocusable)) return
+            n.spoken().takeIf { it.isNotEmpty() }?.let { words += it }
+            for (i in 0 until n.childCount) n.getChild(i)?.let { walk(it, false) }
+        }
+        walk(this, true)
+        return words.joinToString(", ")
+    }
+
+    /**
+     * A screen reader stops on `Covered` and the share as one ("Covered, 4%"): one node of the system's tree that it
+     * stops on holds both, and that node is a polite live region, so a share that grows is announced.
+     */
+    @Test fun theShareIsReadWithItsLabelAsOneAndAGrowingShareIsAnnounced() = runBlocking {
+        ActivityScenario.launch(MainActivity::class.java).use {
+            openCalibration()
+            val coveredAndShare = Regex("Covered, \\d{1,3}%")
+            val deadline = SystemClock.uptimeMillis() + 10_000
+            var node: AccessibilityNodeInfo? = null
+            while (node == null) {
+                val stops = nodes().filter { it.isVisibleToUser && (it.isScreenReaderFocusable || it.isFocusable) }
+                node = stops.firstOrNull { coveredAndShare.matches(it.readAsOne()) }
+                if (node == null) {
+                    assertTrue(
+                        "no node a screen reader stops on reads `Covered` and the share as one; it stops on ${stops.map { it.readAsOne() }}, " +
+                            "words on screen ${wordsOnScreen()}",
+                        SystemClock.uptimeMillis() < deadline,
+                    )
+                    delay(200)
+                }
+            }
+            Log.i("CalibrationScreenTest", "read as: ${node.readAsOne()}, live region ${node.liveRegion}")
+            assertEquals("the share's live region (read as `${node.readAsOne()}`)", View.ACCESSIBILITY_LIVE_REGION_POLITE, node.liveRegion)
+        }
+        Unit
+    }
+
     @Test fun theScreenIsKeptOnWhileCalibrationIsOpenAndNotAfterLeavingIt() = runBlocking {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             openCalibration()

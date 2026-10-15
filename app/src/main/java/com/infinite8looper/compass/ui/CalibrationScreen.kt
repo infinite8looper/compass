@@ -68,12 +68,13 @@ import kotlin.math.roundToInt
 
 /**
  * What the screen shows of the sensor. The sensor reports about 50 times a second; the level changes about once a
- * second at most, and the estimated heading error, in whole degrees, seldom.
+ * second at most, and the estimated heading error, in whole degrees, seldom. One of these is made for each reading
+ * (to compare with the last); the error's words are made only when the screen recomposes for a change.
  */
-private data class CalibrationView(val accuracy: Int?, val fieldMicroTesla: Int?, val interference: Boolean, val errorText: String?)
+private data class CalibrationView(val accuracy: Int?, val fieldMicroTesla: Int?, val interference: Boolean, val errorWholeDeg: Int?)
 
 private fun HeadingReading?.toView() = CalibrationView(
-    this?.accuracy, this?.fieldMicroTesla?.roundToInt(), isInterference(this?.fieldMicroTesla), this?.headingErrorDeg?.let(::headingErrorText),
+    this?.accuracy, this?.fieldMicroTesla?.roundToInt(), isInterference(this?.fieldMicroTesla), this?.headingErrorDeg?.roundToInt(),
 )
 
 /**
@@ -163,10 +164,10 @@ fun CalibrationScreen(vm: CompassViewModel, onCheck: (() -> Unit)? = null) {
         CoverageRing({ covered.intValue }, Modifier.offset(y = r * RING_Y).size(r * RING_RADIUS * 2))
         Beside(
             "Covered", coveredText(covered.intValue), besideStyle,
-            Modifier.offset(x = -r * BESIDE_X, y = r * RING_Y).width(r * BESIDE_WIDTH),
+            Modifier.offset(x = -r * BESIDE_X, y = r * RING_Y).width(r * BESIDE_WIDTH), announced = true,
         )
-        shown.errorText?.let { error ->
-            Beside("Error", error, besideStyle, Modifier.offset(x = r * BESIDE_X, y = r * RING_Y).width(r * BESIDE_WIDTH))
+        shown.errorWholeDeg?.let { error ->
+            Beside("Error", headingErrorText(error.toFloat()), besideStyle, Modifier.offset(x = r * BESIDE_X, y = r * RING_Y).width(r * BESIDE_WIDTH))
         }
         Text(
             accuracyLabel(shown.accuracy), color = Ink, style = wordStyle, maxLines = 1,
@@ -200,24 +201,37 @@ fun CalibrationScreen(vm: CompassViewModel, onCheck: (() -> Unit)? = null) {
     }
 }
 
-/** A label and its value on two lines, beside the ring: the label dim, the value in ink. Each line is drawn smaller rather than cut. */
+/**
+ * A label and its value on two lines, beside the ring: the label dim, the value in ink. Each line is drawn smaller
+ * rather than cut. A screen reader reads the two as one (`Covered, 29%`); where [announced], a change of the value
+ * is announced, politely.
+ */
 @Composable
-private fun Beside(label: String, value: String, style: androidx.compose.ui.text.TextStyle, modifier: Modifier) {
-    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        for ((text, color) in listOf(label to Dim, value to Ink)) {
-            BasicText(
-                text, style = style, maxLines = 1, color = { color },
-                autoSize = TextAutoSize.StepBased(minFontSize = style.fontSize * SMALLEST, maxFontSize = style.fontSize, stepSize = 0.25.sp),
-            )
-        }
+private fun Beside(label: String, value: String, style: androidx.compose.ui.text.TextStyle, modifier: Modifier, announced: Boolean = false) {
+    Column(
+        modifier.semantics(mergeDescendants = true) { if (announced) liveRegion = LiveRegionMode.Polite },
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
+    ) {
+        BesideLine(label, Dim, style)
+        BesideLine(value, Ink, style)
     }
+}
+
+@Composable
+private fun BesideLine(text: String, color: Color, style: androidx.compose.ui.text.TextStyle) {
+    BasicText(
+        text, style = style, maxLines = 1, color = { color },
+        autoSize = TextAutoSize.StepBased(minFontSize = style.fontSize * SMALLEST, maxFontSize = style.fontSize, stepSize = 0.25.sp),
+    )
 }
 
 /**
  * The ring of segments: band 0 (the field through the back of the watch) outermost, band 2 (out of its face)
  * innermost; sector k centered k eighths of a turn counterclockwise from 3 o'clock, which is the direction the field
- * points across the face. Lit segments in the confirming green, the others faint. Read [covered] only here, while
- * drawing, so a new segment redraws the ring and recomposes nothing.
+ * points across the face. Lit segments in the confirming green, the others faint. [covered] is read here only while
+ * drawing, so the ring itself redraws without recomposing. The share written beside it and the effect that keeps
+ * the screen on read the regions in composition, so each new segment (at most 24 while the screen is open)
+ * recomposes the screen's body once.
  */
 @Composable
 private fun CoverageRing(covered: () -> Int, modifier: Modifier) {
