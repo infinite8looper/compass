@@ -128,30 +128,36 @@ fun paneOnScreen(pane: Pane, nearestPage: Int, offsetFraction: Float, targetPage
         paneOf(page) == pane && pageView(page, nearestPage, offsetFraction, targetPage, scrollInProgress) != PaneView.HIDDEN
     }
 
-/** What is on top: the three side-by-side screens, or one of the screens opened from a row (the last is the question asked before backups are turned off). */
-enum class TopScreen { PANES, EDIT, CALIBRATION, BACKUP_OFF }
+/**
+ * What is on top: the three side-by-side screens, or one of the screens opened from a row: edit, calibration, the
+ * question asked before backups are turned off, and the check screen opened from calibration ([checkRoute]).
+ */
+enum class TopScreen { PANES, EDIT, CALIBRATION, BACKUP_OFF, CHECK }
 
-/** The routes of the navigation host: the three screens, the screen that edits the waypoint with an id, calibration, the question before backups are turned off. */
+/** The routes of the navigation host: the three screens, the screen that edits the waypoint with an id, calibration, the question before backups are turned off, the check screen. */
 const val PANES_ROUTE = "panes"
 const val EDIT_ROUTE = "edit/{id}"
 const val CALIBRATE_ROUTE = "calibrate"
 const val BACKUP_OFF_ROUTE = "backup-off"
+const val CHECK_ROUTE = "check"
 
 /** The screen on top for the navigation host's current [route]; the three screens before it has one. */
 fun topScreen(route: String?): TopScreen = when (route) {
     EDIT_ROUTE -> TopScreen.EDIT
     CALIBRATE_ROUTE -> TopScreen.CALIBRATION
     BACKUP_OFF_ROUTE -> TopScreen.BACKUP_OFF
+    CHECK_ROUTE -> TopScreen.CHECK
     else -> TopScreen.PANES
 }
 
 /**
  * Whether the heading sensor should be running. This is the one decision: while the app is on screen, and either
- * calibration is open or the three screens are on top with the compass on screen ([paneOnScreen]: at rest in
- * view, or passing during a swipe, when it is drawn live). Settings, waypoints and the edit screen do not run it.
+ * calibration or the check screen is open or the three screens are on top with the compass on screen
+ * ([paneOnScreen]: at rest in view, or passing during a swipe, when it is drawn live). Settings, waypoints and the
+ * edit screen do not run it.
  */
 fun headingWanted(top: TopScreen, compassOnScreen: Boolean, appOnScreen: Boolean): Boolean =
-    appOnScreen && (top == TopScreen.CALIBRATION || (top == TopScreen.PANES && compassOnScreen))
+    appOnScreen && (top == TopScreen.CALIBRATION || top == TopScreen.CHECK || (top == TopScreen.PANES && compassOnScreen))
 
 /**
  * Whether the screens are a reason for location to run, so that a press finds a position in hand: while the app is
