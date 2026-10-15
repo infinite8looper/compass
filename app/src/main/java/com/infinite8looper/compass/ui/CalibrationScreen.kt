@@ -5,12 +5,14 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -31,6 +33,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -91,12 +94,15 @@ private fun HeadingReading?.toView() = CalibrationView(
  * The screen keeps the display on ([CompassViewModel.setCalibrationAwake]) for two minutes from its opening or from
  * the last segment that lit, whichever is later.
  *
+ * In a build with the diagnostics switch on, a row at the bottom, `Check`, opens the check screen ([onCheck]; null
+ * where the build has no such screen, and then there is no row).
+ *
  * Everything stands where it is whatever is shown: the warning and the heading error have their own places and come
  * and go there. A right swipe and Back leave, which is done where the screen is put into the navigation host
  * (ui/CompassApp.kt). The crown and a side button do nothing here.
  */
 @Composable
-fun CalibrationScreen(vm: CompassViewModel) {
+fun CalibrationScreen(vm: CompassViewModel, onCheck: (() -> Unit)? = null) {
     // Collect only the displayed values, so the screen recomposes when one of them changes, not on every reading.
     // It opens on what the sensor last said, which the view model keeps while the sensor is stopped.
     val shown by remember(vm) { vm.heading.map { it.toView() }.distinctUntilChanged() }
@@ -140,6 +146,7 @@ fun CalibrationScreen(vm: CompassViewModel) {
         val warningStyle = remember(r, density, themeStyle) { themeStyle.merge(density.instrumentText(r * 0.085f, align = TextAlign.Center)) }
         val guideStyle = remember(r, density, themeStyle) { themeStyle.merge(density.instrumentText(r * 0.09f, align = TextAlign.Center)) }
         val besideStyle = remember(r, density, themeStyle) { themeStyle.merge(density.instrumentText(r * 0.085f, align = TextAlign.Center)) }
+        val checkStyle = remember(r, density) { density.instrumentText(r * 0.09f, FontWeight.Medium, TextAlign.Center) }
 
         // The level and the interference change about once a second at most, and the frame with them.
         FrameRing(fill = { filled.value }, fillColor = if (ring.role == RingRole.ERROR) ErrorColor else ConfirmColor, fillInner = FILL_INNER)
@@ -180,6 +187,15 @@ fun CalibrationScreen(vm: CompassViewModel) {
                 warningStyle, maxLines = 3, overflow = TextOverflow.Ellipsis, color = { ErrorColor },
                 autoSize = TextAutoSize.StepBased(minFontSize = warningStyle.fontSize * SMALLEST, maxFontSize = warningStyle.fontSize, stepSize = 0.25.sp),
             )
+        }
+        // The row that opens the check screen, at the bottom: only in a build that has the screen (nav/Check.kt).
+        if (onCheck != null) {
+            Box(
+                Modifier.offset(y = r * CHECK_Y).width(r * CHECK_WIDTH).heightIn(min = HitHeight).clickable(role = Role.Button, onClick = onCheck),
+                Alignment.Center,
+            ) {
+                Text("Check", color = AccentColor, style = checkStyle, maxLines = 1)
+            }
         }
     }
 }
@@ -244,6 +260,9 @@ private const val WORD_Y = 0.02f
 private const val FIELD_Y = 0.24f
 private const val WARNING_Y = 0.49f
 private const val WARNING_WIDTH = 1.3f
+/** The row that opens the check screen: its middle and its width. */
+private const val CHECK_Y = 0.78f
+private const val CHECK_WIDTH = 0.6f
 /** How small a line is drawn, as a share of its size, to keep it in its room. */
 private const val SMALLEST = 0.75f
 /** The ring's proportions: each layer's width, the gap between layers, the empty middle, as shares of one another; the gap between segments, in degrees. */

@@ -32,6 +32,7 @@ import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.currentBackStackEntryAsState
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
+import com.infinite8looper.compass.BuildConfig
 import com.infinite8looper.compass.CompassViewModel
 import com.infinite8looper.compass.nav.BACKUP_OFF_ROUTE
 import com.infinite8looper.compass.nav.CALIBRATE_ROUTE
@@ -43,6 +44,7 @@ import com.infinite8looper.compass.nav.Pane
 import com.infinite8looper.compass.nav.PaneView
 import com.infinite8looper.compass.nav.TopScreen
 import com.infinite8looper.compass.nav.backPage
+import com.infinite8looper.compass.nav.checkRoute
 import com.infinite8looper.compass.nav.headingWanted
 import com.infinite8looper.compass.nav.pageToward
 import com.infinite8looper.compass.nav.pageView
@@ -194,8 +196,16 @@ fun CompassApp() {
                 val leave = { nav.popBackStack(BACKUP_OFF_ROUTE, inclusive = true); Unit }
                 SwipeBack(leave) { BackupOffScreen(onTurnOff = { vm.setBackupEnabled(false); leave() }, onKeep = leave) }
             }
+            // The check screen is a route only in a build with the diagnostics switch on (the debug and watch
+            // builds); without the route, calibration has no row that opens it.
+            val check = checkRoute(BuildConfig.DIAGNOSTICS)
             composable(CALIBRATE_ROUTE) {
-                SwipeBack(onLeave = { nav.popBackStack(CALIBRATE_ROUTE, inclusive = true) }) { CalibrationScreen(vm) }
+                SwipeBack(onLeave = { nav.popBackStack(CALIBRATE_ROUTE, inclusive = true) }) {
+                    CalibrationScreen(vm, onCheck = check?.let { route -> { nav.navigate(route) { launchSingleTop = true } } })
+                }
+            }
+            if (check != null) composable(check) {
+                SwipeBack(onLeave = { nav.popBackStack(check, inclusive = true) }) { CheckScreen(vm) }
             }
         }
     }
