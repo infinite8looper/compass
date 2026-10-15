@@ -1,6 +1,5 @@
 package com.infinite8looper.compass.ui
 
-import android.hardware.SensorManager
 import androidx.compose.ui.unit.Dp
 import com.infinite8looper.compass.NavUi
 import android.os.Build
@@ -250,7 +249,7 @@ fun CompassScreen(
 
     val headingShown = remember { derivedStateOf { headingText(shownWhole.intValue) } }
     val lowAccuracy = remember {
-        derivedStateOf { readingState.value?.accuracy?.let { it <= SensorManager.SENSOR_STATUS_ACCURACY_LOW } ?: false }
+        derivedStateOf { readingState.value.let { calibrationPromptDue(it?.accuracy, it?.headingErrorDeg) } }
     }
 
     // What the crown has scrolled toward the next step of the focus, and how far a step is on this screen's density.

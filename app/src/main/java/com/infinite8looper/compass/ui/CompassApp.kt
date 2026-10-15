@@ -272,7 +272,8 @@ private fun Panes(
  * retraced while a position can come ([trailKeepsAwake]). It also keeps it on while a save is in
  * progress, with or without targets and on whichever screen the wearer is, the ones opened from a row included:
  * the system gives an app that is not on screen no location, so a watch that went to sleep during a save would end
- * it in "No GPS fix".
+ * it in "No GPS fix". And it keeps it on while the calibration screen asks for that ([CompassViewModel.calibrationAwake]:
+ * two minutes from its opening or from the last new segment of its ring).
  *
  * This is called once, above the navigation host, and not on the compass: the screen has one such switch, and it
  * has to hold whatever route is on top.
@@ -282,10 +283,11 @@ private fun KeepAwake(vm: CompassViewModel, compassInView: () -> Boolean) {
     val view = LocalView.current
     val nav = vm.nav.collectAsStateWithLifecycle()
     val status = vm.logStatus.collectAsStateWithLifecycle()
+    val calibration = vm.calibrationAwake.collectAsStateWithLifecycle()
     val awake by remember(compassInView) {
         derivedStateOf {
             (nav.value.targets.isNotEmpty() && compassInView()) || trailKeepsAwake(nav.value.trail.mode, compassInView(), locationCanRun = nav.value.noPosition == null) ||
-                status.value is LogStatus.Saving
+                status.value is LogStatus.Saving || calibration.value
         }
     }
     DisposableEffect(view, awake) {

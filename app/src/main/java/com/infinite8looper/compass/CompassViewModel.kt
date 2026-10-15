@@ -121,6 +121,25 @@ class CompassViewModel(
      */
     fun setHeadingWanted(wanted: Boolean) { headingOn.value = wanted }
 
+    private val headingKindNow = MutableStateFlow(DEFAULT_HEADING_KIND)
+
+    /**
+     * Where the compass's heading comes from ([HeadingKind]), for the running app: it starts on
+     * [DEFAULT_HEADING_KIND] and is not stored, so the app starts on it again each time. The check screen switches it.
+     */
+    val headingKind: StateFlow<HeadingKind> = headingKindNow
+
+    /** Switches the compass's heading source; the sensors are started again for it if they are running. */
+    fun setHeadingKind(kind: HeadingKind) { headingKindNow.value = kind }
+
+    private val calibrationAwakeNow = MutableStateFlow(false)
+
+    /** Whether the calibration screen asks for the screen to be kept on (nav/Calibration.kt, [calibrationKeepsAwake]). */
+    val calibrationAwake: StateFlow<Boolean> = calibrationAwakeNow
+
+    /** The calibration screen says here whether it keeps the screen on; the switch itself is set above every screen. */
+    fun setCalibrationAwake(awake: Boolean) { calibrationAwakeNow.value = awake }
+
     /**
      * The latest reading. While the sensor is not running this stays the last one it gave; null before the first.
      * The magnetometer's accuracy and field strength in a reading are the last it reported, across a stop and a
@@ -129,7 +148,9 @@ class CompassViewModel(
     val heading: StateFlow<HeadingReading?> = headingOn
         .mapLatest { wanted -> if (!wanted) delay(HEADING_STOP_DELAY_MS); wanted }
         .distinctUntilChanged()
-        .flatMapLatest { running -> if (running) headingSource.readings() else emptyFlow() }
+        .combine(headingKindNow) { running, kind -> if (running) kind else null }
+        .distinctUntilChanged()
+        .flatMapLatest { kind -> if (kind != null) headingSource.readings(kind) else emptyFlow() }
         .scan<HeadingReading, HeadingReading?>(null) { last, reading ->
             val magnet = carriedOver(
                 last?.let { MagnetReport(it.accuracy, it.fieldMicroTesla) }, MagnetReport(reading.accuracy, reading.fieldMicroTesla),

@@ -624,6 +624,32 @@ class CompassViewModelTest {
         withContext(Dispatchers.Main) { vm.setHeadingWanted(false) }
     }
 
+    /**
+     * The compass's heading source is switched for the running app (v3 spec, "Check screen": "A row switches the
+     * compass's heading source for the running app"), and a view model starts on the fused one ("The compass keeps
+     * the fused source until the owner has compared them on the watch").
+     */
+    @Test fun theHeadingSourceIsSwitchedForTheRunningAppAndStartsFused() = runBlocking {
+        val vm = viewModel()
+        assertEquals(com.infinite8looper.compass.nav.HeadingKind.FUSED, vm.headingKind.value)
+        withContext(Dispatchers.Main) { vm.setHeadingWanted(true) }
+        try {
+            for (kind in listOf(com.infinite8looper.compass.nav.HeadingKind.MAGNETIC, com.infinite8looper.compass.nav.HeadingKind.BLEND, com.infinite8looper.compass.nav.HeadingKind.FUSED)) {
+                withContext(Dispatchers.Main) { vm.setHeadingKind(kind) }
+                assertEquals(kind, vm.headingKind.value)
+                val r = withTimeout(15_000) { vm.heading.first { it?.kind == kind } }!!
+                val own = when (kind) {
+                    com.infinite8looper.compass.nav.HeadingKind.FUSED -> r.fusedDeg
+                    com.infinite8looper.compass.nav.HeadingKind.MAGNETIC -> r.geomagneticDeg
+                    com.infinite8looper.compass.nav.HeadingKind.BLEND -> r.blendDeg
+                }
+                assertEquals("$kind: $r", own, r.magneticDeg, 0f)
+            }
+        } finally {
+            withContext(Dispatchers.Main) { vm.setHeadingWanted(false) }
+        }
+    }
+
     // The breadcrumb trail. The tests that drop or reach a crumb need the feed running and the app on screen.
 
     private fun crumbAt(point: GeoPoint, t: Long = 1) = Crumb(lat = point.lat, lon = point.lon, accuracyM = 5f, createdAt = t)
