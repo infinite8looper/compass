@@ -650,6 +650,32 @@ class CompassViewModelTest {
         }
     }
 
+    /**
+     * The check screen shows "the three headings" live (v3 spec, "Check screen") whichever source the compass is on.
+     * While it asks for all three, a reading of the fused source carries the magnetic heading and the blend as well;
+     * once it no longer asks, the fused source runs alone again, as before the check screen, and they are not worked
+     * out (not a number).
+     */
+    @Test fun whileAllThreeHeadingsAreAskedForAFusedReadingCarriesTheMagneticOneAndTheBlend() = runBlocking {
+        val vm = viewModel()
+        assertFalse(vm.allHeadings.value)
+        withContext(Dispatchers.Main) { vm.setHeadingWanted(true) }
+        try {
+            withContext(Dispatchers.Main) { vm.setAllHeadings(true) }
+            assertTrue(vm.allHeadings.value)
+            val all = withTimeout(15_000) { vm.heading.first { it != null && it.geomagneticDeg.isFinite() && it.blendDeg.isFinite() } }!!
+            assertEquals("$all", com.infinite8looper.compass.nav.HeadingKind.FUSED, all.kind)
+            assertEquals("$all", all.fusedDeg, all.magneticDeg, 0f)
+            withContext(Dispatchers.Main) { vm.setAllHeadings(false) }
+            // The readings that come once the sensors have been started again for the fused source alone.
+            val alone = withTimeout(15_000) { vm.heading.first { it != null && it.geomagneticDeg.isNaN() } }!!
+            assertTrue("$alone", alone.blendDeg.isNaN())
+            assertEquals("$alone", com.infinite8looper.compass.nav.HeadingKind.FUSED, alone.kind)
+        } finally {
+            withContext(Dispatchers.Main) { vm.setAllHeadings(false); vm.setHeadingWanted(false) }
+        }
+    }
+
     // The breadcrumb trail. The tests that drop or reach a crumb need the feed running and the app on screen.
 
     private fun crumbAt(point: GeoPoint, t: Long = 1) = Crumb(lat = point.lat, lon = point.lon, accuracyM = 5f, createdAt = t)

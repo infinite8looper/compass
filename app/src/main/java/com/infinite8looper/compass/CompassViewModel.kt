@@ -132,6 +132,18 @@ class CompassViewModel(
     /** Switches the compass's heading source; the sensors are started again for it if they are running. */
     fun setHeadingKind(kind: HeadingKind) { headingKindNow.value = kind }
 
+    private val allHeadingsNow = MutableStateFlow(false)
+
+    /** Whether every source's heading is worked out, whichever the compass is on: the check screen asks while it is open. */
+    val allHeadings: StateFlow<Boolean> = allHeadingsNow
+
+    /**
+     * The check screen says here whether it is open: while it is, the sensors that the magnetic heading needs run
+     * with the fused ones, so each reading carries all three headings ([HeadingSource.readings], `allThree`). The
+     * sensors are started again for the change, as for a change of source.
+     */
+    fun setAllHeadings(all: Boolean) { allHeadingsNow.value = all }
+
     private val calibrationAwakeNow = MutableStateFlow(false)
 
     /** Whether the calibration screen asks for the screen to be kept on (nav/Calibration.kt, [calibrationKeepsAwake]). */
@@ -149,8 +161,9 @@ class CompassViewModel(
         .mapLatest { wanted -> if (!wanted) delay(HEADING_STOP_DELAY_MS); wanted }
         .distinctUntilChanged()
         .combine(headingKindNow) { running, kind -> if (running) kind else null }
+        .combine(allHeadingsNow) { kind, all -> kind?.let { HeadingAsked(it, all) } }
         .distinctUntilChanged()
-        .flatMapLatest { kind -> if (kind != null) headingSource.readings(kind) else emptyFlow() }
+        .flatMapLatest { asked -> if (asked != null) headingSource.readings(asked.kind, asked.allThree) else emptyFlow() }
         .scan<HeadingReading, HeadingReading?>(null) { last, reading ->
             val magnet = carriedOver(
                 last?.let { MagnetReport(it.accuracy, it.fieldMicroTesla) }, MagnetReport(reading.accuracy, reading.fieldMicroTesla),
@@ -918,3 +931,6 @@ class CompassViewModel(
         const val CRUMBS_SEEN_WITHIN_MS = 2_000L
     }
 }
+
+/** What the heading sensors are started for: the compass's source, and whether every source's heading is worked out. */
+private data class HeadingAsked(val kind: HeadingKind, val allThree: Boolean)
