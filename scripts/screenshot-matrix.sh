@@ -17,7 +17,7 @@
 #   waypoints    empty, a few, thirty (top and end), old distances, the status band after `Log here`
 #   edit         a short name, the color being dragged (finger down), `Hold to delete` late in the hold
 #   settings     top, middle, end; `Breadcrumb trail` and `Show coordinates` on; every switch off
-#   calibration  normal; interference
+#   calibration  seven segments of the ring lit; interference
 #   panes        the three screens side by side; the row half way through a swipe; the compass's three ticks
 # It wipes the app's data (pm clear), puts rows in its database with the device's sqlite3, feeds positions
 # (scripts/geo-feed.sh), sets the virtual sensors, switches the emulator's location setting off and on again, and
@@ -326,7 +326,13 @@ sec_settings() {
 }
 sec_calibration() {
   fresh granted; magnetic 40; sleep 8; to_settings
-  tap_row "Calibrate" || return 1; sleep 3; shot calibrate
+  tap_row "Calibrate" || return 1; sleep 3
+  # Fields of the watch lying flat facing four ways, rolled onto its side and face down (CalibrationTest's poses):
+  # with the one of heading 40, seven segments of the ring lit.
+  for f in 0:20:-45 -20:0:-45 0:-20:-45 20:0:-45 45:20:0 0:20:45; do
+    $ADB emu sensor set magnetic-field $f > /dev/null; $ADB shell input keyevent KEYCODE_WAKEUP; sleep 1.5
+  done
+  shot calibrate
   $ADB emu sensor set magnetic-field 0:80:-45 > /dev/null; sleep 3; shot calibrate-interference
   magnetic 40; sleep 2; leave_route; from_settings
 }
