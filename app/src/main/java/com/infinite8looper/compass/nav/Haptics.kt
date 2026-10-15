@@ -22,13 +22,16 @@ private const val TICK_CELL_COUNT = 180
 const val TARGET_SIDE_REACH_DEG = 90f
 
 /**
- * The least time the lines stay quiet after the target's vibration, so that a line passed just after it does not cut
- * it short: the system stops a vibration that is playing when the same app asks for another. Longer where the
- * vibration lasts longer ([targetQuietNanos]).
+ * The least time the dial stays quiet after the target's vibration, so that a line, or the target passed again,
+ * just after it does not cut it short: the system stops a vibration that is playing when the same app asks for
+ * another. Longer where the vibration lasts longer ([targetQuietNanos]).
  */
 const val TICK_QUIET_AFTER_TARGET_NANOS = 150_000_000L
 
-/** How long the lines stay quiet after the target's vibration, which lasts [lengthMs] on this watch: at least [TICK_QUIET_AFTER_TARGET_NANOS]. */
+/**
+ * How long the dial stays quiet after the target's vibration, which lasts [lengthMs] on this watch: at least
+ * [TICK_QUIET_AFTER_TARGET_NANOS].
+ */
 fun targetQuietNanos(lengthMs: Int): Long = maxOf(TICK_QUIET_AFTER_TARGET_NANOS, lengthMs * 1_000_000L)
 
 /**
@@ -114,16 +117,18 @@ fun dialCrossing(
 
 /**
  * Whether a dial vibration of [kind] at [nowNanos] is played. None on or right after a blind navigation pulse
- * ([tickClearOfPulse]). A line: at most one per [TICK_MIN_INTERVAL_NANOS] ([tickTapDue]), and none for
- * [targetQuietNanos] after the target's vibration ([lastTargetNanos]). The target's is not held back by
- * a line played just before it: it is the strongest kind, and the line's tap gives way to it. One that is not played
- * is dropped, not kept for later.
+ * ([tickClearOfPulse]), and none of any kind for [targetQuietNanos] after the target's vibration ([lastTargetNanos]),
+ * the time it lasts: the system stops a vibration that is playing when the same app asks for another, so a line or a
+ * second passing of the target (the pointer rocking on the bearing) would cut its two knocks short. A line besides:
+ * at most one per [TICK_MIN_INTERVAL_NANOS] ([tickTapDue]). The target's is not held back by a line played just
+ * before it: it is the strongest kind, and the line's tap gives way to it. One that is not played is dropped, not
+ * kept for later.
  */
 fun dialVibrationDue(
     kind: DialCrossing, nowNanos: Long, lastTapNanos: Long, lastPulse: Pulse?, lastPulseNanos: Long, lastTargetNanos: Long,
     targetQuietNanos: Long = TICK_QUIET_AFTER_TARGET_NANOS,
 ): Boolean = kind != DialCrossing.NONE && tickClearOfPulse(nowNanos, lastPulse, lastPulseNanos) &&
-    (kind == DialCrossing.TARGET || tickTapDue(nowNanos, lastTapNanos) && nowNanos - lastTargetNanos >= targetQuietNanos)
+    nowNanos - lastTargetNanos >= targetQuietNanos && (kind == DialCrossing.TARGET || tickTapDue(nowNanos, lastTapNanos))
 
 /**
  * The least time from a press's vibration being asked for to the confirming vibration of its save. A save that

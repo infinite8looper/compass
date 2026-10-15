@@ -176,7 +176,40 @@ class DialCrossingTest {
         assertEquals(250 * ms, targetQuietNanos(lengthMs = 250))
         assertFalse(dialVibrationDue(DialCrossing.THIN, t, t - 200 * ms, null, 0L, lastTargetNanos = t - 200 * ms, targetQuietNanos = 250 * ms))
         assertTrue(dialVibrationDue(DialCrossing.THIN, t, t - 250 * ms, null, 0L, lastTargetNanos = t - 250 * ms, targetQuietNanos = 250 * ms))
-        assertTrue(dialVibrationDue(DialCrossing.TARGET, t, t - 10 * ms, null, 0L, lastTargetNanos = t - 200 * ms, targetQuietNanos = 250 * ms))
+        // A line played 10 ms before does not hold the target back. An earlier target's vibration still playing does
+        // (Task 4 fix round 2, item (b): "give TARGET a quiet window against a previous TARGET"), so the earlier
+        // target here is the quiet's length before, where this case used to have it 200 ms before.
+        assertTrue(dialVibrationDue(DialCrossing.TARGET, t, t - 10 * ms, null, 0L, lastTargetNanos = t - 250 * ms, targetQuietNanos = 250 * ms))
+        assertFalse(dialVibrationDue(DialCrossing.TARGET, t, t - 10 * ms, null, 0L, lastTargetNanos = t - 200 * ms, targetQuietNanos = 250 * ms))
+    }
+
+    @Test fun aTargetIsNotPlayedAgainWhileItsEarlierVibrationLasts() {
+        val ms = 1_000_000L
+        val t = 10_000 * ms
+        // A second target's vibration asked for while the first plays would stop the first (the system stops a
+        // vibration that is playing when the same app asks for another), so it waits as the lines do: for as long as
+        // the target's vibration lasts, at least 150 ms, 250 ms on the emulators.
+        assertFalse(dialVibrationDue(DialCrossing.TARGET, t, t - 100 * ms, null, 0L, lastTargetNanos = t - 100 * ms))
+        assertFalse(dialVibrationDue(DialCrossing.TARGET, t, t - 149 * ms, null, 0L, lastTargetNanos = t - 149 * ms))
+        assertTrue(dialVibrationDue(DialCrossing.TARGET, t, t - 150 * ms, null, 0L, lastTargetNanos = t - 150 * ms))
+        assertFalse(dialVibrationDue(DialCrossing.TARGET, t, t - 10 * ms, null, 0L, lastTargetNanos = t - 249 * ms, targetQuietNanos = 250 * ms))
+        assertTrue(dialVibrationDue(DialCrossing.TARGET, t, t - 10 * ms, null, 0L, lastTargetNanos = t - 250 * ms, targetQuietNanos = 250 * ms))
+        // The pulse limit still holds for it.
+        assertFalse(dialVibrationDue(DialCrossing.TARGET, t, 0L, Pulse.LOCK, t - 399 * ms, lastTargetNanos = t - 1000 * ms))
+    }
+
+    @Test fun aPointerWobblingOnTheTargetDoesNotCutTheTargetsKnocksShort() {
+        // The watch rocks either side of the bearing: 2 degrees each way, turning back every 48 ms, then 1 degree each
+        // way every 96 ms. The shown pointer passes the target (past the 0.3 degree margin) every 50 to 100 ms, but no
+        // target's vibration starts while the one before it still plays.
+        for ((swing, framesEachWay) in listOf(2f to 3, 1f to 6)) {
+            val f = Frames(target = 125f)
+            f.frame(124f); f.rest(124f, 2000)
+            repeat(200) { i -> f.frame(if (i / framesEachWay % 2 == 0) 125f + swing else 125f - swing) }
+            val times = f.targetTimes
+            assertTrue("$swing: $times", times.size >= 2)
+            for (i in 1 until times.size) assertTrue("$swing: $times", times[i] - times[i - 1] >= TICK_QUIET_AFTER_TARGET_NANOS)
+        }
     }
 
     /** The compass screen's frame loop for the dial vibrations, with the same pure functions in the same order. */
@@ -184,6 +217,8 @@ class DialCrossingTest {
         var nowNanos = 1_000_000_000L
         var shown = Float.NaN
         val played = mutableListOf<Pair<DialCrossing, Float>>()
+        /** When each target's vibration was played. */
+        val targetTimes = mutableListOf<Long>()
         private var settling = TickSettling.Settled
         private var cell = TickCell.Unset
         private var targetCell = TickCell.Unset
@@ -206,7 +241,7 @@ class DialCrossingTest {
             if (!wasSettling && !settling.active && dialVibrationDue(k, nowNanos, lastTap, null, 0L, lastTarget)) {
                 played += k to shown
                 lastTap = nowNanos
-                if (k == DialCrossing.TARGET) lastTarget = nowNanos
+                if (k == DialCrossing.TARGET) { lastTarget = nowNanos; targetTimes += nowNanos }
             }
             cell = next
             side = nextSide
