@@ -335,7 +335,8 @@ sec_calibration() {
     $ADB emu sensor set magnetic-field $f > /dev/null; $ADB shell input keyevent KEYCODE_WAKEUP; sleep 1.5
   done
   shot calibrate
-  $ADB emu sensor set magnetic-field 0:80:-45 > /dev/null; sleep 3; shot calibrate-interference
+  # 92 microtesla through the back toward the upper right, a region none of the six reached: it lights (33%) with the warning.
+  $ADB emu sensor set magnetic-field 46:46:-65 > /dev/null; sleep 3; shot calibrate-interference
   magnetic 40; sleep 2; leave_route; from_settings
 }
 sec_check() {
