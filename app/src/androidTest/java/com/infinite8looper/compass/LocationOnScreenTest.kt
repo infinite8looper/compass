@@ -187,7 +187,10 @@ class LocationOnScreenTest {
             swipe(toTheLeft = true); shows("the waypoints") { visible("Log here") }
             val had = vm.nav.value.fixElapsedMs
             withTimeout(15_000) { vm.nav.first { it.fixElapsedMs != null && it.fixElapsedMs != had } }
-            assertTrue("a gap in the positions between the compass and the waypoints", seen.subList(from, seen.size).all { it.fixElapsedMs != null })
+            // Read from a copy: the collector adds to the list on the main thread meanwhile, and a view of the list
+            // itself (subList) throws ConcurrentModificationException when it does (API 33, 2026-10-15).
+            val since = seen.toList().let { it.subList(from, it.size) }
+            assertTrue("a gap in the positions between the compass and the waypoints", since.all { it.fixElapsedMs != null })
 
             // A row opened from the list covers the three screens.
             scrollTo("Place 1", anchor = "Log here")
