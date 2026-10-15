@@ -265,19 +265,19 @@ private const val NONE_YET = -1L
 
 // Where things stand, in radii below the center (negative: above it), each by its middle.
 /** The lower edge of the line that says what to do, the height kept for its lines above that, and its width. */
-private const val GUIDE_TEXT_BOTTOM = -0.50f
+private const val GUIDE_TEXT_BOTTOM = -0.51f
 private const val GUIDE_TEXT_ROOM = 0.30f
 private const val GUIDE_WIDTH = 1.2f
 /** The ring of directions covered: its middle and its outer radius. */
-private const val RING_Y = -0.305f
-private const val RING_RADIUS = 0.17f
+private const val RING_Y = -0.29f
+private const val RING_RADIUS = 0.21f
 /** The words either side of the ring: how far their middles are from the screen's middle, and their width. */
 private const val BESIDE_X = 0.48f
 private const val BESIDE_WIDTH = 0.5f
-private const val WORD_Y = 0.02f
-private const val FIELD_Y = 0.24f
-private const val WARNING_Y = 0.49f
-private const val WARNING_WIDTH = 1.3f
+private const val WORD_Y = 0.07f
+private const val FIELD_Y = 0.28f
+private const val WARNING_Y = 0.52f
+private const val WARNING_WIDTH = 1.2f
 /** The row that opens the check screen: its middle and its width. */
 private const val CHECK_Y = 0.78f
 private const val CHECK_WIDTH = 0.6f
