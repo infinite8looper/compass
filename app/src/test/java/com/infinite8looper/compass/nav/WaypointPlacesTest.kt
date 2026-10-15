@@ -83,6 +83,12 @@ class WaypointPlacesTest {
         assertEquals(listOf(108.3f, 298.4f, 180.9f, 43.4f, 245.8f, 75.9f, 148.5f, 265.9f), given(8).map { Math.round(it * 10) / 10f })
     }
 
+    @Test fun theFirstThirtyPlacesOfAFreshInstallAreTheOnesSeedTargetsManyGives() {
+        // scripts/seed-targets.sh many seeds these, to two decimals.
+        val many = "108.32 298.36 180.91 43.40 245.83 75.86 148.45 265.90 318.42 128.39 160.85 31.01 95.93 285.96 63.47 51.07 136.06 306.02 83.53 273.56 326.09 115.99 168.52 253.50 38.68 241.10 293.63 261.17 313.69 281.23"
+        assertEquals(many, given(30).joinToString(" ") { "%.2f".format(java.util.Locale.ROOT, it) })
+    }
+
     @Test fun theNewPlacesStayApartOnAFreshInstall() {
         val places = given(20)
         for (n in 2..20) {

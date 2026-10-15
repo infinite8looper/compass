@@ -6,7 +6,8 @@
 # distances (meters, 400 if left out) from a position, each with the given number stored as its color (<hue>: its place, 0 to 360, on the ring the colors come from; the column is named hue), then starts the app.
 # The position is the one the tests feed (43.7022,-72.2896) unless --at names another; run
 # `scripts/geo-feed.sh <lon> <lat> &` with the same position so the bearings come out as asked.
-#   many   thirty targets 12 degrees apart from 5, with the color numbers the app gives the first thirty waypoints; the
+#   many   thirty targets 12 degrees apart from 5, with the color numbers the app gives the first thirty waypoints of a
+#          new install (since 2026-10-14; before, the golden-angle places from 0); the
 #          thirtieth is at 77, the bearing of the seventh.
 #   none   no waypoints at all.
 # The rows go into the app's own database file with the app stopped, and the location permission is granted.
@@ -31,7 +32,10 @@ specs = sys.argv[2:]
 if specs == ["none"]:
     specs = []
 elif specs == ["many"]:
-    specs = [f"{5 + i * 12}:{(i * 137.508) % 360:.2f}" for i in range(29)] + [f"77:{(29 * 137.508) % 360:.2f}"]
+    # The places the app gives the first thirty waypoints of a new install (nextWaypointPlace; WaypointPlacesTest
+    # checks this list).
+    places = "108.32 298.36 180.91 43.40 245.83 75.86 148.45 265.90 318.42 128.39 160.85 31.01 95.93 285.96 63.47 51.07 136.06 306.02 83.53 273.56 326.09 115.99 168.52 253.50 38.68 241.10 293.63 261.17 313.69 281.23".split()
+    specs = [f"{5 + i * 12}:{places[i]}" for i in range(29)] + [f"77:{places[29]}"]
 rows = ["DELETE FROM waypoints;"]
 for i, spec in enumerate(specs, 1):
     parts = spec.split(":")
