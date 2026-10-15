@@ -577,3 +577,57 @@ private fun formatDegrees(deg: Double, positive: Char, negative: Char): String {
  * screen. It is no reason to keep the screen awake.
  */
 fun coordinatesWantLocation(show: Boolean, compassOnScreen: Boolean): Boolean = show && compassOnScreen
+
+// The heading's sources (v3 spec, "Heading").
+
+/**
+ * Where the compass's heading comes from: the fused rotation vector ([FUSED], the gyroscope steered by the
+ * magnetometer, as before v3); the magnetometer and gravity only ([MAGNETIC]: the geomagnetic rotation vector where
+ * the watch has it, else `SensorManager.getRotationMatrix` from the accelerometer and the magnetometer); and
+ * [BLEND], which follows the fused one from moment to moment and is steered toward the magnetic one ([HeadingBlend]).
+ */
+enum class HeadingKind { FUSED, MAGNETIC, BLEND }
+
+/** "The compass keeps the fused source until the owner has compared them on the watch." */
+val DEFAULT_HEADING_KIND = HeadingKind.FUSED
+
+/** The blend's time constant, in seconds: how quickly a difference between the fused and the magnetic heading is taken out. */
+const val BLEND_TIME_CONSTANT_S = 5f
+
+/**
+ * The blended heading. Each fused reading moves it by as much as the fused heading moved since the one before, so a
+ * turn shows at once; then the difference from the magnetic heading is taken out by 1 - e^(-dt/τ) of itself, τ
+ * being [timeConstantS] and dt the time since the last reading, so a fused heading that drifts is brought back to
+ * the magnetic one and the magnetic one's noise is averaged away. The first reading starts it at the magnetic
+ * heading, or at the fused one while there is no magnetic heading (which is a not-a-number), and a fused heading that
+ * is not a number changes nothing. Nothing accumulates but the heading itself, so any number of turns adds nothing.
+ * Made for one sensor thread: it is not safe to use from two threads at once, and an update makes nothing new.
+ */
+class HeadingBlend(private val timeConstantS: Float = BLEND_TIME_CONSTANT_S) {
+    /** The blended heading, 0 to 360, or not a number before the first fused reading. */
+    var value: Float = Float.NaN
+        private set
+    private var lastFused = Float.NaN
+    private var lastNanos = 0L
+
+    /** The blend after a fused heading [fusedDeg] and a magnetic heading [magneticDeg] (not a number if none) read at [timestampNanos]. */
+    fun update(fusedDeg: Float, magneticDeg: Float, timestampNanos: Long): Float {
+        if (!fusedDeg.isFinite()) return value
+        if (value.isNaN()) {
+            value = normalizeDeg(if (magneticDeg.isFinite()) magneticDeg else fusedDeg)
+        } else {
+            var next = value + shortestDelta(lastFused, fusedDeg)
+            val dtSeconds = (timestampNanos - lastNanos) / 1e9f
+            if (magneticDeg.isFinite() && dtSeconds > 0f) {
+                next += shortestDelta(normalizeDeg(next), magneticDeg) * (1f - exp(-dtSeconds / timeConstantS))
+            }
+            value = normalizeDeg(next)
+        }
+        lastFused = fusedDeg
+        if (timestampNanos > lastNanos) lastNanos = timestampNanos
+        return value
+    }
+
+    /** Starts it again: the next reading is the first. */
+    fun reset() { value = Float.NaN; lastFused = Float.NaN; lastNanos = 0L }
+}
