@@ -22,6 +22,13 @@ import com.infinite8looper.compass.nav.TrailMode
 import com.infinite8looper.compass.nav.TrailUi
 import com.infinite8looper.compass.nav.crumbTargetId
 import com.infinite8looper.compass.nav.distanceMeters
+import com.infinite8looper.compass.nav.FALLBACK_ACCENT
+import com.infinite8looper.compass.nav.FALLBACK_NORTH
+import com.infinite8looper.compass.nav.FIRST_WAYPOINT_PLACE
+import com.infinite8looper.compass.nav.SKIP_HUE_APART
+import com.infinite8looper.compass.nav.hueOf
+import com.infinite8looper.compass.nav.normalizeDeg
+import com.infinite8looper.compass.nav.shortestDelta
 import com.infinite8looper.compass.nav.logStatusShowMs
 import com.infinite8looper.compass.sensors.LocationSource
 import kotlinx.coroutines.Dispatchers
@@ -218,6 +225,46 @@ class CompassViewModelTest {
     // One-press logging. The tests that save need the feed running and the app on screen, like the ones above.
 
     /** A view model whose location source answers that the permission is not held, as before the wearer grants it. */
+    // The places new waypoints are given. The owner (2026-10-14), choosing "Skip red and blue (Recommended)": "New
+    // waypoints never land within about ±25° of north's red or the pointer's blue; a place that would is moved on to
+    // the next one. Existing waypoints keep their colors."
+
+    private fun placeApart(a: Float, b: Float) = kotlin.math.abs(shortestDelta(a, b))
+
+    @Test fun newWaypointsAreNotGivenPlacesNearNorthsRedOrThePointersBlue() = runBlocking {
+        val vm = viewModel()
+        val places = (0 until 10).map { i -> vm.logWaypoint(hanover.copy(point = GeoPoint(43.70 + i * 0.001, -72.29))).hue }
+        for (place in places) {
+            assertTrue("$place in $places", placeApart(place, hueOf(FALLBACK_NORTH)) >= SKIP_HUE_APART)
+            assertTrue("$place in $places", placeApart(place, hueOf(FALLBACK_ACCENT)) >= SKIP_HUE_APART)
+        }
+        assertEquals(FIRST_WAYPOINT_PLACE, places.first())
+        assertEquals(places.size, places.toSet().size)
+        // Stored as given.
+        assertEquals(places.toSet(), dao.observeAll().first().map { it.hue }.toSet())
+    }
+
+    @Test fun onAnInstallWithOlderWaypointsANewOneIsGivenAPlaceFarFromTheirsAndTheirsAreKept() = runBlocking {
+        // Places numbered from 0, as before 2026-10-14: 0, 137.5, 275.0, 52.5, 190.0, 327.5, 105.0 and 242.6. The
+        // numbering's next place, 108.3, is 3.3 degrees from 105.0.
+        val older = (0 until 8).map { normalizeDeg(it * 137.508f) }
+        older.forEachIndexed { i, hue ->
+            dao.insert(com.infinite8looper.compass.data.Waypoint(name = "Old $i", lat = 43.7, lon = -72.29, accuracyM = 5f, createdAt = 1L + i, hue = hue, isTarget = false))
+        }
+        val vm = viewModel()
+        val added = vm.logWaypoint(hanover)
+        assertTrue("${added.hue}", older.all { placeApart(added.hue, it) >= 23f })
+        assertEquals(older.toSet(), dao.observeAll().first().filter { it.id != added.id }.map { it.hue }.toSet())
+    }
+
+    @Test fun waypointsSavedTogetherAreGivenDifferentPlaces() = runBlocking {
+        val vm = viewModel()
+        val saved = withContext(Dispatchers.Main) {
+            (0 until 6).map { i -> async { vm.logWaypoint(hanover.copy(point = GeoPoint(43.70 + i * 0.001, -72.29))) } }.map { it.await() }
+        }
+        assertEquals(saved.map { it.hue }.toString(), 6, saved.map { it.hue }.toSet().size)
+    }
+
     @Test fun aColorChangeAndATargetChangeMadeTogetherBothLand() = runBlocking {
         val vm = viewModel()
         val w = vm.logWaypoint(hanover)

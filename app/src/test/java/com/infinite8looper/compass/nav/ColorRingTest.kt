@@ -283,7 +283,8 @@ class ColorRingTest {
     }
 
     @Test fun theValuesNewWaypointsAreGivenLandOnDifferentColors() {
-        // The stored values of the first eight waypoints. They start at 108.325, the middle of the widest gap
+        // The first eight places of the numbering new waypoints' places are chosen from (nextWaypointPlace, which
+        // passes over those near the red or the blue: WaypointPlacesTest). They start at 108.325, the middle of the widest gap
         // between the app's red and blue: the owner (2026-10-14), "in standard (non-theme) colors use the full color
         // wheel and start with something away from the existing red/blue colors". Until then they started at 0. On
         // a ring of the blue, the red and the red each has a color of its own except those that fall in the red third.

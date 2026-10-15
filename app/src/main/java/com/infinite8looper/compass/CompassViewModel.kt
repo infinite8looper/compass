@@ -350,17 +350,25 @@ class CompassViewModel(
         }
     }
 
+    /** Held while a new waypoint's place is chosen and the waypoint stored ([logWaypoint]). */
+    private val waypointAdds = Mutex()
+
     /** Stores a new waypoint as a target. Throws if the waypoint cannot be stored, so the caller can say so. */
     suspend fun logWaypoint(fix: Fix): Waypoint {
         // The focus falls back to the newest target when none is stored, so pin it down before adding one. Under
         // the lock a step of the focus takes, so the pin cannot write back a focus that a step has just moved on from.
         focusChanges.withLock { targetsAndFocus().second?.let { settingsStore.setFocused(it) } }
         val n = settingsStore.nextWaypointNumber()
-        val w = Waypoint(
-            name = "Waypoint $n", lat = fix.point.lat, lon = fix.point.lon, accuracyM = fix.accuracyM,
-            createdAt = System.currentTimeMillis(), hue = hueForIndex(n - 1), isTarget = true,
-        )
-        val stored = w.copy(id = dao.insert(w))
+        // The place is chosen from the places of the waypoints there are, so it is chosen and stored under a lock:
+        // two saves made together would otherwise both choose before either had stored, and get the same place.
+        val stored = waypointAdds.withLock {
+            val taken = dao.observeAll().first().let { all -> FloatArray(all.size) { all[it].hue } }
+            val w = Waypoint(
+                name = "Waypoint $n", lat = fix.point.lat, lon = fix.point.lon, accuracyM = fix.accuracyM,
+                createdAt = System.currentTimeMillis(), hue = nextWaypointPlace(taken), isTarget = true,
+            )
+            w.copy(id = dao.insert(w))
+        }
         // After the row, and not waited for: the press's status does not wait on the settings file.
         launchQuietly("save last position") { settingsStore.setLastPosition(fix.point, fix.altitudeM) }
         return stored

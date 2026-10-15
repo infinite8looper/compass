@@ -116,9 +116,10 @@ fun nextArrived(current: Boolean, meters: Double, units: Units): Boolean = when 
 }
 
 /**
- * The value stored for the color of waypoint number [index] (the first is 0): golden-angle steps round the 360
- * degrees of the full wheel ([wheelColor]) or the ring ([ringColor]) the colors come from, so neighbors are far apart
- * on it and no value repeats. The first is [FIRST_WAYPOINT_PLACE]. A waypoint keeps the value it was given.
+ * Place [index] of the numbering new waypoints' places are chosen from ([nextWaypointPlace]; the first is 0):
+ * golden-angle steps round the 360 degrees of the full wheel ([wheelColor]) or the ring ([ringColor]) the colors come
+ * from, so neighbors are far apart on it and no value repeats. The first is [FIRST_WAYPOINT_PLACE]. A waypoint keeps
+ * the value it was given.
  */
 fun hueForIndex(index: Int): Float = normalizeDeg(FIRST_WAYPOINT_PLACE + index * 137.508f)
 
@@ -128,6 +129,50 @@ fun hueForIndex(index: Int): Float = normalizeDeg(FIRST_WAYPOINT_PLACE + index *
  * (non-theme) colors use the full color wheel and start with something away from the existing red/blue colors."
  */
 val FIRST_WAYPOINT_PLACE: Float = widestGapMiddle(FALLBACK_NORTH, FALLBACK_ACCENT)
+
+/**
+ * How far, in degrees either side, a new waypoint's place keeps from the hue of north's red ([FALLBACK_NORTH], 3.2)
+ * and of the pointer's blue ([FALLBACK_ACCENT], 213.5) on the full wheel. The owner (2026-10-14): "New waypoints
+ * never land within about ±25° of north's red or the pointer's blue; a place that would is moved on to the next
+ * one. Existing waypoints keep their colors."
+ */
+const val SKIP_HUE_APART = 25f
+
+/** How many places of the numbering [nextWaypointPlace] chooses among. */
+const val PLACE_CHOICES = 8
+
+/** How far into the numbering [nextWaypointPlace] looks for its choices at most. */
+private const val PLACE_SEARCH_LIMIT = 4096
+
+/** Two places closer than this, in degrees, are the same place. */
+private const val SAME_PLACE = 0.01f
+
+/**
+ * The place a new waypoint is given, with the places of the waypoints there are in [taken]. The places of the
+ * numbering ([hueForIndex]) are taken in turn; one within [SKIP_HUE_APART] of the red or the blue is passed over,
+ * and so is one already taken. Of the first [PLACE_CHOICES] left, the one furthest from every taken place is given
+ * (the earliest of those as far): with no waypoints that is the first, [FIRST_WAYPOINT_PLACE]. So on an install
+ * whose waypoints were numbered differently (from 0, before 2026-10-14) or were given colors by hand, a new place
+ * is not put next to an old one where another is free. Places stored are never changed.
+ */
+fun nextWaypointPlace(taken: FloatArray): Float {
+    val red = hueOf(FALLBACK_NORTH)
+    val blue = hueOf(FALLBACK_ACCENT)
+    var best = FIRST_WAYPOINT_PLACE
+    var bestApart = -1f
+    var found = 0
+    var index = 0
+    while (found < PLACE_CHOICES && index < PLACE_SEARCH_LIMIT) {
+        val place = hueForIndex(index++)
+        if (abs(shortestDelta(place, red)) < SKIP_HUE_APART || abs(shortestDelta(place, blue)) < SKIP_HUE_APART) continue
+        var least = Float.MAX_VALUE
+        for (t in taken) least = minOf(least, abs(shortestDelta(place, t)))
+        if (least < SAME_PLACE) continue
+        found++
+        if (least > bestApart) { best = place; bestApart = least }
+    }
+    return best
+}
 
 fun shouldHoldFlat(pitchDeg: Float): Boolean = pitchDeg > 70f
 /**
