@@ -88,13 +88,18 @@ class CalibrationTest {
 
     /**
      * A field whose strength the earth's cannot have (`isInterference`; 92 microtesla is what the screenshots set
-     * for the interference picture) points somewhere other than the earth's field, so it covers nothing.
+     * for the interference picture) still lights the region it points into: the spec says a segment "lights when the
+     * field has been there", and a watch that is badly calibrated can read such a strength while the wrist turns
+     * (the screen warns of it in its own place). (46, 46, -65) is 92 microtesla through the back of the watch toward
+     * its upper right, region 1; (0, 80, -45) through the back toward its top, region 2; (45, 0, 80) out of its face
+     * toward its right, region 16.
      */
-    @Test fun aFieldOfAStrengthTheEarthsCannotHaveCoversNothing() {
-        assertEquals(0, nextCoverage(0, 0f, 80f, -45f))
-        assertEquals(0, nextCoverage(0, 0f, 2f, -4f))
+    @Test fun aFieldOfAStrengthTheEarthsCannotHaveStillLightsTheRegionItPointsInto() {
+        assertEquals(1 shl 1, nextCoverage(0, 46f, 46f, -65f))
+        assertEquals(1 shl 2, nextCoverage(0, 0f, 80f, -45f))
+        assertEquals(1 shl 2, nextCoverage(0, 0f, 2f, -4f))
         val one = nextCoverage(0, 0f, 20f, -45f)
-        assertEquals(one, nextCoverage(one, 45f, 0f, 80f))
+        assertEquals(one or (1 shl 16), nextCoverage(one, 45f, 0f, 80f))
     }
 
     @Test fun aFieldWithNoDirectionCoversNothing() {
@@ -153,6 +158,46 @@ class CalibrationTest {
         assertTrue(calibrationPromptDue(3, 30.01f)); assertTrue(calibrationPromptDue(2, 45f)); assertTrue(calibrationPromptDue(null, 90f))
         assertFalse(calibrationPromptDue(3, 30f)); assertFalse(calibrationPromptDue(3, 29.9f)); assertFalse(calibrationPromptDue(null, 5f))
         assertTrue(calibrationPromptDue(1, 5f))
+    }
+
+    // The large-error prompt has a margin: it shows above 30 degrees and goes only below 25, so an estimate that
+    // hovers at 30 does not put `Calibrate` on and off at the sensor's rate.
+
+    @Test fun theLargeErrorPromptGoesOnlyBelowTwentyFiveDegrees() { assertEquals(25f, LARGE_HEADING_ERROR_CLEAR_DEG, 0f) }
+
+    @Test fun aLargeErrorThatWasNotShownShowsOnlyAboveThirty() {
+        assertFalse(largeHeadingError(wasShown = false, errorDeg = 30f))
+        assertTrue(largeHeadingError(wasShown = false, errorDeg = 30.01f))
+        assertFalse(largeHeadingError(wasShown = false, errorDeg = 27f))
+        assertFalse(largeHeadingError(wasShown = false, errorDeg = 25f))
+        assertFalse(largeHeadingError(wasShown = false, errorDeg = null))
+    }
+
+    @Test fun aLargeErrorThatWasShownStaysUntilBelowTwentyFive() {
+        assertTrue(largeHeadingError(wasShown = true, errorDeg = 30f))
+        assertTrue(largeHeadingError(wasShown = true, errorDeg = 27f))
+        assertTrue(largeHeadingError(wasShown = true, errorDeg = 25f))
+        assertFalse(largeHeadingError(wasShown = true, errorDeg = 24.99f))
+        assertFalse(largeHeadingError(wasShown = true, errorDeg = 5f))
+        // An estimate the sensor stops giving is no large error.
+        assertFalse(largeHeadingError(wasShown = true, errorDeg = null))
+    }
+
+    @Test fun anErrorHoveringAroundThirtyPutsThePromptOnOnceAndTakesItOffOnce() {
+        var shown = false
+        val seen = ArrayList<Boolean>()
+        for (e in floatArrayOf(29f, 29.9f, 30.5f, 29.5f, 30.2f, 28f, 26f, 25.1f, 24.9f, 26f, 29.9f, 30.1f)) {
+            shown = largeHeadingError(shown, e); seen += shown
+        }
+        assertEquals(listOf(false, false, true, true, true, true, true, true, false, false, false, true), seen)
+    }
+
+    @Test fun theCompassPromptIsTheLevelOrTheLargeErrorAsShown() {
+        assertTrue(calibrationPromptDue(1, largeHeadingError = false))
+        assertTrue(calibrationPromptDue(3, largeHeadingError = true))
+        assertTrue(calibrationPromptDue(null, largeHeadingError = true))
+        assertFalse(calibrationPromptDue(3, largeHeadingError = false))
+        assertFalse(calibrationPromptDue(null, largeHeadingError = false))
     }
 
     // "The screen stays on while calibration is open, for two minutes from opening or from the last change of the

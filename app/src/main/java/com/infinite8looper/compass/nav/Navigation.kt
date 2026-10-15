@@ -631,3 +631,15 @@ class HeadingBlend(private val timeConstantS: Float = BLEND_TIME_CONSTANT_S) {
     /** Starts it again: the next reading is the first. */
     fun reset() { value = Float.NaN; lastFused = Float.NaN; lastNanos = 0L }
 }
+
+/**
+ * The source the running app is on when [asked] is asked for: the one asked for where the watch can work out the
+ * magnetic heading ([magneticAvailable]: it has the geomagnetic rotation vector, or the accelerometer and the
+ * magnetometer), else the fused one, so the magnetic source and the blend never leave the compass without a heading.
+ */
+fun headingKindInUse(asked: HeadingKind, magneticAvailable: Boolean): HeadingKind =
+    if (magneticAvailable) asked else HeadingKind.FUSED
+
+/** What the check screen says under the source in use when it is not the one asked for (`Magnetic unavailable`), or null. */
+fun headingSourceNote(asked: HeadingKind, inUse: HeadingKind): String? =
+    if (asked == inUse) null else "${headingKindName(asked)} unavailable"

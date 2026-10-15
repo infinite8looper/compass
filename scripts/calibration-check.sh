@@ -6,9 +6,10 @@
 # share covered under `Covered` (scripts/ui-dump.sh). Then it sets, one after another, the fields of the fourteen
 # poses CalibrationTest records (an earth field of (0, 20, -45) microtesla seen from the watch lying flat facing
 # each way, face down, upright, rolled and tilted), waking the screen after each, and reads the share again.
-# Then a field of 92 microtesla, which no earth field has: the share must not change and the warning must show.
+# Then a field of 92 microtesla, which no earth field has, pointing into a region none of the poses did: the segment
+# lights all the same (the spec: a segment "lights when the field has been there") and the warning shows.
 # Passes when the share never goes down, ends at 50% (the 12 regions of 24 those poses point into, as
-# CalibrationTest works out), and the interference adds nothing. At the end it lays the watch flat at a magnetic
+# CalibrationTest works out), and the 92 microtesla field takes it to 54% (13 of 24) with the warning. At the end it lays the watch flat at a magnetic
 # heading of 40 (scripts/set-heading.sh), the pose scripts/all-suites.sh leaves, and goes Back.
 # Exit status 0 when it passed, 1 otherwise. Emulators only.
 source "$(dirname "$0")/emulator-only.sh" || exit 1
@@ -47,13 +48,14 @@ for f in 0:20:-45 -20:0:-45 0:-20:-45 20:0:-45 0:20:45 20:0:45 0:-45:-20 -20:-45
   last=$now
 done
 if [ "$last" != "50%" ]; then echo "ended at $last, not 50%" >&2; bad=1; fi
-$ADB emu sensor set magnetic-field 0:80:-45 > /dev/null
+# 92 microtesla through the back of the watch toward its upper right: region 1, which no pose above reached.
+$ADB emu sensor set magnetic-field 46:46:-65 > /dev/null
 $ADB shell input keyevent KEYCODE_WAKEUP
 sleep 2
 now=$(share)
 warned=$(scripts/ui-dump.sh 2>/dev/null | grep -c "Magnetic interference nearby")
-echo "field 0:80:-45 (92 microtesla): ${now:-none}, warning shown: $warned"
-if [ "$now" != "$last" ] || [ "$warned" -lt 1 ]; then bad=1; echo "  the interference changed the share, or no warning" >&2; fi
+echo "field 46:46:-65 (92 microtesla): ${now:-none}, warning shown: $warned"
+if [ "$now" != "54%" ] || [ "$warned" -lt 1 ]; then bad=1; echo "  the 92 microtesla field did not light its segment (54%), or no warning" >&2; fi
 $ADB shell input keyevent KEYCODE_BACK
 finish
 if [ $bad -eq 0 ]; then echo "passed"; else echo "FAILED"; fi

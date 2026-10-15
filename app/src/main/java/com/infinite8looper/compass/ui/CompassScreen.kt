@@ -249,7 +249,7 @@ fun CompassScreen(
 
     val headingShown = remember { derivedStateOf { headingText(shownWhole.intValue) } }
     val lowAccuracy = remember {
-        derivedStateOf { readingState.value.let { calibrationPromptDue(it?.accuracy, it?.headingErrorDeg) } }
+        derivedStateOf { readingState.value.let { calibrationPromptDue(it?.accuracy, it?.largeHeadingError == true) } }
     }
 
     // What the crown has scrolled toward the next step of the focus, and how far a step is on this screen's density.

@@ -85,6 +85,12 @@ class CompassViewModel(
     private val headingSource = HeadingSource(app)
     val supported: Boolean = headingSource.isSupported
 
+    /**
+     * Whether this watch can work out the magnetic heading (the magnetic source and the blend need it); where it
+     * cannot, the compass runs the fused source whatever [headingKind] asks ([HeadingSource.hasMagneticHeading]).
+     */
+    val magneticHeadingAvailable: Boolean = headingSource.hasMagneticHeading
+
     private val sharing = SharingStarted.WhileSubscribed(2_000)
 
     /**

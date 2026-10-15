@@ -9,6 +9,8 @@ import com.infinite8looper.compass.nav.DEFAULT_HEADING_KIND
 import com.infinite8looper.compass.nav.HeadingBlend
 import com.infinite8looper.compass.nav.HeadingKind
 import com.infinite8looper.compass.nav.headingErrorDeg
+import com.infinite8looper.compass.nav.headingKindInUse
+import com.infinite8looper.compass.nav.largeHeadingError
 import com.infinite8looper.compass.nav.normalizeDeg
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -23,7 +25,9 @@ import kotlin.math.sqrt
  * (only the fused one runs for [HeadingKind.FUSED], unless all three were asked for). [pitchDeg] is the fused
  * sensor's. [accuracy] and [fieldMicroTesla] are the magnetometer's last level and field strength, and [fieldX],
  * [fieldY], [fieldZ] its last field in the watch's frame (not a number before its first event). [headingErrorDeg]
- * is the rotation vector's estimated heading error, null when it gives none ([headingErrorDeg] in nav/).
+ * is the rotation vector's estimated heading error, null when it gives none ([headingErrorDeg] in nav/), and
+ * [largeHeadingError] whether it counts as large for the `Calibrate` prompt, with the margin that rule keeps from one
+ * reading to the next ([largeHeadingError] in nav/).
  */
 data class HeadingReading(
     val magneticDeg: Float,
@@ -38,6 +42,7 @@ data class HeadingReading(
     val fieldX: Float = Float.NaN,
     val fieldY: Float = Float.NaN,
     val fieldZ: Float = Float.NaN,
+    val largeHeadingError: Boolean = false,
 )
 
 /** How the heading from the magnetometer and gravity alone is worked out. */
@@ -65,21 +70,34 @@ class HeadingSource(context: Context, method: MagneticMethod? = null) {
         ?: if (geomagnetic != null) MagneticMethod.GEOMAGNETIC_ROTATION_VECTOR else MagneticMethod.ACCELEROMETER_AND_MAGNETOMETER
 
     /**
-     * The heading of [kind] for as long as the flow is collected, with the magnetometer's last accuracy, field
+     * Whether the magnetic heading can be worked out here by [magneticMethod]: the watch has the geomagnetic rotation
+     * vector, or the accelerometer and the magnetometer. Where it cannot, [readings] runs the fused source whatever
+     * is asked for ([headingKindInUse]).
+     */
+    val hasMagneticHeading: Boolean = when (magneticMethod) {
+        MagneticMethod.GEOMAGNETIC_ROTATION_VECTOR -> geomagnetic != null
+        MagneticMethod.ACCELEROMETER_AND_MAGNETOMETER -> accelerometer != null && magnet != null
+    }
+
+    /**
+     * The heading of [asked] for as long as the flow is collected, with the magnetometer's last accuracy, field
      * strength and field. A reading comes with each event of the rotation vector, which gives the pitch; for
      * [HeadingKind.MAGNETIC] none comes until the first magnetic heading has been worked out. The sensors the
      * magnetic heading needs (the geomagnetic rotation vector, or the accelerometer) are registered only for
-     * [HeadingKind.MAGNETIC] and [HeadingKind.BLEND], or when [allThree] asks for every source's heading.
+     * [HeadingKind.MAGNETIC] and [HeadingKind.BLEND], or when [allThree] asks for every source's heading. On a watch
+     * that cannot work out the magnetic heading ([hasMagneticHeading]) the fused source runs whatever [asked] is, and
+     * the readings say so ([HeadingReading.kind]).
      *
      * The sensors' events are delivered on the app's sensor thread ([SensorThread]), not on the main thread: the
      * arithmetic for a reading is done there, on values only that thread touches, and the reading is handed to the
      * collector through the flow, which keeps the newest one. When the collection ends the listeners are taken off
      * and the thread is given back.
      */
-    fun readings(kind: HeadingKind = DEFAULT_HEADING_KIND, allThree: Boolean = false): Flow<HeadingReading> = callbackFlow {
+    fun readings(asked: HeadingKind = DEFAULT_HEADING_KIND, allThree: Boolean = false): Flow<HeadingReading> = callbackFlow {
         val rot = rotation
         if (rot == null) { close(); return@callbackFlow }
-        val magneticWanted = allThree || kind != HeadingKind.FUSED
+        val kind = headingKindInUse(asked, hasMagneticHeading)
+        val magneticWanted = hasMagneticHeading && (allThree || kind != HeadingKind.FUSED)
         val method = magneticMethod
         val matrix = FloatArray(9); val angles = FloatArray(3)
         val magMatrix = FloatArray(9); val magAngles = FloatArray(3)
@@ -88,6 +106,7 @@ class HeadingSource(context: Context, method: MagneticMethod? = null) {
         var accuracy: Int? = null
         var strength: Float? = null
         var magneticHeading = Float.NaN
+        var largeError = false
         val blend = HeadingBlend()
 
         fun magneticFrom(m: FloatArray) {
@@ -132,11 +151,14 @@ class HeadingSource(context: Context, method: MagneticMethod? = null) {
                             HeadingKind.BLEND -> blended
                         }
                         if (shown.isNaN()) return
+                        val errorDeg = headingErrorDeg(e.values)
+                        largeError = largeHeadingError(largeError, errorDeg)
                         trySend(
                             HeadingReading(
                                 shown, pitch, accuracy, strength, kind, fused,
-                                if (magneticWanted) magneticHeading else Float.NaN, blended, headingErrorDeg(e.values),
+                                if (magneticWanted) magneticHeading else Float.NaN, blended, errorDeg,
                                 if (haveField) field[0] else Float.NaN, if (haveField) field[1] else Float.NaN, if (haveField) field[2] else Float.NaN,
+                                largeError,
                             ),
                         )
                     }

@@ -40,13 +40,13 @@ fun regionBand(region: Int): Int = region / COVERAGE_SECTORS
 fun regionSector(region: Int): Int = region % COVERAGE_SECTORS
 
 /**
- * The regions covered, one bit each, after a field (x, y, z) in microtesla: the region it points into is added. A
- * field whose strength the earth's cannot have ([isInterference]) points where something near the watch makes it
- * point, not where the earth's field does, and adds nothing; so does a field with no direction.
+ * The regions covered, one bit each, after a field (x, y, z) in microtesla: the region it points into is added,
+ * whatever the field's strength (v3 spec: a segment "lights when the field has been there"). A field whose strength
+ * the earth's cannot have ([isInterference]) counts too: a watch that is badly calibrated can read such a strength,
+ * and its field still turns with the wrist; the screen warns of the strength in its own place. A field with no
+ * direction adds nothing.
  */
 fun nextCoverage(covered: Int, x: Float, y: Float, z: Float): Int {
-    val strength = sqrt(x * x + y * y + z * z)
-    if (isInterference(strength)) return covered
     val region = coverageRegion(x, y, z)
     return if (region < 0) covered else covered or (1 shl region)
 }
@@ -81,12 +81,32 @@ fun headingErrorText(deg: Float): String = "±${max(1, deg.roundToInt())}°"
 /** Above this estimated heading error, in degrees, the compass shows its `Calibrate` prompt whatever the magnetometer's level. */
 const val LARGE_HEADING_ERROR_DEG = 30f
 
+/** Once shown for a large error, the prompt goes only when the estimated heading error is below this, in degrees. */
+const val LARGE_HEADING_ERROR_CLEAR_DEG = 25f
+
+/**
+ * Whether the estimated heading error [errorDeg] counts as large, given whether it did at the reading before
+ * ([wasShown]): above [LARGE_HEADING_ERROR_DEG] it does; once it does, it stops only below
+ * [LARGE_HEADING_ERROR_CLEAR_DEG], so an estimate that hovers at the threshold does not put the prompt on and off at
+ * the sensor's rate. No estimate (null) is no large error.
+ */
+fun largeHeadingError(wasShown: Boolean, errorDeg: Float?): Boolean =
+    errorDeg != null && (errorDeg > LARGE_HEADING_ERROR_DEG || (wasShown && errorDeg >= LARGE_HEADING_ERROR_CLEAR_DEG))
+
 /**
  * Whether the compass shows its `Calibrate` prompt: the magnetometer reports low accuracy or worse (as before v3),
- * or the rotation vector's estimated heading error is above [LARGE_HEADING_ERROR_DEG].
+ * or the estimated heading error is large ([largeHeadingError], worked out reading by reading where the sensor
+ * reports, [com.infinite8looper.compass.sensors.HeadingReading.largeHeadingError]).
+ */
+fun calibrationPromptDue(accuracy: Int?, largeHeadingError: Boolean): Boolean =
+    (accuracy != null && accuracy <= ACCURACY_LOW) || largeHeadingError
+
+/**
+ * The prompt for a single reading with nothing shown before it: low accuracy or worse, or an estimated heading error
+ * above [LARGE_HEADING_ERROR_DEG].
  */
 fun calibrationPromptDue(accuracy: Int?, headingErrorDeg: Float?): Boolean =
-    (accuracy != null && accuracy <= ACCURACY_LOW) || (headingErrorDeg != null && headingErrorDeg > LARGE_HEADING_ERROR_DEG)
+    calibrationPromptDue(accuracy, largeHeadingError(wasShown = false, errorDeg = headingErrorDeg))
 
 /** SensorManager.SENSOR_STATUS_ACCURACY_LOW. */
 private const val ACCURACY_LOW = 1

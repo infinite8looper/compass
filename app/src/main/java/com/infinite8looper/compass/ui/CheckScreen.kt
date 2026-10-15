@@ -49,7 +49,9 @@ import com.infinite8looper.compass.nav.WatchScheme
 import com.infinite8looper.compass.nav.buttonCountText
 import com.infinite8looper.compass.nav.checkReadout
 import com.infinite8looper.compass.nav.colorHex
+import com.infinite8looper.compass.nav.headingKindInUse
 import com.infinite8looper.compass.nav.headingKindName
+import com.infinite8looper.compass.nav.headingSourceNote
 import com.infinite8looper.compass.nav.nextHeadingKind
 import com.infinite8looper.compass.nav.yesNo
 import com.infinite8looper.compass.sensors.HeadingReading
@@ -70,7 +72,9 @@ private fun HeadingReading?.toReadout() = checkReadout(
  * diagnostics switch on (nav/Check.kt, [com.infinite8looper.compass.nav.checkRoute]). A list, as settings is:
  *
  * - `Heading source`, the row that switches the compass's heading source for the running app
- *   ([CompassViewModel.setHeadingKind]): fused, magnetic, blend, and round again.
+ *   ([CompassViewModel.setHeadingKind]): fused, magnetic, blend, and round again. It names the source the compass is
+ *   on; on a watch that cannot work out the magnetic heading that is the fused one, with `Magnetic unavailable` or
+ *   `Blend unavailable` under it ([headingKindInUse], [headingSourceNote]).
  * - Live, while the screen is open: the three headings (the view model works all three out while it is,
  *   [CompassViewModel.setAllHeadings]), the estimated heading error, the magnetometer's level and field strength.
  * - What the watch returned for its colors: the six colors of the scheme the library gives (as `Watch face` uses
@@ -149,7 +153,11 @@ fun CheckScreen(vm: CompassViewModel) {
                     InstrumentRow(Modifier.clickable(role = Role.Button) { vm.setHeadingKind(nextHeadingKind(kind)) }, fitContent = true) {
                         Column {
                             Text("Heading source", color = Dim, style = styles.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(headingKindName(kind), color = AccentColor, style = styles.action, maxLines = 1)
+                            // The source the compass is on: the one asked for, or the fused one on a watch that
+                            // cannot work out the magnetic heading, with a line saying which is unavailable.
+                            val inUse = headingKindInUse(kind, vm.magneticHeadingAvailable)
+                            Text(headingKindName(inUse), color = AccentColor, style = styles.action, maxLines = 1)
+                            headingSourceNote(kind, inUse)?.let { Text(it, color = Dim, style = styles.label, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                         }
                     }
                 }
