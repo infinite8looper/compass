@@ -17,6 +17,7 @@ import com.infinite8looper.compass.R
 import com.infinite8looper.compass.nav.DialCrossing
 import com.infinite8looper.compass.nav.NO_PRESS
 import com.infinite8looper.compass.nav.confirmDelayMs
+import com.infinite8looper.compass.nav.targetQuietNanos
 
 /**
  * The app's vibrations, in one table: the feel of each is set here and nowhere else (every vibration the app asks
@@ -115,7 +116,21 @@ class Vibrations private constructor(private val view: View) {
      * How long [feel] lasts as it plays here, in milliseconds: its primitives' durations (`getPrimitiveDurations`)
      * and delays where it plays as primitives, else [CONSTANT_LENGTH_MS], what the emulators' CONFIRM lasts.
      */
-    fun lengthMs(feel: Feel): Int = prepared?.lengthsMs?.get(feel.ordinal)?.takeIf { it >= 0 } ?: CONSTANT_LENGTH_MS
+    fun lengthMs(feel: Feel): Int {
+        // Read without a nullable Int, which would make a new Integer for each call (the dial asks on every frame).
+        val lengths = prepared?.lengthsMs ?: return CONSTANT_LENGTH_MS
+        val length = lengths[feel.ordinal]
+        return if (length >= 0) length else CONSTANT_LENGTH_MS
+    }
+
+    /**
+     * How long the dial stays quiet after the target's vibration on this watch ([targetQuietNanos] of the target's
+     * [lengthMs]): worked out once, when the compositions are made, and read on every frame without making anything.
+     */
+    fun targetQuietNanos(): Long {
+        val ready = prepared ?: return CONSTANT_TARGET_QUIET_NANOS
+        return ready.targetQuietNanos
+    }
 
     /** Plays [feel] now. */
     fun play(feel: Feel) {
@@ -153,12 +168,15 @@ class Vibrations private constructor(private val view: View) {
     }
 
     /** What is asked of the vibrator once for the process: it, and each row's composition where it supports the row. */
-    private class Prepared(val vibrator: Vibrator, val effects: Array<VibrationEffect?>, val lengthsMs: IntArray)
+    private class Prepared(val vibrator: Vibrator, val effects: Array<VibrationEffect?>, val lengthsMs: IntArray) {
+        val targetQuietNanos: Long = lengthsMs[Feel.TARGET.ordinal].let { targetQuietNanos(if (it >= 0) it else CONSTANT_LENGTH_MS) }
+    }
 
     companion object {
         private const val TAG = "Vibrations"
         /** The length taken for a row played as its constant, whose length the app cannot ask: the emulators' CONFIRM, 300 ms. */
         const val CONSTANT_LENGTH_MS = 300
+        private val CONSTANT_TARGET_QUIET_NANOS = targetQuietNanos(CONSTANT_LENGTH_MS)
         @Volatile private var prepared: Prepared? = null
         @Volatile private var preparing = false
 

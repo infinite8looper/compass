@@ -1,6 +1,7 @@
 package com.infinite8looper.compass
 
 import android.os.Build
+import android.os.Debug
 import android.os.SystemClock
 import android.os.VibrationEffect.Composition
 import android.os.VibratorManager
@@ -16,6 +17,7 @@ import com.infinite8looper.compass.VibrationRecord.statusOf
 import com.infinite8looper.compass.data.SettingsStore
 import com.infinite8looper.compass.data.WaypointDatabase
 import com.infinite8looper.compass.nav.SAVE_CONFIRM_AFTER_PRESS_MS
+import com.infinite8looper.compass.nav.targetQuietNanos
 import com.infinite8looper.compass.ui.Feel
 import com.infinite8looper.compass.ui.VibrationBranch
 import com.infinite8looper.compass.ui.Vibrations
@@ -97,6 +99,44 @@ class DialVibrationsTest {
      * played as `play` plays it there. The three play, and play three effects that differ from each other and from the
      * press's.
      */
+    /**
+     * The dial asks the player on every frame how long the lines stay quiet after the target's vibration. That makes
+     * nothing new (no per-frame allocation on the compass): counted with the runtime's own allocation counter for
+     * this thread, over as many asks as about a minute of frames, once the compositions are ready.
+     */
+    @Test fun askingTheTargetsQuietOnEveryFrameMakesNothingNew() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            lateinit var vibrations: Vibrations
+            scenario.onActivity { vibrations = Vibrations.of(it.window.decorView) }
+            val expected = if (supportedOnThisWatch(Feel.TARGET)) VibrationBranch.PRIMITIVES else VibrationBranch.CONSTANT
+            val until = SystemClock.uptimeMillis() + 5_000
+            while (vibrations.branch(Feel.TARGET) != expected && SystemClock.uptimeMillis() < until) Thread.sleep(50)
+            assertEquals(expected, vibrations.branch(Feel.TARGET))
+            // What the frame loop asks (the quiet kept by the player), and the length it is made from.
+            assertEquals(targetQuietNanos(vibrations.lengthMs(Feel.TARGET)), vibrations.targetQuietNanos())
+            var sum = 0L
+            // A Kotlin function type would return a boxed Long itself; this interface returns a plain long.
+            for ((name, ask) in listOf(
+                "targetQuietNanos()" to LongAsk { vibrations.targetQuietNanos() },
+                "targetQuietNanos(lengthMs(TARGET))" to LongAsk { targetQuietNanos(vibrations.lengthMs(Feel.TARGET)) },
+            )) {
+                fun frames() { repeat(FRAMES) { sum += ask.ask() } }
+                frames() // once before counting, so nothing made by the first call of a method is counted
+                @Suppress("DEPRECATION")
+                val made = run {
+                    Debug.resetThreadAllocCount()
+                    Debug.startAllocCounting()
+                    frames()
+                    Debug.stopAllocCounting()
+                    Debug.getThreadAllocCount()
+                }
+                Log.i("DialVibrationsTest", "API ${Build.VERSION.SDK_INT}: $FRAMES asks of $name made $made objects (quiet ${vibrations.targetQuietNanos()} ns)")
+                assertEquals("objects made by $FRAMES asks of $name", 0, made)
+            }
+            assertTrue(sum > 0)
+        }
+    }
+
     @Test fun theConstantsPlayThreeDifferentEffectsDifferentFromThePress() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             Thread.sleep(2_000)
@@ -177,5 +217,12 @@ class DialVibrationsTest {
         scenario.close()
         val lines = VibrationRecord.lines(mark)
         assertTrue("the confirm was played; recorded: $lines", lines.any(::isConfirm))
+    }
+
+    private fun interface LongAsk { fun ask(): Long }
+
+    private companion object {
+        /** About a minute of frames at 60 a second. */
+        const val FRAMES = 3_600
     }
 }

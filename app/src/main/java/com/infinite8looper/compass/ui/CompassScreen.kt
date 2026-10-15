@@ -213,7 +213,7 @@ fun CompassScreen(
                 val nextSide = nextTargetSide(sideBefore, shown.floatValue, bearing, targetChanged)
                 val crossing = dialCrossing(cell, next, sideBefore, nextSide, n.tickFeedback, n.blindNavigation, positionStale)
                 if (!wasSettling && !settling.active && !hold && inView &&
-                    dialVibrationDue(crossing, now, lastTap, lastPulse, lastPulseNanos, lastTargetTap, targetQuietNanos(vibrations.lengthMs(Feel.TARGET)))
+                    dialVibrationDue(crossing, now, lastTap, lastPulse, lastPulseNanos, lastTargetTap, vibrations.targetQuietNanos())
                 ) {
                     Feel.of(crossing)?.let(vibrations::play)
                     lastTap = now
