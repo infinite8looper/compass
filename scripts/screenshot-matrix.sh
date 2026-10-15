@@ -326,7 +326,8 @@ sec_settings() {
 }
 sec_calibration() {
   fresh granted; magnetic 40; sleep 8; to_settings
-  tap_row "Calibrate" || return 1; sleep 3
+  # On the small round the list ends before `Calibrate` reaches the middle (since the `Colors` row): it is tapped where it is.
+  tap_row "Calibrate" 2>/dev/null || $S/tap-text.sh Calibrate > /dev/null || return 1; sleep 3
   # Fields of the watch lying flat facing four ways, rolled onto its side and face down (CalibrationTest's poses):
   # with the one of heading 40, seven segments of the ring lit.
   for f in 0:20:-45 -20:0:-45 0:-20:-45 20:0:-45 45:20:0 0:20:45; do

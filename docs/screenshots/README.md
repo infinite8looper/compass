@@ -102,8 +102,8 @@ Every picture here is a capture from an emulator, taken on 2026-10-13 from the d
 | End | `settings-end` | `settings`: scrolled to `Calibrate` |
 | `Breadcrumb trail` and `Show coordinates` on | `settings-trail-coords-on` | `settings`: `Show coordinates` tapped (location already granted; the trail is on by default), scrolled to `Breadcrumb trail` |
 | Every switch off (3 frames: top, middle, end) | `settings-all-off` | `settings`: each row tapped, and `Turn off` answered to the backup's question |
-| Calibration | `calibrate` | `calibration`: `Calibrate` tapped |
-| Interference | `calibrate-interference` | `calibration`: `adb emu sensor set magnetic-field 0:80:-45` (92 microtesla) |
+| Calibration: seven segments of the ring lit, `Covered 29%` (2026-10-15, v3 Task 6) | `calibrate` | `calibration`: `Calibrate` tapped at heading 40, then the fields `0:20:-45 -20:0:-45 0:-20:-45 20:0:-45 45:20:0 0:20:45` set through the console |
+| Interference (2026-10-15) | `calibrate-interference` | `calibration`: then `adb emu sensor set magnetic-field 0:80:-45` (92 microtesla): the share stays 29% |
 | The question before backups are turned off | `backup-off-question` | by hand: `Back up waypoints` tapped while it is on |
 
 ## The largest font size
@@ -119,8 +119,8 @@ The system's font scale set to 1.24, the largest step of the Wear OS font size s
 | Settings, further down still | `font-largest-settings-end` | scrolled |
 | Waypoints with the `Drop crumb` row | `font-largest-waypoints` | a second Back, the list scrolled up by one row |
 | Edit, a name on two lines | `font-largest-edit` | a long press on `Trailhead parking lot north` |
-| Calibration | `font-largest-calibration` | `Calibrate` tapped |
-| Calibration with interference | `font-largest-calibration-interference` | `adb emu sensor set magnetic-field 0:80:-45` |
+| Calibration (small: 2026-10-15, v3 Task 6) | `font-largest-calibration` | `Calibrate` tapped, the same six fields set as in `calibrate` |
+| Calibration with interference (small: 2026-10-15) | `font-largest-calibration-interference` | `adb emu sensor set magnetic-field 0:80:-45` |
 | The question before backups are turned off | `font-largest-backup-off-question` | `Back up waypoints` tapped |
 
 ## The three screens

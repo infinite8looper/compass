@@ -37,7 +37,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -156,11 +155,11 @@ fun CalibrationScreen(vm: CompassViewModel) {
         }
         CoverageRing({ covered.intValue }, Modifier.offset(y = r * RING_Y).size(r * RING_RADIUS * 2))
         Beside(
-            "Covered", coveredText(covered.intValue), besideStyle, r,
+            "Covered", coveredText(covered.intValue), besideStyle,
             Modifier.offset(x = -r * BESIDE_X, y = r * RING_Y).width(r * BESIDE_WIDTH),
         )
         shown.errorText?.let { error ->
-            Beside("Error", error, besideStyle, r, Modifier.offset(x = r * BESIDE_X, y = r * RING_Y).width(r * BESIDE_WIDTH))
+            Beside("Error", error, besideStyle, Modifier.offset(x = r * BESIDE_X, y = r * RING_Y).width(r * BESIDE_WIDTH))
         }
         Text(
             accuracyLabel(shown.accuracy), color = Ink, style = wordStyle, maxLines = 1,
@@ -187,7 +186,7 @@ fun CalibrationScreen(vm: CompassViewModel) {
 
 /** A label and its value on two lines, beside the ring: the label dim, the value in ink. Each line is drawn smaller rather than cut. */
 @Composable
-private fun Beside(label: String, value: String, style: androidx.compose.ui.text.TextStyle, r: Dp, modifier: Modifier) {
+private fun Beside(label: String, value: String, style: androidx.compose.ui.text.TextStyle, modifier: Modifier) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         for ((text, color) in listOf(label to Dim, value to Ink)) {
             BasicText(
