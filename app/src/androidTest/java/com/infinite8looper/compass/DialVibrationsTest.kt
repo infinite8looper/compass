@@ -185,13 +185,25 @@ class DialVibrationsTest {
             assertEquals("a press alone: $lone", 1, lone.size)
             val gapMs = VibrationRecord.durationMsOf(lone.single()) + 40
             // The second press has to come while the confirm still waits for the first.
-            assertTrue("a press takes ${gapMs - 40} ms here: no second press fits before the confirm; $lone", gapMs <= SAVE_CONFIRM_AFTER_PRESS_MS - 20)
+            assertTrue("a press takes ${gapMs - 40} ms here: no second press fits before the confirm; $lone", gapMs < SAVE_CONFIRM_AFTER_PRESS_MS)
             // Press, an instant save 40 ms later, a second press after the gap: the confirm, due
             // SAVE_CONFIRM_AFTER_PRESS_MS after the first press, would cut the second press short. It waits for the
             // second instead.
+            var firstAskedMs = 0L
+            var secondAskedMs = 0L
             val lines = recordOf(scenario) { player ->
-                player.press(); SystemClock.sleep(40); player.saved(); SystemClock.sleep(gapMs - 40); player.press()
+                firstAskedMs = SystemClock.uptimeMillis()
+                player.press(); SystemClock.sleep(40); player.saved(); SystemClock.sleep(gapMs - 40)
+                secondAskedMs = SystemClock.uptimeMillis()
+                player.press()
             }
+            // That the second press was asked for before the confirm was due, measured: the app notes the first
+            // press's time after firstAskedMs, so the confirm is due no sooner than SAVE_CONFIRM_AFTER_PRESS_MS after it.
+            // Until 2026-10-14 this was a margin of 20 ms kept under the gap, which left 11 ms at the worst lengths
+            // recorded (re-review, Minor 4); the time measured leaves all the room there is.
+            Log.i("DialVibrationsTest", "API ${Build.VERSION.SDK_INT}: press ${gapMs - 40} ms; second press asked ${secondAskedMs - firstAskedMs} ms after the first")
+            assertTrue("the second press was asked for ${secondAskedMs - firstAskedMs} ms after the first: not before the confirm was due",
+                secondAskedMs - firstAskedMs < SAVE_CONFIRM_AFTER_PRESS_MS)
             val all = "recorded: $lines"
             assertEquals(all, 3, lines.size)
             assertTrue("none cut short; $all", lines.all { statusOf(it) == "finished" })
