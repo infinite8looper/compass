@@ -195,6 +195,23 @@ class HeadingSourceTest {
         assertTrue("fused alone computes no magnetic heading: $r", r.geomagneticDeg.isNaN() && r.blendDeg.isNaN())
     }
 
+    /**
+     * When a magnetic or blended collection ends, the sensors it added are taken off: no geomagnetic rotation vector
+     * and no accelerometer of the heading source's stays registered, by either method. While it runs they are on
+     * (checked first, so the check after the end looks at sensors that were there).
+     */
+    @Test fun theMagneticSensorsAreTakenOffWhenAMagneticOrBlendedCollectionEnds() = runBlocking {
+        for (method in MagneticMethod.entries) for (kind in listOf(HeadingKind.MAGNETIC, HeadingKind.BLEND)) {
+            val extra = if (method == MagneticMethod.GEOMAGNETIC_ROTATION_VECTOR) "GeoMag" else "Accelerometer"
+            var during = emptySet<String>()
+            withTimeout(10_000) { HeadingSource(ctx, method).readings(kind).take(3).collect { during = registeredSensors() } }
+            val after = registeredSensors()
+            Log.i("HeadingSourceTest", "$method $kind: during $during; after $after")
+            assertTrue("$method $kind, while collected: $during", during.any { extra in it })
+            assertTrue("$method $kind, after the end: $after", after.none { "GeoMag" in it || "Accelerometer" in it })
+        }
+    }
+
     /** The reading carries the magnetometer's field as a vector in the watch's frame, for the calibration ring. */
     @Test fun theReadingCarriesTheFieldVector() = runBlocking {
         val r = withTimeout(15_000) { HeadingSource(ctx).readings(HeadingKind.FUSED).first { it.fieldMicroTesla != null && it.fieldX.isFinite() } }
