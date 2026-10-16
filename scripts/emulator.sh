@@ -1,15 +1,30 @@
 #!/bin/zsh
-# Usage: scripts/emulator.sh [avd-name]
+# Usage: scripts/emulator.sh [avd-name] [port]
 # Boots a Wear OS emulator and waits for it, up to 5 minutes. Does nothing but wait if one is already attached.
+# With a port (an even number from 5554 to 5584) it boots the AVD as emulator-<port> even while other emulators are
+# running, does nothing but wait if emulator-<port> is already attached, and addresses that emulator alone
+# (EMULATOR_ONLY_SERIAL, scripts/emulator-only.sh); its output goes to /tmp/compass-emulator-<port>.log.
+# scripts/all-suites.sh boots its emulators this way, side by side.
 # AVDs: Wear_OS_Large_Round (API 35, the default), Wear_OS_Small_Round (API 35), Wear_OS_API34, Wear_OS_API33,
 # Wear_OS_Newest (Wear OS 7.0, API 37, large round; a signed image: no `adb root` and no sqlite3 on it).
 # The other scripts assume one attached device: stop a running emulator with `adb emu kill` before booting another.
 EMULATOR_ONLY_MAY_BE_NONE=1   # this script boots the emulator, so none may be attached yet
+PORT=$2
+if [ -n "$PORT" ]; then
+  if ! [[ $PORT =~ '^55(5[4-9]|[67][0-9]|8[0-4])$' ]] || (( PORT % 2 )); then
+    echo "the port has to be an even number from 5554 to 5584: $PORT" >&2; exit 1
+  fi
+  export EMULATOR_ONLY_SERIAL=emulator-$PORT
+fi
 source "$(dirname "$0")/emulator-only.sh" || exit 1
 ADB=~/Library/Android/sdk/platform-tools/adb
 EMU=~/Library/Android/sdk/emulator/emulator
 AVD=${1:-Wear_OS_Large_Round}
-if ! $ADB devices | grep -q "emulator-.*device"; then
+if [ -n "$PORT" ]; then
+  if ! $ADB devices | grep -q "^emulator-$PORT[[:space:]]"; then
+    nohup $EMU -avd "$AVD" -port $PORT -no-snapshot-save > /tmp/compass-emulator-$PORT.log 2>&1 &
+  fi
+elif ! $ADB devices | grep -q "emulator-.*device"; then
   nohup $EMU -avd "$AVD" -no-snapshot-save > /tmp/compass-emulator.log 2>&1 &
 fi
 deadline=$(( $(date +%s) + 300 ))

@@ -6,7 +6,8 @@
 # `adb emu sensor set magnetic-field <x>:<y>:<z>`. Nothing else is passed on: a line that is not three numbers in
 # that form is ignored. The test sees the change in the magnetometer's readings (CalibrationScreenTest).
 # A test cannot reach the console from the watch itself, which is why the request goes through the log.
-# scripts/all-suites.sh and scripts/run-test.sh start it for the length of their Gradle runs. It ends after the
+# scripts/device-tests.sh (run by scripts/quick-tests.sh, scripts/run-test.sh and scripts/all-suites.sh) starts it for
+# the length of its run. It ends after the
 # given number of seconds, or when it is stopped (TERM or INT), and then stops the log reader it started.
 # Emulators only (scripts/emulator-only.sh).
 source "$(dirname "$0")/emulator-only.sh" || exit 1
