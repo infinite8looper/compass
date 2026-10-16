@@ -50,6 +50,14 @@ const val GRAY_SATURATION = 0.10f
  */
 const val NORTH_POINTER_SATURATION_APART = 0.3f
 
+/**
+ * In a gray scheme ([isGrayScheme]) north is deepened to this saturation, the saturation of the watch face's own red
+ * on the owner's watch (accent_color #FF3E32, 0.80), of which the scheme gives the app only a pale tertiary
+ * (0xFFC0B7). The owner (2026-10-16): "North should be the red from the watch face ... North is the dominant theme
+ * color".
+ */
+const val NORTH_GRAY_SATURATION = 0.8f
+
 /** North is at least this many degrees of hue from the pointer. */
 const val MIN_HUE_APART = 60f
 
@@ -95,7 +103,8 @@ data class RoleColors(val accent: Int, val north: Int, val error: Int)
  * primary under [GRAY_SATURATION] is a gray, and is not used as the accent as it stands (below).
  *
  * A primary under [GRAY_SATURATION] makes a gray scheme ([isGrayScheme], [grayRoleColors]) when the tertiary or the
- * error color is a color: north is made from that color and the pointer is a gray-red between the primary and north
+ * error color is a color: north is made from that color, deepened to the saturation of the watch face's red, the
+ * pointer is a gray-red between the primary and north, and the error color is never redder than north
  * (owner, 2026-10-16). A scheme whose primary is a gray and that has no color at all is not used: all three colors
  * are the app's own, so the app's blue never stands beside a north from the watch. A tertiary or an error color
  * that is not used gives only its own role the app's red.
@@ -108,8 +117,8 @@ data class RoleColors(val accent: Int, val north: Int, val error: Int)
  *
  * Last, an error color that looks like the accent (less than [ERROR_MIN_HUE_APART] of hue and less than
  * [ERROR_MIN_SATURATION_APART] of saturation from it) gives its place to the app's red, so that deleting is not
- * drawn like something to tap. The error color is not compared with north: it may match it, as the app's own red
- * does.
+ * drawn like something to tap. Outside a gray scheme the error color is not compared with north: it may match it,
+ * as the app's own red does.
  */
 fun roleColors(scheme: WatchScheme?): RoleColors {
     val own = RoleColors(FALLBACK_ACCENT, FALLBACK_NORTH, FALLBACK_ERROR)
@@ -137,12 +146,18 @@ fun isGrayScheme(scheme: WatchScheme): Boolean =
  * - North is made from the tertiary, or from the error color where the tertiary is a gray. The tertiary comes first
  *   because it is the color the system makes from the watch face's own accent (on the owner's watch the tertiary
  *   0xFFC0B7 from the watch face's accent_color #FF3E32), where the error color is the system's error tone. Its hue
- *   and brightness are kept and it is deepened to at least [NORTH_MIN_SATURATION] and to
- *   [NORTH_POINTER_SATURATION_APART] more than the pointer's, and made to read on black.
+ *   and brightness are kept and it is deepened to [NORTH_GRAY_SATURATION], the saturation of the watch face's red
+ *   (or kept at its own where that is more), to at least [NORTH_MIN_SATURATION] and to
+ *   [NORTH_POINTER_SATURATION_APART] more than the pointer's, and made to read on black; a hue too dark to read at
+ *   full brightness with that much gives up as little of it as reading needs.
  * - The pointer (the accent) is the primary, made to read, mixed with north: the least share of north that gives it
  *   [ACCENT_MIN_SATURATION], a gray-red that the ink (under [GRAY_SATURATION]) and north are both told from by
  *   saturation.
- * - The error color is the scheme's as for any scheme: the app's red where it looks like the pointer ([looksLike]).
+ * - The error color is the scheme's where it reads, does not look like the pointer ([looksLike]) and has less
+ *   saturation than north, so that north stays the reddest color on the screen. Otherwise it is the pointer mixed
+ *   with north, the least share of north that gives it [ERROR_MIN_SATURATION_APART] more saturation than the
+ *   pointer (a gray-red between the two, told from the pointer as for any scheme), or north itself where no less
+ *   share does. The app's red is not used: on the owner's watch it (0.81) is redder than north.
  *
  * The bounds are checked on the colors returned, in whole red, green and blue.
  */
@@ -153,17 +168,23 @@ private fun grayRoleColors(scheme: WatchScheme): RoleColors {
     // Aimed at as fractions, never read back from a rounded color on the way (as for [northFor]): the saturation is
     // raised until north is deep enough beside the pointer made toward it, and the brightness until it reads; at
     // full brightness a hue too dark to read gives up saturation instead.
-    var saturation = maxOf(saturationOf(from), NORTH_MIN_SATURATION, ACCENT_MIN_SATURATION + NORTH_POINTER_SATURATION_APART)
+    val aim = maxOf(saturationOf(from), NORTH_GRAY_SATURATION, NORTH_MIN_SATURATION, ACCENT_MIN_SATURATION + NORTH_POINTER_SATURATION_APART)
+    var saturation = aim
     var value = valueOf(from)
+    // Whether north has had to give up saturation to read: it then has less than [aim], as little less as it can.
+    var paler = false
     repeat(NORTH_PASSES) {
         val north = fromHsv(hue, minOf(1f, saturation), value)
         if (contrastOnBlack(north) < MIN_CONTRAST) {
-            if (value < 1f) value = minOf(1f, value + NORTH_STEP) else saturation -= NORTH_STEP
+            if (value < 1f) value = minOf(1f, value + NORTH_STEP) else { saturation -= NORTH_STEP; paler = true }
             return@repeat
         }
-        val accent = towardNorth(primary, north)
-        if (saturationOf(north) >= NORTH_MIN_SATURATION && saturationOf(north) - saturationOf(accent) >= NORTH_POINTER_SATURATION_APART) {
-            val error = usable(scheme.error)?.takeUnless { looksLike(it, accent) } ?: FALLBACK_ERROR
+        val accent = towardNorth(primary, north, ACCENT_MIN_SATURATION)
+        if ((paler || saturationOf(north) >= minOf(1f, aim)) && saturationOf(north) >= NORTH_MIN_SATURATION &&
+            saturationOf(north) - saturationOf(accent) >= NORTH_POINTER_SATURATION_APART
+        ) {
+            val error = usable(scheme.error)?.takeUnless { looksLike(it, accent) || saturationOf(it) >= saturationOf(north) }
+                ?: towardNorth(accent, north, saturationOf(accent) + ERROR_MIN_SATURATION_APART)
             return RoleColors(accent, north, error)
         }
         saturation = minOf(1f, saturation + NORTH_STEP)
@@ -175,9 +196,9 @@ private fun grayRoleColors(scheme: WatchScheme): RoleColors {
 /**
  * [gray] (a color that reads on black) mixed with [north] (one that reads too), straight in red, green and blue, and
  * made to read on black ([readable]): with the least share of north, found by halving, at which the result has
- * [ACCENT_MIN_SATURATION].
+ * [saturation]; [gray] itself where it has that already, and north where only all of it does.
  */
-private fun towardNorth(gray: Int, north: Int): Int {
+private fun towardNorth(gray: Int, north: Int, saturation: Float): Int {
     fun mix(share: Float): Int {
         fun channel(shift: Int): Int {
             val a = gray shr shift and 0xFF
@@ -186,12 +207,13 @@ private fun towardNorth(gray: Int, north: Int): Int {
         }
         return readable((channel(16) shl 16) or (channel(8) shl 8) or channel(0))
     }
-    if (saturationOf(gray) >= ACCENT_MIN_SATURATION) return gray
+    if (saturationOf(gray) >= saturation) return gray
+    if (saturationOf(mix(1f)) < saturation) return mix(1f)
     var low = 0f
     var high = 1f
     repeat(20) {
         val mid = (low + high) / 2f
-        if (saturationOf(mix(mid)) >= ACCENT_MIN_SATURATION) high = mid else low = mid
+        if (saturationOf(mix(mid)) >= saturation) high = mid else low = mid
     }
     return mix(high)
 }

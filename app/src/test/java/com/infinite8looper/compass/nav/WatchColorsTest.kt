@@ -2,6 +2,7 @@ package com.infinite8looper.compass.nav
 
 import org.junit.Assert.*
 import org.junit.Test
+import kotlin.math.abs
 
 class WatchColorsTest {
     private val blue = 0x2F8BFF
@@ -471,15 +472,81 @@ class WatchColorsTest {
         assertEquals(0.3f, NORTH_POINTER_SATURATION_APART, 0f)
         assertNorthApartInSaturation("owner", roleColors(owner))
     }
-    @Test fun anErrorColorThatLooksLikeTheGrayRedPointerGivesTheRed() {
+    @Test fun anErrorColorThatLooksLikeTheGrayRedPointerGivesAGrayRedBetweenThePointerAndNorth() {
         // 0xFFBFB0 (hue 11, 0.31) is within 60 degrees and 0.3 of saturation of the pointer: deleting is not drawn
-        // like something to tap, as for any scheme.
-        assertEquals(FALLBACK_ERROR, roleColors(owner).error)
+        // like something to tap, as for any scheme. Until watch-test fix round 2 the app's red, 0xFF3B30, stood in;
+        // it (0.81) is redder than north, against the owner's words (2026-10-16): "North is the dominant theme
+        // color". In its place: the pointer mixed with north, 0.3 of saturation more than the pointer.
+        val roles = roleColors(owner)
+        assertNotEquals(0xFFBFB0, roles.error)
+        assertNotEquals(FALLBACK_ERROR, roles.error)
+        assertEquals("%06X".format(roles.error), 0xFF7C65, roles.error)
     }
     @Test fun aGraySchemeWhoseTertiaryIsAGrayTakesNorthFromItsErrorColor() {
         val roles = roleColors(WatchScheme(0xFFF9EB, 0x9E9E9E, 0xFF7AA8))
         assertEquals(hueOf(0xFF7AA8), hueOf(roles.north), 2f)
         assertNorthApartInSaturation("%06X %06X".format(roles.accent, roles.north), roles)
+    }
+
+    // North, the dominant color (watch-test fix round 2). Watch-fix review 1, Important 1: north stopped at the least
+    // saturation that passed, 0.6 (0xFF7865, a salmon), paler than the watch face's own red #FF3E32 (0.80) and paler
+    // than the error color beside it, the app's 0xFF3B30 (0.81). The owner's words again: "North should be the red
+    // from the watch face ... North is the dominant theme color".
+
+    @Test fun theOwnersNorthIsDeepenedToTheSaturationOfTheWatchFacesRed() {
+        // The watch face's accent_color #FF3E32 has 0.80 of saturation; the scheme gives the app only the tertiary
+        // made from it, 0xFFC0B7, whose hue north keeps.
+        assertEquals(0.80f, saturationOf(0xFF3E32), 0.005f)
+        val north = roleColors(owner).north
+        val what = "%06X".format(north)
+        assertEquals(what, hueOf(0xFFC0B7), hueOf(north), 1f)
+        assertTrue(what, saturationOf(north) >= NORTH_GRAY_SATURATION)
+        assertTrue(what, saturationOf(north) < NORTH_GRAY_SATURATION + 0.01f)
+        assertEquals(0.8f, NORTH_GRAY_SATURATION, 0f)
+        // Full brightness, as the tertiary has; it reads on black with room to spare.
+        assertEquals(what, 0xFF, north shr 16 and 0xFF)
+        assertTrue(what, contrastOnBlack(north) >= 6.0)
+        assertEquals(0xFF4D33, north)
+    }
+    @Test fun theOwnersNorthIsRedderThanTheErrorColorWhichIsAGrayRedToldFromThePointer() {
+        val roles = roleColors(owner)
+        val what = "accent %06X north %06X error %06X".format(roles.accent, roles.north, roles.error)
+        // Until watch-test fix round 2 the error color was the app's 0xFF3B30, redder than north.
+        assertNotEquals(what, FALLBACK_ERROR, roles.error)
+        assertTrue(what, saturationOf(roles.north) > saturationOf(roles.error))
+        // The scheme's error color, 0xFFBFB0, looks like the pointer; the one made instead is the pointer mixed with
+        // north, a gray-red in north's family, told from the pointer by 0.3 of saturation, and it reads on black.
+        assertTrue(what, hueApart(roles.error, roles.north) <= 40f)
+        assertTrue(what, saturationOf(roles.error) - saturationOf(roles.accent) >= ERROR_MIN_SATURATION_APART)
+        assertTrue(what, saturationOf(roles.error) < saturationOf(roles.accent) + ERROR_MIN_SATURATION_APART + 0.02f)
+        assertTrue(what, contrastOnBlack(roles.error) >= MIN_CONTRAST)
+    }
+    @Test fun inEveryGraySchemeNorthIsNoPalerThanTheErrorColorAndTheErrorColorIsToldFromThePointer() {
+        val random = java.util.Random(20261018L)
+        var gray = 0
+        repeat(150_000) {
+            val scheme = WatchScheme(random.nextInt(0x1000000), random.nextInt(0x1000000), random.nextInt(0x1000000))
+            if (!isGrayScheme(scheme)) return@repeat
+            gray++
+            val roles = roleColors(scheme)
+            val what = "$scheme -> accent %06X north %06X error %06X".format(roles.accent, roles.north, roles.error)
+            assertTrue(what, saturationOf(roles.north) >= saturationOf(roles.error))
+            assertTrue(what, contrastOnBlack(roles.error) >= MIN_CONTRAST)
+            // Told from the pointer by hue or by saturation, as for any scheme; or north's own color.
+            val apart = hueApart(roles.error, roles.accent) >= ERROR_MIN_HUE_APART ||
+                abs(saturationOf(roles.error) - saturationOf(roles.accent)) >= ERROR_MIN_SATURATION_APART
+            assertTrue(what, apart || roles.error == roles.north)
+        }
+        assertTrue("$gray", gray > 1_000)
+    }
+    @Test fun aGraySchemesErrorColorThatIsPalerThanNorthAndNotLikeThePointerIsKept() {
+        // A deep red error color, 0xFF5449 (0.71), under the owner's north (0.80) and far from the pointer: kept.
+        val roles = roleColors(owner.copy(error = 0xFF5449))
+        assertEquals("%06X".format(roles.error), 0xFF5449, roles.error)
+        // The app's red, 0xFF3B30 (0.81), is redder than north: not kept.
+        val redder = roleColors(owner.copy(error = 0xFF3B30))
+        assertNotEquals("%06X".format(redder.error), 0xFF3B30, redder.error)
+        assertTrue(saturationOf(redder.north) > saturationOf(redder.error))
     }
 
 }

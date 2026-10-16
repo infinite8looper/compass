@@ -112,11 +112,12 @@ class ColorsSettingTest {
         assertEquals(108.3f, hueOf(first), 0.5f)
     }
     @Test fun inWatchFaceTheFirstNewWaypointIsTheRingsThirdAnchorNotNorthOrTheAccent() {
-        fun check(what: String, p: Palette) {
+        fun check(what: String, scheme: WatchScheme) {
+            val p = paletteFor(ColorMode.WATCH_FACE, scheme)
             val first = waypointRgb(p, hueForIndex(0))
             val all = "$what -> first %06X, accent %06X, north %06X, third %06X".format(first, p.roles.accent, p.roles.north, p.ringThird)
             assertEquals(all, p.ringThird, first)
-            if (p.roles != STANDARD_PALETTE.roles && saturationOf(p.ringThird) < GRAY_SATURATION) {
+            if (isGrayScheme(scheme)) {
                 // A gray scheme (owner, 2026-10-16: "the marker colors and other elements should be gray or
                 // gray-red"): the third anchor is a gray of the scheme, told from north and the gray-red pointer by
                 // having almost no color.
@@ -127,11 +128,11 @@ class ColorsSettingTest {
                 assertTrue(all, hueApart(first, p.roles.accent) >= MIN_HUE_APART)
             }
         }
-        for (scheme in recorded) check("$scheme", paletteFor(ColorMode.WATCH_FACE, scheme))
+        for (scheme in recorded) check("$scheme", scheme)
         val random = java.util.Random(20261017L)
         repeat(20_000) {
             val scheme = WatchScheme(random.nextInt(0x1000000), random.nextInt(0x1000000), random.nextInt(0x1000000))
-            check("$scheme", paletteFor(ColorMode.WATCH_FACE, scheme))
+            check("$scheme", scheme)
         }
     }
     @Test fun inWatchFaceTheAccentAndNorthAreAThirdOfATurnEitherSideOfTheFirstPlace() {
@@ -266,6 +267,19 @@ class ColorsSettingTest {
             assertTrue(what, channelsApart(c, p.roles.accent) >= channelsApart(p.roles.accent, p.roles.north) / 12)
         }
         for (i in colors.indices) for (j in i + 1 until colors.size) assertTrue("$what: $i $j", channelsApart(colors[i], colors[j]) >= 12)
+    }
+    @Test fun theOwnersNorthIsRedderThanEveryNewWaypoint() {
+        // Owner, 2026-10-16: "North is the dominant theme color". Watch-fix review 1, Important 1: north was a salmon
+        // 0xFF7865 (0.60); it is the watch face's red now, and no waypoint of the first fifty is as red.
+        val p = paletteFor(ColorMode.WATCH_FACE, owner)
+        val taken = ArrayList<Float>()
+        repeat(50) {
+            val place = nextWaypointPlace(taken.toFloatArray())
+            taken += place
+            val c = waypointRgb(p, place)
+            assertTrue("$it: %06X north %06X".format(c, p.roles.north), saturationOf(c) < saturationOf(p.roles.north))
+        }
+        assertTrue("%06X".format(p.roles.north), saturationOf(p.roles.north) >= NORTH_GRAY_SATURATION)
     }
     @Test fun theRingOfAGraySchemeIsGraysAndGrayReds() {
         val random = java.util.Random(20261016L)
