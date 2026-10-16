@@ -91,6 +91,38 @@ class InputsTest {
         // Sooner than a double tap may follow (under 40 ms after the release).
         assertEquals(listOf(false, false), steps(tap(0), tap(60)))
     }
+    // The limits themselves (the first tap is held 40 ms, so it is let go at 40): the window is closed at both ends,
+    // and the slop is as far apart as two taps of a pair may be.
+    @Test fun aSecondTapDownExactlyAtTheDoubleTapTimeAfterTheFirstIsLetGoMakesAPairAndOneMsLaterDoesNot() {
+        assertEquals(listOf(false, true), steps(tap(0), tap(40 + 300)))
+        assertEquals(listOf(false, false), steps(tap(0), tap(40 + 301)))
+    }
+    @Test fun aSecondTapDownExactlyAtTheMinimumMakesAPairAndOneMsSoonerDoesNot() {
+        assertEquals(listOf(false, true), steps(tap(0), tap(40 + 40)))
+        assertEquals(listOf(false, false), steps(tap(0), tap(40 + 39)))
+    }
+    @Test fun twoTapsExactlyTheSlopApartMakeAPairAndFurtherDoNot() {
+        assertEquals(listOf(false, true), steps(tap(0, x = 100f), tap(140, x = 100f + slop)))
+        assertEquals(listOf(false, false), steps(tap(0, x = 100f), tap(140, x = 100f + slop + 0.5f)))
+    }
+    @Test fun aSecondTapDownBeforeTheFirstIsLetGoIsNoPairAndWaitsInItsTurn() {
+        // Two fingers: the second goes down 20 ms before the first is let go (a gap of -20 ms).
+        val first = DialTap(0, 60, 100f, 100f, inViewAtDown = true, inViewAtUp = true)
+        val second = DialTap(40, 100, 100f, 100f, inViewAtDown = true, inViewAtUp = true)
+        val step = nextTap(first, second, timeoutMs = 300, minMs = 40, slopPx = slop)
+        assertFalse(step.saves)
+        assertEquals(second, step.waiting)
+    }
+    @Test fun aPairIsJudgedByTheFirstTapsViewWhenItWentDownAndTheSecondsWhenItWasLetGo() {
+        fun t(downMs: Long, atDown: Boolean, atUp: Boolean) = DialTap(downMs, downMs + 40, 100f, 100f, atDown, atUp)
+        // In view where it counts, out of view where it does not: saves.
+        assertTrue(nextTap(t(0, atDown = true, atUp = false), t(140, atDown = false, atUp = true), 300, 40, slop).saves)
+        // Out of view where it counts: no save, and nothing left waiting either way.
+        val firstOut = nextTap(t(0, atDown = false, atUp = true), t(140, atDown = true, atUp = true), 300, 40, slop)
+        assertFalse(firstOut.saves); assertNull(firstOut.waiting)
+        val secondOut = nextTap(t(0, atDown = true, atUp = true), t(140, atDown = true, atUp = false), 300, 40, slop)
+        assertFalse(secondOut.saves); assertNull(secondOut.waiting)
+    }
     @Test fun aPairWithTheCompassOutOfViewSavesNothingAndLeavesNothingWaiting() {
         val step = nextTap(tap(0, inView = false), tap(140), timeoutMs = 300, minMs = 40, slopPx = slop)
         assertFalse(step.saves)

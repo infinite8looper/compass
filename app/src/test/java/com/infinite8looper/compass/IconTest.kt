@@ -142,6 +142,21 @@ class IconTest {
         for ((c, m) in color.zip(mono)) {
             assertEquals(c.attr("pathData"), m.attr("pathData"))
             assertEquals(c.attr("strokeWidth"), m.attr("strokeWidth"))
+            // And each is drawn as the foreground's is: stroked where it is stroked, filled where it is filled, and
+            // with a color that shows (opaque), so no path of the monochrome layer is there and not drawn.
+            assertEquals("stroked: ${m.attr("pathData")}", drawn(c, "strokeColor"), drawn(m, "strokeColor"))
+            assertEquals("filled: ${m.attr("pathData")}", drawn(c, "fillColor"), drawn(m, "fillColor"))
+            assertTrue("drawn at all: ${m.attr("pathData")}", drawn(m, "strokeColor") || drawn(m, "fillColor"))
         }
+    }
+
+    /** Whether the path's color [name] (`strokeColor` or `fillColor`) is given and opaque: `#RRGGBB` or `#FFRRGGBB`. */
+    private fun drawn(path: Element, name: String): Boolean {
+        val hex = path.attr(name).removePrefix("#")
+        return when (hex.length) {
+            6 -> true
+            8 -> hex.substring(0, 2).uppercase() == "FF"
+            else -> false
+        } && (name != "strokeColor" || (path.attr("strokeWidth").toDoubleOrNull() ?: 0.0) > 0.0)
     }
 }

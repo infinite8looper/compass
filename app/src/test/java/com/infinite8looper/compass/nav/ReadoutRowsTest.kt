@@ -106,9 +106,12 @@ class ReadoutRowsTest {
         val noFixOld = lines(LogStatus.Failed(LogFailure.NO_FIX), here, stale = true)
         assertNotNull(noFixOld.latitude)
         assertEquals(rows.detail, detailRow(rows, noFixOld), 0f)
-        // `Locating…` alone in the longitude's row is showing too: the second line keeps the top, clear of it.
+        // `Locating…` alone in the longitude's row is showing too: the second line keeps the top, clear of it. The
+        // state is real: a save that takes the location provider's last known position, or a fix that arrives for
+        // the press, shows `Saving…` with its accuracy (CompassViewModel) before the compass has a position of its own.
         val savingLocating = lines(LogStatus.Saving(5f), null)
         assertNull(savingLocating.latitude); assertNotNull(savingLocating.longitude)
+        assertEquals("the second line there", "±16 ft", savingLocating.detail?.words)
         assertEquals(rows.detail, detailRow(rows, savingLocating), 0f)
 
         // The latitude's row: within 2 px of it on the larger round screen, right under the first line.

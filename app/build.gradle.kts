@@ -165,3 +165,9 @@ tasks.withType(com.android.build.gradle.internal.tasks.DeviceProviderInstrumentT
 tasks.withType(com.android.build.gradle.internal.tasks.ManagedDeviceInstrumentationTestTask::class.java).configureEach { guardOnce(this) }
 tasks.withType(com.android.build.gradle.internal.tasks.UninstallTask::class.java).configureEach { guardOnce(this) }
 tasks.named { it.startsWith("connected") || it.startsWith("device") || it.startsWith("uninstall") }.configureEach { guardOnce(this) }
+
+// IconTest reads the resource files themselves (src/main/res). Without them as an input of the unit test tasks, Gradle
+// would take a test task as up to date after a change to an icon file alone and not run it again.
+tasks.withType<Test>().configureEach {
+    inputs.dir("src/main/res").withPropertyName("resourceFiles").withPathSensitivity(PathSensitivity.RELATIVE)
+}
