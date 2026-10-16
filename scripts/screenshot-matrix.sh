@@ -24,7 +24,8 @@
 #   calibration  seven segments of the ring lit; interference
 #   check        the check screen, opened from calibration's `Check` row: its top and each of its parts (debug build only)
 #   panes        the three screens side by side; the row half way through a swipe; the compass's three ticks
-#   play         for the store listing: the waypoints list and the compass with two targets, `Waypoint 1` in focus
+#   play         for the store listing: the settings at `Tick feedback` and at `Colors` (`Standard`, with the system's
+#                color-scheme setting on for them), the waypoints list and the compass with two targets, `Waypoint 1` in focus
 # It wipes the app's data (pm clear), puts rows in its database with the device's sqlite3, feeds positions
 # (scripts/geo-feed.sh), sets the virtual sensors, switches the emulator's location setting off and on again, and
 # for `Couldn't save` makes the database file read-only for one press (it is put back also if the script is stopped). Emulators only; it refuses anything else.
@@ -403,10 +404,24 @@ sec_calibration() {
   $ADB emu sensor set magnetic-field 46:46:-65 > /dev/null; sleep 3; shot calibrate-interference
   magnetic 40; sleep 2; leave_route; from_settings
 }
-sec_play() {   # the store's compass and list: two targets, `Waypoint 1` in focus (a tap on its row), Standard colors
-  fresh granted; feed $HERE_LAT $HERE_LON; sleep 8
-  seed 300:52.5:1200 60:137.5:400
-  to_waypoints; tap_row "Waypoint 1" || { from_waypoints; return 1; }; sleep 1.5; shot play-waypoints; from_waypoints
+sec_play() {   # the store's pictures: Standard colors; the compass and the list with two targets, `Waypoint 1` in focus
+  fresh granted
+  # The settings at `Tick feedback`, and at `Colors` saying `Standard`: for these the system's color-scheme setting is on
+  # (from API 35 the row otherwise says `Not available on this watch`), and it is put back as it was.
+  local dyn=$($ADB shell settings get global dynamic_color_theme_enabled | tr -d '\r')
+  $ADB shell settings put global dynamic_color_theme_enabled 1; app_stop; app_start; sleep 4
+  to_settings; find_row "Tick feedback" > /dev/null; shot play-settings-ticks
+  find_row "Colors" > /dev/null; shot play-settings-colors; from_settings
+  if [ "$dyn" = null ]; then $ADB shell settings delete global dynamic_color_theme_enabled > /dev/null
+  else $ADB shell settings put global dynamic_color_theme_enabled $dyn; fi
+  app_stop; app_start; sleep 4
+  feed $HERE_LAT $HERE_LON; sleep 8
+  # The newest row has the focus, and a tap on a row turns it on or off as a target: the two rows' names are swapped
+  # instead, so that the newest is `Waypoint 1`.
+  seed 60:137.5:400 300:52.5:1200; app_stop; sleep 1
+  sql "UPDATE waypoints SET name='x' WHERE name='Waypoint 1'; UPDATE waypoints SET name='Waypoint 1' WHERE name='Waypoint 2'; UPDATE waypoints SET name='Waypoint 2' WHERE name='x';"
+  app_start; sleep 6
+  to_waypoints; find_row "Waypoint 1" > /dev/null; sleep 1.5; shot play-waypoints; from_waypoints
   face 290; sleep 1; shot play-compass
 }
 sec_check() {
