@@ -114,8 +114,8 @@ class ReadoutTest {
         status: LogStatus = LogStatus.Idle, focus: FocusKind = FocusKind.NONE, distanceM: Double? = null, arrived: Boolean = false,
         noTarget: Boolean = false, position: GeoPoint? = null, stale: Boolean = false, fixAccuracyM: Float? = null,
         noPosition: LogFailure? = null, showCoordinates: Boolean = true, holdFlat: Boolean = false, units: Units = Units.IMPERIAL,
-        lowAccuracy: Boolean = false,
-    ) = readout(status, units, focus, distanceM, arrived, noTarget, position, stale, fixAccuracyM, noPosition, showCoordinates, holdFlat, lowAccuracy)
+        lowAccuracy: Boolean = false, uncertain: Boolean = false,
+    ) = readout(status, units, focus, distanceM, arrived, noTarget, position, stale, fixAccuracyM, noPosition, showCoordinates, holdFlat, lowAccuracy, uncertain)
 
     @Test fun aCleanCompassHasNoLines() {
         assertEquals(Readout(null, null, null, null), lines(showCoordinates = false))
@@ -348,5 +348,31 @@ class ReadoutTest {
                 assertNull("$point", l.latitude); assertNull("$point", l.longitude)
             }
         }
+    }
+    // Owner, 2026-10-16, after a crumb a few steps away was pointed at the wrong way indoors, on what the compass
+    // does when the position is less certain than the target is near: "Hide the pointer (Recommended)": draw no
+    // pointer when the position's accuracy is larger than the distance to the crumb or target, show the distance
+    // with ±, and do not mark the crumb reached.
+
+    @Test fun anUncertainTargetsDistanceHasThePositionsAccuracyAfterIt() {
+        // A crumb 10 ft away with a 50 ft fix: `10 ft ±50 ft`, the accuracy dim (drawn as the note).
+        assertEquals(
+            ReadoutLine("10 ft", ReadoutTone.INK, note = "±50 ft"),
+            lines(focus = FocusKind.CRUMB, distanceM = 3.048, position = hanover, fixAccuracyM = 15.24f, uncertain = true).main,
+        )
+        // A waypoint too, though a waypoint's distance otherwise never has an accuracy after it.
+        assertEquals(
+            ReadoutLine("49 ft", ReadoutTone.INK, note = "±98 ft"),
+            lines(focus = FocusKind.WAYPOINT, distanceM = 15.0, position = hanover, fixAccuracyM = 30f, uncertain = true).main,
+        )
+        assertEquals(
+            ReadoutLine("15 m", ReadoutTone.INK, note = "±30 m"),
+            lines(focus = FocusKind.WAYPOINT, distanceM = 15.0, position = hanover, fixAccuracyM = 30f, uncertain = true, units = Units.METRIC).main,
+        )
+        // An old position says so instead, as for any distance.
+        assertEquals(
+            ReadoutLine("49 ft (old)", ReadoutTone.DIM),
+            lines(focus = FocusKind.WAYPOINT, distanceM = 15.0, position = hanover, fixAccuracyM = 30f, uncertain = true, stale = true).main,
+        )
     }
 }

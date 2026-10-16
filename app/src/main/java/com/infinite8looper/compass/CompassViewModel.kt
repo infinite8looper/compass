@@ -403,10 +403,13 @@ class CompassViewModel(
         // are all still targets with none of them focused. The stored focus is not touched, so it is back afterwards.
         val targets = buildTargets(
             ws.map { it.toInfo() }, s.focusedId, f?.point, declination, s.north, s.units, arrived,
-            focusSuspended = mode == TrailMode.RETRACING,
+            focusSuspended = mode == TrailMode.RETRACING, fixAccuracyM = f?.accuracyM,
         )
         // The crumb walked to is shown as arrived at only by a fix that could consume it.
-        val trail = buildTrail(mode, cs, f?.point, declination, s.north, s.units, arrived, fixGoodEnough = f != null && isGoodEnough(f.accuracyM))
+        val trail = buildTrail(
+            mode, cs, f?.point, declination, s.north, s.units, arrived, fixGoodEnough = f != null && isGoodEnough(f.accuracyM),
+            fixAccuracyM = f?.accuracyM,
+        )
         val focused = trail.current ?: targets.firstOrNull { it.focused }
         arrived = targets.filter { it.arrived }.mapTo(HashSet(trail.arrivedIds)) { it.id }
         // Only a live fix gives distances; the saved last position is not presented as where the wearer is now.

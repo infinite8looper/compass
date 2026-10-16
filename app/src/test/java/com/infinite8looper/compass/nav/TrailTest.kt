@@ -634,4 +634,52 @@ class TrailTest {
         assertEquals(emptyList<Int>(), crumbsForScreens<Int>(null, settingOn = false))
         assertNull(crumbsForScreens<Int>(null, settingOn = true))
     }
+    // Owner, 2026-10-16, after a crumb a few steps away was pointed at the wrong way indoors, on what the compass
+    // does when the position is less certain than the target is near: "Hide the pointer (Recommended)": draw no
+    // pointer when the position's accuracy is larger than the distance to the crumb or target, show the distance
+    // with ±, and do not mark the crumb reached.
+
+    @Test fun aCrumbThreeMetersAwayWithAThirtyMeterFixHasNoDialAngle() {
+        val crumbs = listOf(CrumbPoint(2, north(3.0)), CrumbPoint(1, north(-200.0)))
+        // A 30 m fix is too poor to consume a crumb, so the crumb 3 m north is not arrived at; nor is it pointed at.
+        val t = buildTrail(TrailMode.RETRACING, crumbs, north(0.0), null, NorthRef.TRUE, Units.METRIC, fixGoodEnough = false, fixAccuracyM = 30f)
+        assertNull(t.current!!.dialAngleDeg)
+        assertEquals(3.0, t.current!!.distanceM!!, 0.01)
+        assertTrue(t.current!!.uncertain)
+        assertFalse(t.current!!.arrived)
+        assertFalse(crumbTargetId(2) in t.arrivedIds)
+        // The crumb 200 m behind still has its tick: its direction is known.
+        assertEquals(listOf(180f), t.tickAngles)
+    }
+
+    @Test fun aCrumbAHundredMetersAwayWithAThirtyMeterFixHasItsDialAngle() {
+        val t = buildTrail(TrailMode.RETRACING, listOf(CrumbPoint(2, north(100.0))), north(0.0), null, NorthRef.TRUE, Units.METRIC, fixGoodEnough = false, fixAccuracyM = 30f)
+        assertEquals(0f, t.current!!.dialAngleDeg!!, 0.01f)
+        assertFalse(t.current!!.uncertain)
+    }
+
+    @Test fun aCrumbNearerThanTheAccuracyHasNoTickAndIsNotCountedArrivedAt() {
+        val crumbs = listOf(CrumbPoint(3, north(500.0)), CrumbPoint(2, north(20.0)), CrumbPoint(1, north(-40.0)))
+        val t = buildTrail(TrailMode.RETRACING, crumbs, north(0.0), null, NorthRef.TRUE, Units.METRIC, fixGoodEnough = false, fixAccuracyM = 30f)
+        // Crumb 2 (20 m) is nearer than 30 m: no tick; crumb 1 (40 m) has its tick, behind.
+        assertEquals(listOf(180f), t.tickAngles)
+        assertEquals(emptySet<Long>(), t.arrivedIds)
+    }
+
+    @Test fun anUncertainCrumbIsNotConsumed() {
+        // The crumb walked to is consumed only by arrival, which a fix this poor cannot give ([trailAfterFix]).
+        val crumbs = listOf(crumb(2, 3.0), crumb(1, -30.0))
+        val t = Trail(TrailMode.RETRACING, listOf(2, 1))
+        val fix = trailAfterFix(t, crumbs, null, north(0.0), Units.METRIC, accuracyM = 30f, compassInView = true)
+        assertEquals(TrailChange(t), fix.change); assertNull(fix.arrivedAt)
+    }
+
+    @Test fun aGoodFixWithinTheArrivalDistanceStillArrives() {
+        // Arrival is decided first, as before: a 12 m fix and the crumb 4 m away.
+        val t = buildTrail(TrailMode.RETRACING, listOf(CrumbPoint(2, north(4.0))), north(0.0), null, NorthRef.TRUE, Units.METRIC, fixGoodEnough = true, fixAccuracyM = 12f)
+        assertTrue(t.current!!.arrived); assertFalse(t.current!!.uncertain)
+        // Just beyond it, 11 m away with the same fix: not arrived, and nearer than 12 m, so uncertain.
+        val beyond = buildTrail(TrailMode.RETRACING, listOf(CrumbPoint(2, north(11.0))), north(0.0), null, NorthRef.TRUE, Units.METRIC, fixGoodEnough = true, fixAccuracyM = 12f)
+        assertFalse(beyond.current!!.arrived); assertTrue(beyond.current!!.uncertain); assertNull(beyond.current!!.dialAngleDeg)
+    }
 }

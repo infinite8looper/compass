@@ -113,4 +113,46 @@ class TargetsTest {
         // Not suspended, the stored focus is where it was.
         assertEquals(listOf(false, true), buildTargets(all, 1, here, null, NorthRef.TRUE).map { it.focused })
     }
+    // Owner, 2026-10-16, after a crumb a few steps away was pointed at the wrong way indoors, on what the compass
+    // does when the position is less certain than the target is near: "Hide the pointer (Recommended)": draw no
+    // pointer when the position's accuracy is larger than the distance to the crumb or target, show the distance
+    // with ±, and do not mark the crumb reached.
+
+    @Test fun theDirectionIsUncertainWhenTheAccuracyIsLargerThanTheDistance() {
+        assertTrue(directionUncertain(distanceM = 3.0, accuracyM = 30f))
+        assertTrue(directionUncertain(distanceM = 29.9, accuracyM = 30f))
+        assertFalse(directionUncertain(distanceM = 30.0, accuracyM = 30f))
+        assertFalse(directionUncertain(distanceM = 100.0, accuracyM = 30f))
+        // No distance or no accuracy: nothing to weigh.
+        assertFalse(directionUncertain(distanceM = null, accuracyM = 30f))
+        assertFalse(directionUncertain(distanceM = 3.0, accuracyM = null))
+        assertFalse(directionUncertain(distanceM = 3.0, accuracyM = Float.NaN))
+    }
+
+    @Test fun aTargetNearerThanThePositionsAccuracyHasNoDialAngleAndIsNotArrivedAt() {
+        // 15 m away (beyond the arrival distance) with a 30 m fix: no line, a distance, not arrived, uncertain.
+        val near = buildTargets(listOf(north(1, 15.0)), 1, here, -14f, NorthRef.TRUE, Units.METRIC, fixAccuracyM = 30f).single()
+        assertNull(near.dialAngleDeg)
+        assertEquals(15.0, near.distanceM!!, 0.01)
+        assertFalse(near.arrived)
+        assertTrue(near.uncertain)
+        // 100 m away with the same fix: the line as before.
+        val far = buildTargets(listOf(north(1, 100.0)), 1, here, -14f, NorthRef.TRUE, Units.METRIC, fixAccuracyM = 30f).single()
+        assertEquals(0f, far.dialAngleDeg!!, 0.01f)
+        assertFalse(far.uncertain)
+        // A target that is not focused is drawn by its angle too: none while uncertain.
+        val two = buildTargets(listOf(north(1, 100.0), north(2, 15.0)), 1, here, -14f, NorthRef.TRUE, Units.METRIC, fixAccuracyM = 30f)
+        assertNotNull(two[0].dialAngleDeg); assertNull(two[1].dialAngleDeg); assertFalse(two[1].focused)
+    }
+
+    @Test fun anArrivalIsAnArrivalWhateverTheAccuracy() {
+        // Within the arrival distance the target is arrived at as before; its line was not drawn there anyway.
+        val t = buildTargets(listOf(north(1, 3.0)), 1, here, -14f, NorthRef.TRUE, Units.METRIC, fixAccuracyM = 30f).single()
+        assertTrue(t.arrived); assertFalse(t.uncertain); assertNull(t.dialAngleDeg)
+    }
+
+    @Test fun withoutAnAccuracyNothingIsUncertain() {
+        val t = buildTargets(listOf(north(1, 15.0)), 1, here, -14f, NorthRef.TRUE, Units.METRIC).single()
+        assertEquals(0f, t.dialAngleDeg!!, 0.01f); assertFalse(t.uncertain)
+    }
 }

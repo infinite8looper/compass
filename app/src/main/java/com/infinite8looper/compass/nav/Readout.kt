@@ -54,6 +54,9 @@ private const val LOCATING = "Locating…"
  *   waypoint only while it has no distance, so a distance from before location was switched off stays, marked old.
  * - Otherwise the focused target's distance: `Locating…` before the first fix; `Arrived at target`; the distance,
  *   ending in ` (old)` when the fix is [stale], and for a crumb followed by a poor fix's accuracy ([poorFixNote]).
+ *   For a target whose direction is [uncertain] (the position's accuracy is larger than the distance,
+ *   [directionUncertain]), a waypoint or a crumb, the distance is followed by the position's accuracy
+ *   (`10 ft ±50 ft`), unless the fix is old.
  * - With nothing focused: `No target` when there are waypoints and none is a target ([noTarget]), else nothing.
  *
  * The prompts, `Hold flat` ([holdFlat]) and `Calibrate` ([lowAccuracy], when the watch is not tilted too far), are
@@ -75,7 +78,7 @@ private const val LOCATING = "Locating…"
 fun readout(
     status: LogStatus, units: Units, focus: FocusKind, distanceM: Double?, arrived: Boolean, noTarget: Boolean,
     position: GeoPoint?, stale: Boolean, fixAccuracyM: Float?, noPosition: LogFailure?, showCoordinates: Boolean, holdFlat: Boolean,
-    lowAccuracy: Boolean = false,
+    lowAccuracy: Boolean = false, uncertain: Boolean = false,
 ): Readout {
     // The prompt that is due, before anything is said about its place.
     val due = when { holdFlat -> ReadoutPrompt.HOLD_FLAT; lowAccuracy -> ReadoutPrompt.CALIBRATE; else -> null }
@@ -106,7 +109,11 @@ fun readout(
             stale -> { distanceSaysOld = true; ReadoutLine(formatDistance(distanceM, units) + " (old)", ReadoutTone.DIM) }
             else -> ReadoutLine(
                 formatDistance(distanceM, units), ReadoutTone.INK,
-                note = if (focus == FocusKind.CRUMB) poorFixNote(fixAccuracyM, stale, units) else null,
+                note = when {
+                    uncertain && fixAccuracyM != null && !fixAccuracyM.isNaN() -> accuracyText(fixAccuracyM, units)
+                    focus == FocusKind.CRUMB -> poorFixNote(fixAccuracyM, stale, units)
+                    else -> null
+                },
             )
         }
     }
