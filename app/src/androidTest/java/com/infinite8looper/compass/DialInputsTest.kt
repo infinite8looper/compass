@@ -104,7 +104,11 @@ class DialInputsTest {
     private val screen: Rect by lazy { Rect().also { automation.rootInActiveWindow.getBoundsInScreen(it) } }
     private val cx get() = screen.exactCenterX()
     private val cy get() = screen.exactCenterY()
-    /** A place on the dial that no tap area of its own covers: above the middle, where the name of a target stands. */
+    /**
+     * A place on the dial that no tap area of its own covers: above the middle, where the name of a target stands. So
+     * it is with the coordinates off, as this suite runs; with them on and `Calibrate` showing, the prompt's tap area
+     * reaches up from the top of the readout over it ([com.infinite8looper.compass.nav.promptTapArea]).
+     */
     private val dialY get() = cy - screen.height() * 0.2f
 
     /**
@@ -398,7 +402,8 @@ class DialInputsTest {
 
     /**
      * The `Calibrate` prompt shows on the compass only while the watch's magnetometer reports low accuracy, which
-     * is the watch's to say. Where it shows, the part of the dial from the word down is the prompt's own tap area:
+     * is the watch's to say. Where it shows, the part of the dial from the word away from the middle is the prompt's
+     * own tap area ([com.infinite8looper.compass.nav.promptTapArea]), so the middle of the word is in it wherever the word stands:
      * two taps there open calibration, once, and save nothing. Where it does not show there is no such area, and
      * two taps at the same place are a double tap on the dial like any other.
      */
@@ -409,14 +414,14 @@ class DialInputsTest {
             val prompt = place("Calibrate")
             Log.i("DialInputsTest", "the Calibrate prompt on the compass: ${if (prompt == null) "not showing" else "showing at $prompt"}")
             if (prompt != null) {
-                doubleTap(x = prompt.exactCenterX(), y = prompt.exactCenterY() + prompt.height())
+                doubleTap(x = prompt.exactCenterX(), y = prompt.exactCenterY())
                 shows("calibration, after two taps on the prompt") { !compassInView() && !onScreen("Log here") && !onScreen("Settings") }
                 nothingSaved(vm, "after two taps on the Calibrate prompt")
                 // Opened once: one Back is the compass again.
                 instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
                 shows("the compass, after one Back from calibration") { compassInView() }
                 // And one tap there opens it as before.
-                tap(x = prompt.exactCenterX(), y = prompt.exactCenterY() + prompt.height())
+                tap(x = prompt.exactCenterX(), y = prompt.exactCenterY())
                 shows("calibration, after one tap on the prompt") { !compassInView() && !onScreen("Log here") && !onScreen("Settings") }
                 nothingSaved(vm, "after one tap on the Calibrate prompt")
             } else {

@@ -13,7 +13,8 @@
 #                and on the edit screen (several frames each)
 #   log          `Saving…`, `Saved Waypoint N`, `No GPS fix`, `Location is off`, `Couldn't save`
 #   coords       coordinates with no target, old, before the first fix (with the pane ticks too), with a target; hold-flat
-#                with them on; a save's two lines; `MAG` and a trail's label; the pane ticks; `Location is off`; a
+#                with them on; a save's two lines (`Saving…` and `Saved`); `No GPS fix` with an old position and with
+#                none; `MAG` and a trail's label, and `Hold flat` over them; the pane ticks; `Location is off`; a
 #                press's `Needs access to precise location` after the precise permission is taken back
 #   trail        a crumb saved, laying, the trail's row, retracing, facing the crumb, `Hold to clear`, `Trail complete`
 #   waypoints    empty, a few, thirty (top and end), old distances, the status band after `Log here`
@@ -138,7 +139,8 @@ to_settings() { swipe_to right; }; from_settings() { swipe_to left; }
 to_waypoints() { swipe_to left; }; from_waypoints() { swipe_to right; }
 leave_route() { $ADB shell input keyevent KEYCODE_BACK; sleep 1.5; }      # edit and calibration
 # Saving from the compass is a double tap on the dial (scripts/double-tap.sh): above the middle, clear of the
-# `Calibrate` prompt's tap area. The trail is started and switched from its row on the waypoints screen.
+# `Calibrate` prompt's tap area with the coordinates off. With them on that area reaches up over this place while the
+# prompt shows, which it does not on the emulators (they report high magnetometer accuracy only). The trail is started and switched from its row on the waypoints screen.
 TAP_Y=$((H * 3 / 10))
 press() { $ADB shell "input tap $C $TAP_Y; sleep 0.1; input tap $C $TAP_Y"; }
 ticks() {   # a drag toward waypoints let go early: the row springs back to the compass, whose three ticks show for about a second
@@ -265,7 +267,31 @@ sec_coords() {
   ticks; shot coords-locating-ticks; sleep 6      # its descender over the pane ticks, if the first fix has not come yet
   seed $THREE; shot coords-target
   ticks; shot coords-pane-ticks; sleep 2
-  press; shot_when coords-saved $GREEN 50 72 40; sleep 6      # `Saved Waypoint 4` with its accuracy: the second line at the top
+  press; shot_when coords-saved $GREEN 50 72 40; sleep 6      # `Saved Waypoint 1` with its accuracy: the second line at the top
+  # `Saving…` with its accuracy (the position in hand is over 10 s old, so the save waits): the coordinates show, the second line at the top.
+  home; sleep 12; app_start; sleep 0.6; press; sleep 0.9; shot coords-saving; sleep 8
+  # `No GPS fix` / `Try again outdoors` with no position (as in the `log` section: location switched off while the
+  # press waits, and on again; the app has no position when it is back): no coordinate row shows, so the second line
+  # stands right under the first.
+  for try in 1 2 3 4; do
+    sleep 4; home; sleep 12; app_start; sleep 0.6
+    $ADB shell "input tap $C $TAP_Y; sleep 0.1; input tap $C $TAP_Y; input keyevent KEYCODE_HOME; settings put secure location_mode 0"; sleep 23
+    location on; sleep 1; app_start; shot_when coords-no-gps-fix $RED 50 72 2> /dev/null && break
+    [ $try = 4 ] && echo "  coords-no-gps-fix-$SUF.png  NOT CAUGHT in four tries" >&2
+  done
+  sleep 6
+  # The same failure while an old position shows, the app staying on screen: location off for 12 s (the position in
+  # hand is then too old to be saved at once), switched on just for a press and off again, so no fix comes in the
+  # press's 20 seconds. The position stays, old; the coordinates show, so the second line stands at the top. (With
+  # location on, the emulator keeps sending its last position as new fixes, so it is switched off.)
+  for try in 1 2 3; do
+    location off; sleep 12
+    $ADB shell "settings put secure location_mode 3; input tap $C $TAP_Y; sleep 0.1; input tap $C $TAP_Y; settings put secure location_mode 0"; sleep 18
+    shot_when coords-no-gps-fix-old $RED 50 72 40 2> /dev/null && break
+    [ $try = 3 ] && echo "  coords-no-gps-fix-old-$SUF.png  NOT CAUGHT in three tries" >&2
+    location on; sleep 8
+  done
+  location on; sleep 8
   location off; home; app_stop; app_start; sleep 4; shot coords-location-off; location on; sleep 6
   # Hold-flat with the coordinates on: the two lines are left out, and a row with a descender stands over the words.
   seed 0:0:4; upright; sleep 3.5; shot coords-holdflat-arrived; flat; sleep 5
@@ -278,6 +304,8 @@ sec_coords() {
   to_settings; setting "True north" off; setting "Breadcrumb trail" on; from_settings; sleep 3
   switch_trail || return 1; sleep 1; press; shot_when coords-crumb-saved $GREEN 50 72 40; sleep 6
   shot coords-trail-mag
+  # `Hold flat` over `MAG` and the trail's label: the prompt's place at the top over the row it is nearest to.
+  upright; sleep 3.5; shot coords-holdflat-mag; flat; sleep 4
   # A press's two lines with the coordinates on: approximate location granted and the precise permission taken back
   # (the system stops the app), so the setting stays on; the press asks again and is answered `Keep approximate location`.
   $ADB shell pm grant $PKG android.permission.ACCESS_COARSE_LOCATION; $ADB shell pm revoke $PKG android.permission.ACCESS_FINE_LOCATION
