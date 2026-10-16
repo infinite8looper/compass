@@ -6,6 +6,7 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.os.PowerManager
 import android.os.SystemClock
 import android.view.InputDevice
 import android.view.KeyEvent
@@ -252,7 +253,7 @@ class CalibrationScreenTest {
     /**
      * Asks for the emulator's magnetic field to be set to [field] (x:y:z microtesla) through its sensor console:
      * the request goes to the log, where scripts/field-requests.sh reads it and passes it to the console. Returns
-     * once the magnetometer reads it.
+     * once the magnetometer reads it and the screen has stayed awake for three seconds after.
      */
     private suspend fun setField(field: String) {
         val wanted = field.split(":").map { it.toFloat() }
@@ -260,7 +261,7 @@ class CalibrationScreenTest {
         val deadline = SystemClock.uptimeMillis() + 15_000
         while (true) {
             val now = fieldNow()
-            if (now != null && (0..2).all { abs(now[it] - wanted[it]) < 0.5f }) return
+            if (now != null && (0..2).all { abs(now[it] - wanted[it]) < 0.5f }) break
             assertTrue(
                 "the magnetometer did not read $field in 15 s (it reads ${now?.joinToString(":")}): the field is set " +
                     "through the console by scripts/field-requests.sh, which scripts/all-suites.sh and scripts/run-test.sh start",
@@ -268,6 +269,15 @@ class CalibrationScreenTest {
             )
             delay(250)
         }
+        // The Wear OS 7.0 image (API 37), like API 33, puts the screen to sleep a moment after a change of the
+        // sensors when nothing keeps it on (scripts/all-suites.sh): it is woken for three seconds after the change.
+        val power = app.getSystemService(PowerManager::class.java)
+        val awakeUntil = SystemClock.uptimeMillis() + 3_000
+        while (SystemClock.uptimeMillis() < awakeUntil) {
+            if (!power.isInteractive) instrumentation.uiAutomation.executeShellCommand("input keyevent KEYCODE_WAKEUP").close()
+            delay(200)
+        }
+        assertTrue("the screen did not stay awake after the field was set to $field", power.isInteractive)
     }
 
     private fun percent(share: String?) = share?.removeSuffix("%")?.toIntOrNull()
