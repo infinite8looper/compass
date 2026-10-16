@@ -5,6 +5,7 @@ Every picture here is a capture from an emulator, added in commits dated from 20
 - `<state>-large.png` is from `Wear_OS_Large_Round` (API 35, 454 x 454) and `<state>-small.png` from `Wear_OS_Small_Round` (API 35, 384 x 384). They were made with `scripts/screenshot-matrix.sh`, a section at a time (`scripts/screenshot-matrix.sh large trail`); the section named in each row is the argument that makes that row's pictures again. The `settings` pictures are from a later build than the rest, and the `coords` pictures from a later one still (v3 Task 8, 2026-10-15), with the rows standing as `Show coordinates` puts them now.
 - The position fed is 43.7022, -72.2896 (`scripts/geo-feed.sh`). Waypoints are put in the app's database with `scripts/seed-targets.sh <bearing>:<place on the color ring>:<meters>`. "Three targets" is `60:137.5:400 200:275:1500 300:52.5:5000`. A heading is set with the emulator's magnetic-field sensor and corrected until the compass shows it.
 - The library gives a color scheme only on API 35 and newer, and there only while the system setting `dynamic_color_theme_enabled` is 1 (put to 1 through `adb` for the pictures that show a scheme: no image does it from the watch face; see the `accent-` pictures below); below API 35 it gives none whatever the setting, and `Standard` reads none. So the accent is blue and north and the error color are red in every picture but the `accent-` and `colors-watchface-` ones, which have the API 35 and API 37 images' schemes with the setting put to 1. The pictures taken before the `Colors` setting (all but the `colors-` ones) show the waypoints' colors on the v2 ring of the blue and the red; with `Standard`, the default since then, a waypoint's place is a hue on the full wheel, as the `colors-standard-` pictures show.
+- The store listing's pictures are in `docs/play/` (its README lists them); the matrix's `play` section takes the captures they are made from.
 - The emulators report only high magnetometer accuracy and a position accuracy of 5 m; what that leaves unseen is listed at the end.
 
 ## Compass
@@ -110,9 +111,12 @@ The `coords` pictures were taken again on 2026-10-15 (v3 Task 8), with the latit
 
 | State | File | How it was produced |
 |-|-|-|
-| Top of the list | `settings-top` | `settings`: after `pm clear` (the defaults in the United States locale) |
+| Top of the list (the settings pictures retaken 2026-10-16 with the `Privacy policy` row) | `settings-top` | `settings`: after `pm clear` (the defaults in the United States locale) |
 | Middle | `settings-middle` | `settings`: scrolled to `Blind navigation` |
 | End (retaken in v3 Task 10; on the small round the script's search for the row now takes up to 24 steps) | `settings-end` | `settings`: scrolled to `Calibrate` |
+| `Colors` in the middle of the screen, `Not available on this watch` (API 35 with the system's color-scheme setting unset) (2026-10-16, Play-release preparation) | `settings-colors` | `settings`: scrolled to `Colors` |
+| The last row, `Privacy policy`, under the version (2026-10-16, Play-release preparation) | `settings-privacy` | `settings`: scrolled to the list's end |
+| `Privacy policy` after a tap with no phone paired (the emulators have none): the address `infinite8looper.github.io` `/privacy.html` in two lines (2026-10-16) | `settings-privacy-address` | `settings`: `Privacy policy` tapped, 3 s later |
 | `Breadcrumb trail` and `Show coordinates` on | `settings-trail-coords-on` | `settings`: `Show coordinates` tapped (location already granted; the trail is on by default), scrolled to `Breadcrumb trail` |
 | Every switch off (3 frames: top, middle, end) | `settings-all-off` | `settings`: each row tapped, and `Turn off` answered to the backup's question |
 | Calibration: seven segments of the ring lit, `Covered 29%`, and the `Check` row at the bottom (2026-10-15, v3 Tasks 6 and 7; retaken in Task 7 fix round 1 with the ring at 0.21 of the radius) | `calibrate` | `calibration`: `Calibrate` tapped at heading 40, then the fields `0:20:-45 -20:0:-45 0:-20:-45 20:0:-45 45:20:0 0:20:45` set through the console |
