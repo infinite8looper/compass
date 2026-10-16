@@ -21,7 +21,7 @@ ADB=~/Library/Android/sdk/platform-tools/adb
 EMU=~/Library/Android/sdk/emulator/emulator
 AVD=${1:-Wear_OS_Large_Round}
 if [ -n "$PORT" ]; then
-  if ! $ADB devices | grep -q "^emulator-$PORT[[:space:]]"; then
+  if ! $ADB devices | grep -q "^emulator-${PORT}[[:space:]]"; then
     nohup $EMU -avd "$AVD" -port $PORT -no-snapshot-save > /tmp/compass-emulator-$PORT.log 2>&1 &
   fi
 elif ! $ADB devices | grep -q "emulator-.*device"; then

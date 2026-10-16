@@ -18,6 +18,9 @@
 #     state `device` (with EMULATOR_ONLY_MAY_BE_NONE=1 it then returns 0 with ANDROID_SERIAL unset, for the scripts
 #     that boot it); otherwise it exports ANDROID_SERIAL with that serial and nothing else. It never falls back to
 #     another emulator. scripts/all-suites.sh runs several emulators at once and gives each process its own.
+#   - If EMULATOR_ONLY_ANY=1 is set (and no EMULATOR_ONLY_SERIAL), any number of emulators may be attached, none
+#     included: it returns 1 only for the reasons above that concern devices that are not emulators, and leaves
+#     ANDROID_SERIAL unset, so a script that sets it must name each emulator it addresses (scripts/all-suites.sh).
 # The answer comes from `adb devices` each time. A device plugged in after a check is not addressed by calls that
 # are pinned, and is refused at the next check.
 EMULATOR_ONLY_ADB=~/Library/Android/sdk/platform-tools/adb
@@ -61,6 +64,10 @@ emulator_only() {
     if [ "$EMULATOR_ONLY_MAY_BE_NONE" = "1" ]; then return 0; fi
     echo "refusing: the emulator $EMULATOR_ONLY_SERIAL is not attached and ready." >&2
     return 1
+  fi
+  if [ "$EMULATOR_ONLY_ANY" = "1" ]; then
+    unset ANDROID_SERIAL
+    return 0
   fi
   if [ ${#emulators} -gt 1 ]; then
     unset ANDROID_SERIAL
