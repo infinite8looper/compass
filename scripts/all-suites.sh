@@ -9,8 +9,9 @@
 # and no heading, and the test of the heading's description would be skipped), reads the pose back from the
 # emulator and does not run the suite unless it is flat, wakes the screen and checks that it is awake (two of the
 # images put it to sleep when the pose changes), starts scripts/geo-feed.sh at
-# 43.7022,-72.2896 (the position some of the tests need, and the one the tests compare against), runs the suite,
-# stops the feed, and keeps a copy of the result files.
+# 43.7022,-72.2896 (the position some of the tests need, and the one the tests compare against) and
+# scripts/field-requests.sh (which passes a test's requests for a magnetic field to the sensor console), runs the
+# suite, stops both, and keeps a copy of the result files.
 # The tests wipe the app's data and Gradle uninstalls the app when a run ends. Use emulators only.
 # It first stops every running scripts/geo-feed.sh, including one started by hand, since a feed left over would
 # run against the wrong emulator.
@@ -44,10 +45,15 @@ gradle_seconds=${ALL_SUITES_GRADLE_SECONDS:-2400}
 TWO_MINUTE_TEST=CalibrationScreenTest#withNoNewSegmentTheScreenIsLetGoTwoMinutesAfterOpening
 feed_pid=""
 gradle_pid=""
-stop_feed() { if [ -n "$feed_pid" ]; then kill $feed_pid 2>/dev/null; wait $feed_pid 2>/dev/null; feed_pid=""; fi; }
+fields_pid=""
+stop_feed() {
+  if [ -n "$feed_pid" ]; then kill $feed_pid 2>/dev/null; wait $feed_pid 2>/dev/null; feed_pid=""; fi
+  if [ -n "$fields_pid" ]; then kill $fields_pid 2>/dev/null; wait $fields_pid 2>/dev/null; fields_pid=""; fi
+}
 stop_gradle() { if [ -n "$gradle_pid" ]; then pkill -P $gradle_pid 2>/dev/null; kill $gradle_pid 2>/dev/null; gradle_pid=""; fi; }
 trap 'stop_feed; stop_gradle; exit 1' INT TERM
 pkill -f geo-feed.sh   # a feed left over from an earlier session would run against the wrong emulator
+pkill -f field-requests.sh   # and so would a relay of field requests
 
 bad=0
 sum_passed=0; sum_failed=0; sum_skipped=0
@@ -97,6 +103,8 @@ for avd in $avds; do
   echo "$avd: running on $ANDROID_SERIAL"
   scripts/geo-feed.sh -72.2896 43.7022 $(( gradle_seconds + 120 )) > /dev/null 2>&1 &
   feed_pid=$!
+  scripts/field-requests.sh $(( gradle_seconds + 120 )) > /dev/null 2>&1 &
+  fields_pid=$!
   only37=()
   if [ "$sdk" != "37" ]; then only37=("-Pandroid.testInstrumentationRunnerArguments.notClass=com.infinite8looper.compass.$TWO_MINUTE_TEST"); fi
   ANDROID_SERIAL=$ANDROID_SERIAL ./gradlew connectedDebugAndroidTest $only37 > $out/suite-$avd.log 2>&1 &

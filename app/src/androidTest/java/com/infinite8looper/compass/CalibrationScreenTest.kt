@@ -2,6 +2,10 @@ package com.infinite8looper.compass
 
 import android.app.Application
 import android.graphics.Rect
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.os.SystemClock
 import android.view.InputDevice
 import android.view.KeyEvent
@@ -25,6 +29,7 @@ import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlin.math.abs
 
 /**
  * The calibration screen on the real activity (v3 spec, "Calibration"): the words ask for a motion a wrist can make,
@@ -35,7 +40,9 @@ import org.junit.runner.RunWith
  * The field is the emulator's own magnetometer, as its sensor console set it: scripts/all-suites.sh lays the virtual
  * watch flat at a magnetic heading of 40, a field of (-12.86, 15.32, -45) microtesla, which points through the back
  * of the watch toward its upper left: one region of the 24 (nav/Calibration.kt), 4 %. Lighting further segments
- * needs the field changed through the console, which scripts/calibration-check.sh does from this machine.
+ * needs the field changed through the console, which scripts/calibration-check.sh does from this machine, and which
+ * one test here asks for in the log, for scripts/field-requests.sh to pass on to the console (scripts/all-suites.sh
+ * and scripts/run-test.sh start it).
  */
 @RunWith(AndroidJUnit4::class)
 class CalibrationScreenTest {
@@ -225,5 +232,113 @@ class CalibrationScreenTest {
         Unit
     }
 
-    private companion object { const val INSTRUCTION = "Turn your wrist slowly in every direction" }
+    /** The field the magnetometer reads now, in microtesla, from the sensor itself. */
+    private suspend fun fieldNow(): FloatArray? {
+        val sensors = app.getSystemService(SensorManager::class.java)
+        val sensor = sensors.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD) ?: return null
+        var values: FloatArray? = null
+        val listener = object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent) { values = event.values.copyOf(3) }
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+        }
+        sensors.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_GAME)
+        try {
+            val deadline = SystemClock.uptimeMillis() + 2_000
+            while (values == null && SystemClock.uptimeMillis() < deadline) delay(50)
+        } finally { sensors.unregisterListener(listener) }
+        return values
+    }
+
+    /**
+     * Asks for the emulator's magnetic field to be set to [field] (x:y:z microtesla) through its sensor console:
+     * the request goes to the log, where scripts/field-requests.sh reads it and passes it to the console. Returns
+     * once the magnetometer reads it.
+     */
+    private suspend fun setField(field: String) {
+        val wanted = field.split(":").map { it.toFloat() }
+        Log.i(FIELD_REQUEST_TAG, "magnetic-field $field")
+        val deadline = SystemClock.uptimeMillis() + 15_000
+        while (true) {
+            val now = fieldNow()
+            if (now != null && (0..2).all { abs(now[it] - wanted[it]) < 0.5f }) return
+            assertTrue(
+                "the magnetometer did not read $field in 15 s (it reads ${now?.joinToString(":")}): the field is set " +
+                    "through the console by scripts/field-requests.sh, which scripts/all-suites.sh and scripts/run-test.sh start",
+                SystemClock.uptimeMillis() < deadline,
+            )
+            delay(250)
+        }
+    }
+
+    private fun percent(share: String?) = share?.removeSuffix("%")?.toIntOrNull()
+
+    /** Waits up to 10 s for the share shown to be one [isSo] accepts, and gives it. */
+    private suspend fun shareWhen(what: String, isSo: (String) -> Boolean): String {
+        val deadline = SystemClock.uptimeMillis() + 10_000
+        while (true) {
+            shareShown()?.let { if (isSo(it)) return it }
+            assertTrue("$what did not come in 10 s: share ${shareShown()}, on screen ${wordsOnScreen()}", SystemClock.uptimeMillis() < deadline)
+            delay(100)
+        }
+    }
+
+    /** Reads the share shown every 100 ms for [ms] and gives every reading. */
+    private suspend fun sharesFor(ms: Long): List<String?> {
+        val out = ArrayList<String?>()
+        val end = SystemClock.uptimeMillis() + ms
+        while (SystemClock.uptimeMillis() < end) { out += shareShown(); delay(100) }
+        return out
+    }
+
+    /**
+     * The regions lit are kept across a visit to the check screen (calibration's `Check` row, then Back), and a new
+     * opening of calibration from the settings starts afresh. The field is changed through the emulator's sensor
+     * console: from the field of the watch lying flat at 40 (one region) to the field of the watch face down (another
+     * region), and back, so two regions are lit while the field points into one.
+     */
+    @Test fun theRegionsLitAreKeptAcrossAVisitToTheCheckScreenAndANewOpeningStartsAfresh() = runBlocking {
+        ActivityScenario.launch(MainActivity::class.java).use {
+            try {
+                setField(FLAT_AT_40)
+                openCalibration()
+                val one = shareWhen("the flat field's segment lit") { it != "0%" }
+                setField(FACE_DOWN)
+                val two = shareWhen("the face-down field's segment lit") { (percent(it) ?: 0) > percent(one)!! }
+                setField(FLAT_AT_40)
+                delay(1_500)
+                assertEquals("the share after the field went back to the flat one", two, shareShown())
+                Log.i("CalibrationScreenTest", "lit: $one with the flat field, $two with the face-down one too")
+
+                val check = nodes().first { it.isVisibleToUser && it.text?.toString() == "Check" }.let { n -> generateSequence(n) { it.parent }.first { it.isClickable } }
+                assertTrue(check.performAction(AccessibilityNodeInfo.ACTION_CLICK))
+                shows("the check screen") { visible("Heading source") }
+                instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+                shows("calibration again") { visible(INSTRUCTION) }
+                val back = sharesFor(3_000)
+                assertTrue("back from the check screen the share was not $two throughout: $back", back.all { it == two })
+
+                instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+                shows("the settings again") { visible("Calibrate") }
+                val row = nodes().first { it.text?.toString() == "Calibrate" }.let { n -> generateSequence(n) { it.parent }.first { it.isClickable } }
+                assertTrue(row.performAction(AccessibilityNodeInfo.ACTION_CLICK))
+                shows("calibration opened again") { visible(INSTRUCTION) }
+                val again = sharesFor(3_000)
+                assertTrue("opened again, calibration showed the earlier share $two: $again", again.none { it == two })
+                assertEquals("opened again, the share with the flat field alone: $again", one, again.last())
+            } finally {
+                setField(FLAT_AT_40)
+            }
+        }
+        Unit
+    }
+
+    private companion object {
+        const val INSTRUCTION = "Turn your wrist slowly in every direction"
+        /** The tag scripts/field-requests.sh reads. */
+        const val FIELD_REQUEST_TAG = "CompassFieldRequest"
+        /** The field scripts/set-heading.sh 40 sets: the watch flat at a magnetic heading of 40. */
+        const val FLAT_AT_40 = "-12.856:15.321:-45"
+        /** An earth field of (0, 20, -45) seen with the watch face down (as CalibrationTest and calibration-check.sh). */
+        const val FACE_DOWN = "0:20:45"
+    }
 }
