@@ -23,8 +23,9 @@ data class ReadoutLine(val words: String, val tone: ReadoutTone, val note: Strin
 
 /**
  * The four lines. [main] is the row under the heading: a status's words, the focused target's distance, or
- * `No target`. [detail] is the smaller row under it, which only a status has. [latitude] and [longitude] are the
- * coordinates' rows, the first above the name and the second at the bottom; the second also carries the one line
+ * `No target`. [detail] is the smaller row under it (at the top of the readout with the coordinates on), which only a
+ * status has. [latitude] and [longitude] are the coordinates' rows, together under the row under the heading, the
+ * first over the second; the second also carries the one line
  * that stands for the coordinates while there are none (`Locating…`, `Location is off`). [mainIsStatus] says [main]
  * holds a status, which is drawn smaller before it is cut short. [prompt] is which of the two prompts about the compass
  * itself shows; it and [detail] share one place, so at most one of them is there.
@@ -35,7 +36,7 @@ data class Readout(
     val prompt: ReadoutPrompt? = null,
 )
 
-/** The words about the compass itself that stand in the place under the row under the heading: `Hold flat`, or `Calibrate`. */
+/** The words about the compass itself that stand in the place of a status's second line: `Hold flat`, or `Calibrate`. */
 enum class ReadoutPrompt { HOLD_FLAT, CALIBRATE }
 
 /** What has the focus on the compass: nothing, a waypoint that is a target, or the crumb of a trail that is walked to. */
@@ -56,7 +57,8 @@ private const val LOCATING = "Locating…"
  * - With nothing focused: `No target` when there are waypoints and none is a target ([noTarget]), else nothing.
  *
  * The prompts, `Hold flat` ([holdFlat]) and `Calibrate` ([lowAccuracy], when the watch is not tilted too far), are
- * about the compass working at all and share the place of the row under the row under the heading:
+ * about the compass working at all and share the place of a status's second line (under the row under the heading,
+ * or at the top of the readout with the coordinates on):
  * - The second line of a press's status has that place while it shows, and the prompt is back when the status ends.
  * - What a focused target says while no position can come stands for as long as that lasts, so it gives the place
  *   up: while a prompt is due, a message of two lines (`Needs access to` / `precise location`) is not shown, neither

@@ -21,22 +21,54 @@ class ReadoutRowsTest {
 
     @Test fun noTwoRowsTouchWithTheCoordinatesOff() = check(readoutRows(coordinates = false), "coordinates off")
 
+    /**
+     * v3 spec, "Readout with coordinates": "Latitude and longitude are two adjacent lines, at four decimal places and
+     * no smaller than today, in the lower half of the readout." and "The prompt (`Calibrate`, `Hold flat`) and a
+     * status's second line take the place the latitude had above." From the top: the prompt or a status's second
+     * line, `MAG` and the trail's label, the name, the heading, the row under it, the latitude, the longitude.
+     */
     @Test fun noTwoRowsTouchWithTheCoordinatesOn() {
         val rows = readoutRows(coordinates = true)
-        check(rows, "coordinates on")
-        // `Calibrate`, which has no descender, over the longitude, which is digits.
-        assertTrue("Calibrate over the longitude: ${rowGap(rows.prompt, READOUT_BODY_SIZE, false, rows.longitude, COORDINATES_SIZE, false)}",
-            rowGap(rows.prompt, READOUT_BODY_SIZE, false, rows.longitude, COORDINATES_SIZE, false) >= air)
-        // A status's second line with a descender (`precise location`) over the longitude.
-        assertTrue("the smaller row over the longitude", rowGap(rows.detail, READOUT_DETAIL_SIZE, true, rows.longitude, COORDINATES_SIZE, false) >= air)
-        // The latitude, digits, over `MAG` and the trail's label, and those over the name.
-        assertTrue("the latitude over MAG", rowGap(rows.latitude, COORDINATES_SIZE, false, rows.top, READOUT_DETAIL_SIZE, true) >= air)
+        // The heading's digits over the row under them.
+        assertTrue("heading over the row under it: ${headingGap(rows.main, READOUT_BODY_SIZE)}", headingGap(rows.main, READOUT_BODY_SIZE) >= air)
+        // A row with a descender (`No target`, `Saving…`) over the latitude, whose words can be `43.7022° N (old)`:
+        // tall letters, and brackets that reach as low as a descender.
+        val mainOverLatitude = rowGap(rows.main, READOUT_BODY_SIZE, true, rows.latitude, COORDINATES_SIZE, true)
+        assertTrue("the row under the heading over the latitude: $mainOverLatitude", mainOverLatitude >= air)
+        // The latitude (` (old)`) over the longitude's row, which can say `Locating…` or `Location is off`.
+        val latitudeOverLongitude = rowGap(rows.latitude, COORDINATES_SIZE, true, rows.longitude, COORDINATES_SIZE, true)
+        assertTrue("the latitude over the longitude: $latitudeOverLongitude", latitudeOverLongitude >= air)
+        // `Calibrate` or `Hold flat` (no descender) over `MAG` and the trail's label (`Trail 12`: a tall letter).
+        val promptOverTop = rowGap(rows.prompt, READOUT_BODY_SIZE, false, rows.top, READOUT_DETAIL_SIZE, true)
+        assertTrue("the prompt over MAG: $promptOverTop", promptOverTop >= air)
+        // A status's second line with a descender (`precise location`, `Try again outdoors`) over the same row.
+        val detailOverTop = rowGap(rows.detail, READOUT_DETAIL_SIZE, true, rows.top, READOUT_DETAIL_SIZE, true)
+        assertTrue("the smaller row over MAG: $detailOverTop", detailOverTop >= air)
+        // `MAG` over the name, as before.
         assertTrue("MAG over the name", rowGap(rows.top, READOUT_DETAIL_SIZE, false, rows.name, READOUT_BODY_SIZE, true) >= air)
     }
 
-    @Test fun theRowsAboveTheHeadingStayWhereTheyWereWithTheCoordinatesOn() {
+    @Test fun theCoordinatesStandTogetherInTheLowerHalfAtTheirSizeAndThePromptsTakeTheLatitudesPlace() {
         val rows = readoutRows(coordinates = true)
-        assertEquals(-0.345f, rows.latitude, 0f); assertEquals(-0.27f, rows.top, 0f); assertEquals(-0.185f, rows.name, 0f)
+        // In the lower half, under the row under the heading, the latitude first.
+        assertTrue("latitude in the lower half: ${rows.latitude}", rows.latitude > rows.main)
+        assertTrue("longitude under the latitude: ${rows.longitude}", rows.longitude > rows.latitude)
+        // Adjacent: no other row stands between them, and their ink is no further apart than the air between rows needs
+        // and a little more (under 2 px more on the smaller round screen).
+        for ((name, row) in listOf("top" to rows.top, "name" to rows.name, "main" to rows.main, "detail" to rows.detail, "prompt" to rows.prompt))
+            assertFalse("$name stands between the coordinates", row > rows.latitude && row < rows.longitude)
+        val between = rowGap(rows.latitude, COORDINATES_SIZE, true, rows.longitude, COORDINATES_SIZE, true)
+        assertTrue("the coordinates are not adjacent: $between", between < air + 2f / 192f)
+        // No smaller than the coordinates were (v2: 0.070 of the radius).
+        assertTrue("the coordinates' size: $COORDINATES_SIZE", COORDINATES_SIZE >= 0.070f)
+        // The prompt and a status's second line stand above `MAG` and the trail's label, where the latitude was (-0.345),
+        // within 2 px on the larger round screen (radius 227 px) either way.
+        assertTrue("the prompt above MAG: ${rows.prompt}", rows.prompt < rows.top)
+        assertTrue("the smaller row above MAG: ${rows.detail}", rows.detail < rows.top)
+        assertEquals("the prompt in the latitude's place", -0.345f, rows.prompt, 4f / 227f)
+        assertEquals("the smaller row in the latitude's place", -0.345f, rows.detail, 4f / 227f)
+        // `MAG` and the trail's label, and the name, stay where they were.
+        assertEquals(-0.27f, rows.top, 0f); assertEquals(-0.185f, rows.name, 0f)
     }
 
     /** The pane ticks show under the longitude for about a second around a swipe. Their places are the ones the screen draws them at. */
@@ -46,13 +78,36 @@ class ReadoutRowsTest {
         assertEquals(PANE_TICKS_ON_COMPASS - PANE_TICK_LENGTH_CURRENT * PANE_TICKS_SCALE, ticksTop, 0f)
         // The longitude itself, digits on their baseline: the same 2 px as every other pair.
         assertTrue("the longitude over the ticks", ticksTop - rowBottom(rows.longitude, COORDINATES_SIZE, descends = false) >= air)
-        // `Locating…`, which stands in that row before the first fix, has a descender. There is not room for 2 px
-        // under it as well as under `Calibrate` above the row; it has 1.5 px on the smaller screen and does not touch.
+        // `Locating…`, which stands in that row before the first fix, has a descender: it has 1.5 px at least.
         val underADescender = ticksTop - rowBottom(rows.longitude, COORDINATES_SIZE, descends = true)
         assertTrue("Locating… over the ticks: $underADescender", underADescender >= 1.5f / 192f)
         val off = readoutRows(coordinates = false)
         assertEquals(-0.31f, off.top, 0f); assertEquals(-0.195f, off.name, 0f); assertEquals(0.195f, off.main, 0f)
         assertEquals(0.30f, off.detail, 0f); assertEquals(0.31f, off.prompt, 0f)
+    }
+
+    /**
+     * The calibrate prompt's tap area covers its word and reaches away from the middle of the dial: under the heading
+     * it starts at the top of the word and reaches down; above it (the coordinates on) it starts at the bottom of the
+     * word and reaches up. Either way it leaves out the heading's digits and the middle, where a double tap saves.
+     */
+    @Test fun theCalibratePromptsTapAreaCoversItsWordAndLeavesOutTheMiddle() {
+        for (coordinates in listOf(false, true)) {
+            val rows = readoutRows(coordinates)
+            val area = promptTapArea(rows)
+            val wordTop = rows.prompt - 0.42f * READOUT_BODY_SIZE
+            val wordBottom = rows.prompt + 0.40f * READOUT_BODY_SIZE
+            assertTrue("coordinates $coordinates: the area does not cover the word: ${area.top}..${area.bottom}", area.top <= wordTop && area.bottom >= wordBottom)
+            assertEquals("coordinates $coordinates: its height", PROMPT_TAP_HEIGHT, area.bottom - area.top, 1e-6f)
+            val digits = HEADING_DIGIT_TOP * READOUT_HEADING_SIZE
+            assertTrue("coordinates $coordinates: the area reaches the heading: ${area.top}..${area.bottom}", area.bottom < -digits || area.top > digits)
+        }
+        // With the coordinates off, as in v2: from 0.055 above the word's middle, 0.52 down.
+        val off = promptTapArea(readoutRows(false))
+        assertEquals(0.31f - 0.055f, off.top, 1e-6f)
+        val on = promptTapArea(readoutRows(true))
+        assertEquals(readoutRows(true).prompt + 0.055f, on.bottom, 1e-6f)
+        assertTrue("reaches up", on.reachesUp); assertFalse("reaches down", off.reachesUp)
     }
 
     @Test fun aGapIsTheDistanceFromTheUpperRowsLowestInkToTheLowerRowsHighest() {

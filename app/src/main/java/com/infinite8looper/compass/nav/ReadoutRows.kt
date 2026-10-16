@@ -14,8 +14,9 @@ const val COORDINATES_SIZE = 0.070f
 
 /**
  * Where the readout's rows stand: the latitude, the row of `MAG` and the trail's label, the name, the row under
- * the heading, the smaller row under that, the calibrate prompt and the words of the hold-flat hint, which share
- * a place, and the longitude. The two coordinate rows are used only with the coordinates switched on.
+ * the heading, a status's second line, the calibrate prompt and the words of the hold-flat hint (the last three
+ * share a place: under the heading's row with the coordinates off, at the top with them on), and the longitude.
+ * The two coordinate rows are used only with the coordinates switched on.
  */
 class ReadoutRows(
     val latitude: Float, val top: Float, val name: Float, val main: Float, val detail: Float, val prompt: Float, val longitude: Float,
@@ -25,16 +26,17 @@ class ReadoutRows(
 private val ROWS = ReadoutRows(latitude = 0f, top = -0.31f, name = -0.195f, main = 0.195f, detail = 0.30f, prompt = 0.31f, longitude = 0f)
 
 /**
- * The rows with the coordinates switched on: the latitude above the top row and the longitude below the prompts,
- * each far enough inside the circle the letters sweep to be whole at its widest (`179.9999° W`), and the rows
- * between a little closer to the heading. The longitude ends above the pane ticks.
- * Below the heading four things share a quarter of the radius: the heading's digits (or the hold-flat drawing),
- * a row of words that can have a descender, a prompt or a status's second line, and the longitude. The places
- * leave at least 2 px of air between each pair on the smaller round screen ([rowGap]); there is no more to
- * share out without moving the longitude into the pane ticks, over which a descender in its row has 1.5 px.
+ * The rows with the coordinates switched on. The latitude and the longitude stand together in the lower half, under
+ * the row under the heading; the prompt (`Calibrate`, `Hold flat`) and a status's second line stand at the top, above
+ * `MAG` and the trail's label, about where the latitude stood before (-0.345). `MAG`, the name and the row under the
+ * heading are where they were.
+ * Under the heading's row three gaps share what is left above the pane ticks: that row's descender to the latitude,
+ * the latitude (which can end in ` (old)`, whose brackets reach as low as a descender) to the longitude's row (which
+ * can say `Locating…`), and that row's descender to the ticks. Each is about 2.4 px on the smaller round screen
+ * ([rowGap]); the longitude's digits, which have no descender, end 4.9 px above the ticks.
  */
 private val ROWS_WITH_COORDINATES =
-    ReadoutRows(latitude = -0.345f, top = -0.27f, name = -0.185f, main = 0.167f, detail = 0.267f, prompt = 0.275f, longitude = 0.351f)
+    ReadoutRows(latitude = 0.265f, top = -0.27f, name = -0.185f, main = 0.167f, detail = -0.36f, prompt = -0.355f, longitude = 0.348f)
 
 /** Which set of rows it is depends on the setting alone, so no row moves while the compass is in use. */
 fun readoutRows(coordinates: Boolean): ReadoutRows = if (coordinates) ROWS_WITH_COORDINATES else ROWS
@@ -71,6 +73,30 @@ const val PANE_TICK_LENGTH_CURRENT = 0.085f
 
 /** Where the longest pane tick on the compass begins, in dial radii below the middle. */
 fun paneTicksTopOnCompass(): Float = PANE_TICKS_ON_COMPASS - PANE_TICK_LENGTH_CURRENT * PANE_TICKS_SCALE
+
+/** How far the top of the heading's digits stands above the middle, as a share of the heading's size. */
+const val HEADING_DIGIT_TOP = DIGIT_TOP
+
+/** The calibrate prompt's tap area, in dial radii from the middle: how far beyond the middle of its word its near edge is, and its height. */
+const val PROMPT_TAP_BEYOND_WORD = 0.055f
+const val PROMPT_TAP_HEIGHT = 0.52f
+
+/** Where the calibrate prompt's tap area stands: its [top] and [bottom] in dial radii, and whether it reaches up from its word. */
+class PromptTapArea(val top: Float, val bottom: Float, val reachesUp: Boolean)
+
+/**
+ * The calibrate prompt's tap area for [rows]. It covers the word and reaches away from the middle of the dial, where
+ * a double tap saves: down from the top of the word when the word is under the heading, up from its bottom when it
+ * is above (the coordinates on).
+ */
+fun promptTapArea(rows: ReadoutRows): PromptTapArea =
+    if (rows.prompt < 0f) {
+        val bottom = rows.prompt + PROMPT_TAP_BEYOND_WORD
+        PromptTapArea(bottom - PROMPT_TAP_HEIGHT, bottom, reachesUp = true)
+    } else {
+        val top = rows.prompt - PROMPT_TAP_BEYOND_WORD
+        PromptTapArea(top, top + PROMPT_TAP_HEIGHT, reachesUp = false)
+    }
 
 /** The air between the heading's digits, which stand in the middle, and a row of words under them. */
 fun headingGap(row: Float, rowSize: Float): Float = (row - TALL_TOP * rowSize) - HEADING_BASELINE * READOUT_HEADING_SIZE

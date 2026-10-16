@@ -439,8 +439,8 @@ private fun BoxScope.CompassReadout(
     }
     fun Modifier.slot(y: Float, width: Float) = align(Alignment.Center).offset(y = r * y).width(r * width)
     val bodyStyle = styles.body
-        // Where the rows stand. With the coordinates switched on there are two rows more, the latitude at the top
-        // and the longitude at the bottom, and the rows between stand a little closer to the heading to make room.
+        // Where the rows stand. With the coordinates switched on there are two rows more, the latitude and the
+        // longitude together under the row under the heading; the prompt and a status's second line move to the top.
         // Which set it is depends on the setting alone, so no row moves while the compass is in use.
         val rows = remember(nav.showCoordinates) { readoutRows(nav.showCoordinates) }
 
@@ -467,14 +467,16 @@ private fun BoxScope.CompassReadout(
         // or not its words have the place.
         val calibrate = lines.prompt == ReadoutPrompt.CALIBRATE
         // A tap on the compass does nothing, with one exception: while the calibrate prompt shows, the part of
-        // the middle from the prompt's word down is its tap area, as tall as a touch needs at least. It starts at
-        // the top of the word wherever the rows put it, and is there only while the word is. A long press that
-        // starts on it is the area's own touch and opens nothing. The longitude under the word is drawn text with
-        // no touch of its own.
+        // the dial from the prompt's word away from the middle is its tap area ([promptTapArea]), as tall as a touch
+        // needs at least: down from the top of the word under the heading, up from its bottom at the top of the
+        // readout. It is there only while the word is. A long press that starts on it is the area's own touch and
+        // opens nothing. The rows it covers are drawn text with no touch of their own.
         if (calibrate) {
-            val tapHeight = maxOf(r * PROMPT_TAP_HEIGHT, HitHeight)
+            val area = promptTapArea(rows)
+            val tapHeight = maxOf(r * (area.bottom - area.top), HitHeight)
+            val tapTop = if (area.reachesUp) r * area.bottom - tapHeight else r * area.top
             Box(
-                Modifier.align(Alignment.Center).offset(y = r * (rows.prompt - PROMPT_TAP_ABOVE) + tapHeight / 2).width(r * 0.9f).height(tapHeight)
+                Modifier.align(Alignment.Center).offset(y = tapTop + tapHeight / 2).width(r * 0.9f).height(tapHeight)
                     .clickable(interactionSource = null, indication = null, onClick = onCalibrate)
             )
         }
@@ -536,8 +538,8 @@ private fun BoxScope.CompassReadout(
         }
         lines.detail?.let { StatusLine(it.words, toneColor(it.tone), styles.detail, Modifier.slot(rows.detail, 0.62f), view = paneView) }
 
-        // The watch's own position, when the setting asks for it: two small, quiet lines, the latitude above
-        // everything else in the readout and the longitude below it. They stay through a save, a failure, the
+        // The watch's own position, when the setting asks for it: two small, quiet lines together under the row
+        // under the heading, the latitude over the longitude. They stay through a save, a failure, the
         // calibrate prompt and a swipe, and are left out only in the hold-flat state.
         val coordinateStyle = styles.coordinates
         lines.latitude?.let {
@@ -613,13 +615,6 @@ private fun toneColor(tone: ReadoutTone): Color = when (tone) {
 
 /** Stands for the focused target's id in the frame loop while no target is focused. Row ids start at 1. */
 private const val NO_TARGET = 0L
-
-/**
- * The calibrate prompt's tap area, in dial radii: how far above the middle of its word it starts, which is half the
- * word's line, and how far down it reaches from there.
- */
-private const val PROMPT_TAP_ABOVE = 0.055f
-private const val PROMPT_TAP_HEIGHT = 0.52f
 
 /** How long the pane ticks stay after the compass has come to rest, and how long they take to fade. */
 private const val PANE_TICKS_LINGER_MS = 1_200L
