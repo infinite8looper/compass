@@ -3,7 +3,9 @@
 
 Usage: python3 -I scripts/play-assets.py <pictures> <font>
   <pictures>  the folder the large round's pictures were written to (MATRIX_OUT of
-              `scripts/screenshot-matrix.sh large play trail calibration`): play-compass-large.png,
+              `scripts/screenshot-matrix.sh large play trail` with the debug build installed and of
+              `scripts/screenshot-matrix.sh large calibration` with the release build installed, so that calibration
+              has no `Check` row): play-compass-large.png,
               play-waypoints-large.png, trail-retracing-large.png, calibrate-large.png, play-settings-ticks-large.png,
               play-settings-colors-large.png
   <font>      Roboto-Regular.ttf, the variable font the emulator's image has (adb pull /system/fonts/Roboto-Regular.ttf)
@@ -11,11 +13,11 @@ Usage: python3 -I scripts/play-assets.py <pictures> <font>
 Writes:
   docs/play/screenshot-N-<what>.png  each picture as it is (454 x 454), made opaque: every pixel laid on black, so
                                      the file is 24-bit RGB with no alpha
-  docs/play/icon-512.png             512 x 512, 32-bit RGBA: the launcher icon's layers as the round mask shows
-                                     them (the 72 x 72 middle of the 108 x 108 layers): the disc in the background
-                                     color (res/values/colors.xml) and the mark (res/drawable/ic_launcher_foreground.xml),
-                                     transparent outside the disc
-  docs/play/feature-graphic.png      1024 x 500, 24-bit RGB: black, the icon, the store name and the compass picture
+  docs/play/icon-512.png             512 x 512, 32-bit RGBA with every pixel opaque, for Google Play, which applies
+                                     its own mask: the background color (res/values/colors.xml) filling the square
+                                     edge to edge and the mark (res/drawable/ic_launcher_foreground.xml) laid as the
+                                     launcher lays it (the 72 x 72 middle of the 108 x 108 layers)
+  docs/play/feature-graphic.png      1024 x 500, 24-bit RGB: black, the icon as a disc, the store name and the compass picture
 Needs Pillow. Talks to no device.
 """
 import os
@@ -55,8 +57,9 @@ def hex_color(s):
     return tuple(int(s[i:i + 2], 16) for i in (0, 2, 4))
 
 
-def icon(size):
-    """The launcher icon at [size] px, drawn 4 times larger and scaled down."""
+def icon(size, square=False):
+    """The launcher icon at [size] px, drawn 4 times larger and scaled down: the background a disc, transparent
+    outside it (as the round mask shows it), or with [square] filling the whole square, no pixel transparent."""
     big = size * 4
     background = ET.parse(os.path.join(RES, "values", "colors.xml")).getroot()
     disc = hex_color(next(c.text for c in background if c.get("name") == "ic_launcher_background"))
@@ -67,7 +70,10 @@ def icon(size):
         return ((x - 18) * scale, (y - 18) * scale)
     im = Image.new("RGBA", (big, big), (0, 0, 0, 0))
     d = ImageDraw.Draw(im)
-    d.ellipse((0, 0, big - 1, big - 1), fill=disc + (255,))
+    if square:
+        d.rectangle((0, 0, big - 1, big - 1), fill=disc + (255,))
+    else:
+        d.ellipse((0, 0, big - 1, big - 1), fill=disc + (255,))
     for p in paths:
         data = p.get(A + "pathData")
         ring = re.match(r"M([\d.]+),([\d.]+)m-([\d.]+),0a", data)
@@ -112,7 +118,7 @@ def main():
     for source, name in SHOTS:
         opaque(os.path.join(pictures, source)).save(os.path.join(OUT, name), optimize=True)
         print(name)
-    icon(512).save(os.path.join(OUT, "icon-512.png"), optimize=True)
+    icon(512, square=True).save(os.path.join(OUT, "icon-512.png"), optimize=True)
     print("icon-512.png")
     feature_graphic(opaque(os.path.join(pictures, SHOTS[0][0])), font_path).save(os.path.join(OUT, "feature-graphic.png"), optimize=True)
     print("feature-graphic.png")
