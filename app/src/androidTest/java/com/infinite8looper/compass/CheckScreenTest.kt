@@ -351,6 +351,7 @@ class CheckScreenTest {
      * minutes; let go between 110 s and 130 s after the turn. About four minutes: run on API 37 alone
      * (scripts/all-suites.sh).
      */
+    @TakesMinutes
     @Test fun theCheckScreenKeepsTheDisplayOnForTwoMinutesFromEachTouchAndTurnOfTheCrown() = runBlocking {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             try {

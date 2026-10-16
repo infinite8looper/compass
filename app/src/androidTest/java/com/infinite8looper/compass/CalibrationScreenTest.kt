@@ -217,6 +217,7 @@ class CalibrationScreenTest {
      * With no new segment (the watch lies still), the screen is kept on for two minutes from the opening, then let
      * go: it is still kept on 110 s after, and no longer 130 s after.
      */
+    @TakesMinutes
     @Test fun withNoNewSegmentTheScreenIsLetGoTwoMinutesAfterOpening() = runBlocking {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             openCalibration()

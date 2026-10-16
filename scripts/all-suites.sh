@@ -23,9 +23,9 @@
 # Two tests run on Wear_OS_Newest (API 37) alone, by the owner's decisions of 2026-10-15 ("API 37 only" and "Add
 # it, API 37 only"): CalibrationScreenTest#withNoNewSegmentTheScreenIsLetGoTwoMinutesAfterOpening, which waits about
 # two minutes, and CheckScreenTest#theCheckScreenKeepsTheDisplayOnForTwoMinutesFromEachTouchAndTurnOfTheCrown, which
-# waits about four. On every other image the run is given them as `notClass`, so they are not run there and not
-# counted (neither passed nor skipped); each such line says so. On API 37 the run must have passed both, or the run
-# counts as failed.
+# waits about four. Both carry the annotation TakesMinutes; on every other image the run is given it as `notAnnotation`, so they
+# are not run there and not counted (neither passed nor skipped); each such line says so, and the run counts as
+# failed if either is in its results. On API 37 the run must have passed both, or the run counts as failed.
 # Exit status: 0 if every run succeeded, no test failed and no test was skipped, 1 otherwise: on an emulator
 # laid flat no test of this suite is skipped, so a skipped one means a test did not check its subject.
 # The last emulator in the list is left running with the debug app installed again, and every emulator the suite
@@ -108,10 +108,9 @@ for avd in $avds; do
   scripts/field-requests.sh $(( gradle_seconds + 120 )) > /dev/null 2>&1 &
   fields_pid=$!
   only37=()
-  if [ "$sdk" != "37" ]; then
-    named=(com.infinite8looper.compass.${^ONLY_37})
-    only37=("-Pandroid.testInstrumentationRunnerArguments.notClass=${(j:,:)named}")
-  fi
+  # Gradle passes on only the first entry of a list in a runner argument, so the tests are left out by their
+  # annotation (TakesMinutes), and on API 37 each is looked for by name below.
+  if [ "$sdk" != "37" ]; then only37=("-Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.infinite8looper.compass.TakesMinutes"); fi
   ANDROID_SERIAL=$ANDROID_SERIAL ./gradlew connectedDebugAndroidTest $only37 > $out/suite-$avd.log 2>&1 &
   gradle_pid=$!
   deadline=$(( $(date +%s) + gradle_seconds ))
@@ -147,6 +146,15 @@ sys.exit(1)' $out/results-$avd $t; then echo "$avd: $t did not pass here, its on
       done
       note=""
     else
+      # And absent here: a test of them in the results means the exclusion did not take.
+      for t in $ONLY_37; do
+      if python3 -c 'import glob,sys,xml.etree.ElementTree as ET
+cls, name = sys.argv[2].split("#")
+for f in glob.glob(sys.argv[1] + "/**/*.xml", recursive=True):
+    for tc in ET.parse(f).getroot().iter("testcase"):
+        if tc.get("classname", "").endswith(cls) and tc.get("name") == name: sys.exit(0)
+sys.exit(1)' $out/results-$avd $t; then echo "$avd: $t ran here, though it runs on API 37 alone"; bad=1; fi
+      done
       note=" (without ${(j:, :)ONLY_37}, which run on API 37 alone)"
     fi
     summary+=("$avd (API $sdk): ${counts[1]} passed, ${counts[2]} failed, ${counts[3]} skipped, gradle $gstatus$note")
