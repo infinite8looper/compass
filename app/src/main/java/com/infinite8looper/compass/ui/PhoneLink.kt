@@ -2,7 +2,7 @@ package com.infinite8looper.compass.ui
 
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
+import androidx.core.net.toUri
 import android.util.Log
 import androidx.concurrent.futures.await
 import androidx.wear.remote.interactions.RemoteActivityHelper
@@ -20,7 +20,7 @@ private const val TAG = "PhoneLink"
  * no answer came in [PHONE_OPEN_WAIT_MS]. The watch itself opens nothing and fetches nothing.
  */
 suspend fun openOnPhone(context: Context, url: String): Boolean? {
-    val intent = Intent(Intent.ACTION_VIEW).addCategory(Intent.CATEGORY_BROWSABLE).setData(Uri.parse(url))
+    val intent = Intent(Intent.ACTION_VIEW).addCategory(Intent.CATEGORY_BROWSABLE).setData(url.toUri())
     return try {
         withTimeoutOrNull(PHONE_OPEN_WAIT_MS) {
             RemoteActivityHelper(context.applicationContext).startRemoteActivity(intent).await()
