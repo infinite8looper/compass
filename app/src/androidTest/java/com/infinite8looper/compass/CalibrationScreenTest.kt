@@ -325,6 +325,9 @@ class CalibrationScreenTest {
      */
     @Test fun theRegionsLitAreKeptAcrossAVisitToTheCheckScreenAndANewOpeningStartsAfresh() = runBlocking {
         ActivityScenario.launch(MainActivity::class.java).use {
+            // The field is put back however the test ends; if putting it back fails too, the test's own failure is the
+            // one reported, with that of putting it back attached to it.
+            var failure: Throwable? = null
             try {
                 setField(FLAT_AT_40)
                 openCalibration()
@@ -352,8 +355,15 @@ class CalibrationScreenTest {
                 val again = sharesFor(3_000)
                 assertTrue("opened again, calibration showed the earlier share $two: $again", again.none { it == two })
                 assertEquals("opened again, the share with the flat field alone: $again", one, again.last())
+            } catch (t: Throwable) {
+                failure = t
+                throw t
             } finally {
-                setField(FLAT_AT_40)
+                try {
+                    setField(FLAT_AT_40)
+                } catch (cleanup: Throwable) {
+                    failure?.addSuppressed(cleanup) ?: throw cleanup
+                }
             }
         }
         Unit

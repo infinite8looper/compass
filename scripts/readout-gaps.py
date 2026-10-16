@@ -10,6 +10,10 @@ gaps between them (rows of pixels with no ink, whatever the sideways place), the
 distance between the ink of two neighboring lines (sideways place counted: a descender beside a tick, not over it,
 is further from it than the gap says), and the least distance from any ink to the circle. A picture of several
 frames side by side is measured frame by frame (each frame as wide as the picture is tall).
+Limits: only ink inside the circle is seen, so ink wholly outside it is not measured, and ink that crosses it shows
+as a distance to the circle near 0. The lines are not named; which line is which is read from the picture. A gap is
+whole rows of pixels, which can be one fewer than the continuous air between the same two lines that the letter
+heights in nav/ReadoutRows.kt give (rowGap): 2.5 px of air can leave one clear row (nav/ReadoutRows.kt clearRows).
 Needs Pillow.
 """
 import sys

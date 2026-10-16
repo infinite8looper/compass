@@ -59,12 +59,16 @@ The `coords` pictures were taken again on 2026-10-15 (v3 Task 8), with the latit
 | With a focused target | `coords-target` | `coords`: three targets |
 | The same with the pane ticks under the longitude | `coords-pane-ticks` | `coords`: a drag toward waypoints let go early |
 | `Saved Waypoint 1` under the heading and its accuracy (`±16 ft`) at the top | `coords-saved` | `coords`: a double tap on the dial |
+| `Saving…` with no position (the app was off screen for 12 s): `Locating…` in the longitude's place, no second line | `coords-saving` | `coords`: Home, 12 s, the app started, a double tap, 0.9 s |
+| `No GPS fix` with no position: `Try again outdoors` right under it, in the latitude's row | `coords-no-gps-fix` | `coords`: a double tap, Home and location off at once, 23 s, location on, the app started |
+| `No GPS fix` while an old position shows: `Try again outdoors` at the top, drawn smaller in the narrower slot there, the coordinates with ` (old)` | `coords-no-gps-fix-old` | `coords`: location off 12 s with the app on screen, then on for a double tap and off again, 18 s |
 | A target with location off: `Location is off` under the heading, no coordinates | `coords-location-off` | `coords`: location off, the app stopped and started |
 | Hold-flat with coordinates on: the two lines left out, `Arrived at target` over `Hold flat` | `coords-holdflat-arrived` | `coords`: `seed-targets.sh 0:0:4`, `adb emu sensor set acceleration 0:9.81:0` |
 | The same with `No target` | `coords-holdflat-no-target` | `coords`: three waypoints, the waypoints header tapped to clear all, the same pose |
 | `Saved Crumb 1` with its accuracy at the top, over `MAG` and `Trail 1` | `coords-crumb-saved` | `coords`: `True north` off, the trail started from its row, a double tap |
 | `MAG` and `Trail 1` over the name, with the distance and the coordinates | `coords-trail-mag` | `coords`: the same, after the status |
-| `Needs access to` under the heading and `precise location` at the top | `coords-needs-access` | `coords`: approximate location granted and the precise permission revoked with `pm`, the app started, a double tap answered `Keep approximate location` |
+| `Hold flat` over `MAG` and `Trail 1` | `coords-holdflat-mag` | `coords`: the same, `adb emu sensor set acceleration 0:9.81:0` |
+| `Needs access to` under the heading and `precise location` right under it, in the latitude's row (no coordinate row shows without the permission) | `coords-needs-access` | `coords`: approximate location granted and the precise permission revoked with `pm`, the app started, a double tap answered `Keep approximate location` |
 
 ## Breadcrumb trail
 

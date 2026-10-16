@@ -212,6 +212,9 @@ class Vibrations private constructor(private val view: View) {
                             it.name + " " + (if (effects?.get(it.ordinal) != null) "primitives" else "constant")
                         })
                     }
+                } catch (e: Exception) {
+                    // Nothing prepared means the constant vibrations (VibrationBranch.CONSTANT); what was prepared before stays.
+                    Log.w(TAG, "could not prepare the vibrations (" + e.javaClass.simpleName + ")")
                 } finally {
                     askedNow.value = true
                 }
