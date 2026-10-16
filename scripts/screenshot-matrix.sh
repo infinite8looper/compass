@@ -116,11 +116,18 @@ tap() { local r; r=($(row "$1")); [ -n "$r" ] || { echo "no '$1' on screen" >&2;
 tap_row() { local r; r=($(find_row "$1")) || return 1; $ADB shell input tap $r[1] $r[2]; }      # scrolls to the row first
 hold_row() { local r; r=($(find_row "$1")) || return 1; $ADB shell input swipe $r[1] $r[2] $r[1] $r[2] $2; }
 hold() { local r; r=($(row "$1")); [ -n "$r" ] || { echo "no '$1' on screen" >&2; return 1; }; $ADB shell input swipe $r[1] $r[2] $r[1] $r[2] $2; }
-find_row() { # find_row <text> [tries=14]: scrolls the list from its top until the row with that text is near the middle
+find_row() { # find_row <text> [tries=24]: scrolls the list from its top until the row with that text is near the middle,
+  # or, for a row near the list's end that cannot come to the middle (the last rows on the small round), until the
+  # list stops moving with the row on screen
   for k in 1 2 3; do $ADB shell input swipe $C $((H * 35 / 100)) $C $((H * 85 / 100)) 150; done; sleep 1
-  for i in $(seq 1 ${2:-14}); do
+  local last=""
+  # 24 steps: on the small round each step moves the list about 55 px, and `Calibrate` came to the middle at the
+  # fifteenth from the top once the settings had the `Colors` row (2026-10-16); 14 steps, as before, fell one short.
+  for i in $(seq 1 ${2:-24}); do
     local r=($(row "$1"))
     if [ -n "$r" ] && [ $r[2] -gt $((H * 36 / 100)) ] && [ $r[2] -lt $((H * 57 / 100)) ]; then echo $r; return 0; fi
+    if [ -n "$r" ] && [ "$r[2]" = "$last" ] && [ $r[2] -gt $((H * 15 / 100)) ] && [ $r[2] -lt $((H * 85 / 100)) ]; then echo $r; return 0; fi
+    last=${r[2]:-}
     $ADB shell input swipe $C $((H * 60 / 100)) $C $((H * 42 / 100)) 600; sleep 0.8
   done
   echo "no row '$1'" >&2; return 1

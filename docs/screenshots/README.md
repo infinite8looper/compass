@@ -17,7 +17,7 @@ Every picture here is a capture from an emulator, taken on 2026-10-13 from the d
 | Facing the focused target: the heavy line | `compass-facing` | `compass`: heading 300, the bearing of the focused target |
 | Magnetic north and meters, facing | `compass-targets-mag-metric` | `compass`: `Feet and miles` and `True north` switched off in settings |
 | Eight waypoints 45 apart on the color ring | `compass-ring8` | `compass`: `seed-targets.sh 0:0:900 45:45:900 ... 315:315:900`, heading 20 |
-| Thirty targets | `compass-many` | `compass`: `seed-targets.sh many` |
+| Thirty targets (retaken in v3 Task 10: the places new waypoints are given since v3 Task 5, none within 25 degrees of north's red or the pointer's blue) | `compass-many` | `compass`: `seed-targets.sh many` |
 | `Arrived at target` | `compass-arrived` | `compass`: `seed-targets.sh 0:0:4` (4 m away) |
 | `No target` | `compass-no-target` | `compass`: three waypoints, the waypoints header tapped to clear all |
 | A distance marked `(old)` | `compass-stale` | `compass`: `settings put secure location_mode 0`, 25 s |
@@ -92,8 +92,8 @@ The `coords` pictures were taken again on 2026-10-15 (v3 Task 8), with the latit
 |-|-|-|
 | No waypoints | `waypoints-empty` | `waypoints`: after `pm clear` |
 | A few, one not a target, long names | `waypoints-few` | `waypoints`: three waypoints renamed, one row tapped |
-| Thirty, top of the list | `waypoints-many` | `waypoints`: `seed-targets.sh many` |
-| Thirty, end of the list | `waypoints-many-end` | `waypoints`: twelve swipes up |
+| Thirty, top of the list (retaken in v3 Task 10, as `compass-many`) | `waypoints-many` | `waypoints`: `seed-targets.sh many` |
+| Thirty, end of the list (retaken in v3 Task 10: `Waypoint 1` green, `Waypoint 2` magenta) | `waypoints-many-end` | `waypoints`: twelve swipes up |
 | Old distances | `waypoints-old` | `waypoints`: location off, 25 s |
 | A long name sliding (3 frames, 2.2 s apart) | `name-sliding-list` | `moving` |
 
@@ -112,7 +112,7 @@ The `coords` pictures were taken again on 2026-10-15 (v3 Task 8), with the latit
 |-|-|-|
 | Top of the list | `settings-top` | `settings`: after `pm clear` (the defaults in the United States locale) |
 | Middle | `settings-middle` | `settings`: scrolled to `Blind navigation` |
-| End | `settings-end` | `settings`: scrolled to `Calibrate` |
+| End (retaken in v3 Task 10; on the small round the script's search for the row now takes up to 24 steps) | `settings-end` | `settings`: scrolled to `Calibrate` |
 | `Breadcrumb trail` and `Show coordinates` on | `settings-trail-coords-on` | `settings`: `Show coordinates` tapped (location already granted; the trail is on by default), scrolled to `Breadcrumb trail` |
 | Every switch off (3 frames: top, middle, end) | `settings-all-off` | `settings`: each row tapped, and `Turn off` answered to the backup's question |
 | Calibration: seven segments of the ring lit, `Covered 29%`, and the `Check` row at the bottom (2026-10-15, v3 Tasks 6 and 7; retaken in Task 7 fix round 1 with the ring at 0.21 of the radius) | `calibrate` | `calibration`: `Calibrate` tapped at heading 40, then the fields `0:20:-45 -20:0:-45 0:-20:-45 20:0:-45 45:20:0 0:20:45` set through the console |
@@ -194,7 +194,7 @@ Taken on 2026-10-16 (v3 Task 9) from the debug build, by hand: Home pressed twic
 | State | File | How it was produced |
 |-|-|-|
 | The launcher, the icon beside the system's, before: the mark on a black disc | `launcher-before-large`, `launcher-before-small` | API 35 |
-| The launcher, after: the disc `#153D70` filling the mask, the ring at the edge of the 66 dp safe zone | `launcher-after-large`, `launcher-after-small` | API 35 |
+| The launcher, after: the disc `#153D70` filling the mask, the ring at the edge of the 66 dp safe zone | `launcher-after-large`, `launcher-after-small` | API 35 (`launcher-after-large` retaken in v3 Task 10 with commit 34fe5b5's build: the picture of Task 9 under that name showed the watch face, not the launcher) |
 | The start screen, after: the icon with its disc on black | `start-icon-large`, `start-icon-small` | API 35, a frame of the recording about 2 s after `am start` |
 | The start screen, before: the mark alone on black | `start-icon-before-small` | API 35, the same, commit 87c6664's build |
 
