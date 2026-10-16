@@ -75,12 +75,14 @@ class ReadoutRowsTest {
     @Test fun theLongitudesRowEndsAboveThePaneTicksAndTheRowsWithTheCoordinatesOffStayWhereTheyWere() {
         val rows = readoutRows(coordinates = true)
         val ticksTop = paneTicksTopOnCompass()
-        assertEquals(PANE_TICKS_ON_COMPASS - PANE_TICK_LENGTH_CURRENT * PANE_TICKS_SCALE, ticksTop, 0f)
+        // The current screen's tick is drawn with a round cap, half its width beyond each end: its ink begins that
+        // much higher than the line's end (seen in the pictures: 2 px above it on the larger round screen).
+        assertEquals(PANE_TICKS_ON_COMPASS - PANE_TICK_LENGTH_CURRENT * PANE_TICKS_SCALE - PANE_TICK_WIDTH * PANE_TICKS_SCALE / 2, ticksTop, 1e-6f)
         // The longitude itself, digits on their baseline: the same 2 px as every other pair.
         assertTrue("the longitude over the ticks", ticksTop - rowBottom(rows.longitude, COORDINATES_SIZE, descends = false) >= air)
-        // `Locating…`, which stands in that row before the first fix, has a descender: it has 1.5 px at least.
+        // `Locating…`, which stands in that row before the first fix, has a descender: it has the same 2 px.
         val underADescender = ticksTop - rowBottom(rows.longitude, COORDINATES_SIZE, descends = true)
-        assertTrue("Locating… over the ticks: $underADescender", underADescender >= 1.5f / 192f)
+        assertTrue("Locating… over the ticks: $underADescender", underADescender >= air)
         val off = readoutRows(coordinates = false)
         assertEquals(-0.31f, off.top, 0f); assertEquals(-0.195f, off.name, 0f); assertEquals(0.195f, off.main, 0f)
         assertEquals(0.30f, off.detail, 0f); assertEquals(0.31f, off.prompt, 0f)

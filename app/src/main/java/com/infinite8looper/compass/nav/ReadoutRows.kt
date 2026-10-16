@@ -28,15 +28,16 @@ private val ROWS = ReadoutRows(latitude = 0f, top = -0.31f, name = -0.195f, main
 /**
  * The rows with the coordinates switched on. The latitude and the longitude stand together in the lower half, under
  * the row under the heading; the prompt (`Calibrate`, `Hold flat`) and a status's second line stand at the top, above
- * `MAG` and the trail's label, about where the latitude stood before (-0.345). `MAG`, the name and the row under the
- * heading are where they were.
- * Under the heading's row three gaps share what is left above the pane ticks: that row's descender to the latitude,
- * the latitude (which can end in ` (old)`, whose brackets reach as low as a descender) to the longitude's row (which
- * can say `Locating…`), and that row's descender to the ticks. Each is about 2.4 px on the smaller round screen
- * ([rowGap]); the longitude's digits, which have no descender, end 4.9 px above the ticks.
+ * `MAG` and the trail's label, about where the latitude stood before (-0.345). `MAG` and the name are where they were;
+ * the row under the heading is a little closer to it (0.163, from 0.167), 2.2 px under its digits on the smaller
+ * round screen.
+ * Under the heading's row three gaps share what is left above the pane ticks' ink: that row's descender to the
+ * latitude, the latitude (which can end in ` (old)`, whose brackets reach as low as a descender) to the longitude's
+ * row (which can say `Locating…`), and that row's descender to the ticks. Each is 2.2 to 2.3 px on the smaller round
+ * screen ([rowGap]); the longitude's digits, which have no descender, end 4.7 px above the ticks.
  */
 private val ROWS_WITH_COORDINATES =
-    ReadoutRows(latitude = 0.265f, top = -0.27f, name = -0.185f, main = 0.167f, detail = -0.36f, prompt = -0.355f, longitude = 0.348f)
+    ReadoutRows(latitude = 0.26f, top = -0.27f, name = -0.185f, main = 0.163f, detail = -0.36f, prompt = -0.355f, longitude = 0.342f)
 
 /** Which set of rows it is depends on the setting alone, so no row moves while the compass is in use. */
 fun readoutRows(coordinates: Boolean): ReadoutRows = if (coordinates) ROWS_WITH_COORDINATES else ROWS
@@ -70,9 +71,11 @@ fun rowBottom(row: Float, size: Float, descends: Boolean): Float = row + (if (de
 const val PANE_TICKS_ON_COMPASS = 0.465f
 const val PANE_TICKS_SCALE = 0.75f
 const val PANE_TICK_LENGTH_CURRENT = 0.085f
+/** The width of a pane tick at full size; the ticks are drawn with round caps, which reach half of it beyond each end. */
+const val PANE_TICK_WIDTH = 0.018f
 
-/** Where the longest pane tick on the compass begins, in dial radii below the middle. */
-fun paneTicksTopOnCompass(): Float = PANE_TICKS_ON_COMPASS - PANE_TICK_LENGTH_CURRENT * PANE_TICKS_SCALE
+/** Where the ink of the longest pane tick on the compass begins, its round cap included, in dial radii below the middle. */
+fun paneTicksTopOnCompass(): Float = PANE_TICKS_ON_COMPASS - (PANE_TICK_LENGTH_CURRENT + PANE_TICK_WIDTH / 2) * PANE_TICKS_SCALE
 
 /** How far the top of the heading's digits stands above the middle, as a share of the heading's size. */
 const val HEADING_DIGIT_TOP = DIGIT_TOP

@@ -4,7 +4,8 @@
 # docs/screenshots/<state>-<suffix>.png (MATRIX_OUT names another folder). With no section it runs them all, in
 # this order; each section sets up what it needs, so any one can be run by itself:
 #   permission   the location dialog; `Needs access to precise location` on the compass, the waypoints band and the
-#                settings row (only approximate location granted); the compass before any position (`MAG`)
+#                settings row (only approximate location granted), and on the compass for a target with `Show
+#                coordinates` on; the compass before any position (`MAG`)
 #   truenorth    `True north` switched off and on again without the permission: the system's dialog, the switch on
 #                after `Don't allow`, the compass magnetic with `MAG`
 #   compass      clean; targets; facing; magnetic north and meters; eight colors of the ring; thirty targets;
@@ -12,7 +13,8 @@
 #   moving       hold-flat without and with a target (four frames each); a name sliding on the compass, in the list
 #                and on the edit screen (several frames each)
 #   log          `Saving…`, `Saved Waypoint N`, `No GPS fix`, `Location is off`, `Couldn't save`
-#   coords       coordinates with no target, old, before the first fix, with a target; hold-flat with them on
+#   coords       coordinates with no target, old, before the first fix (with the pane ticks too), with a target; hold-flat
+#                with them on; a save's two lines; `MAG` and a trail's label; the pane ticks; `Location is off`
 #   trail        a crumb saved, laying, the trail's row, retracing, facing the crumb, `Hold to clear`, `Trail complete`
 #   waypoints    empty, a few, thirty (top and end), old distances, the status band after `Log here`
 #   edit         a short name, the color being dragged (finger down), `Hold to delete` late in the hold
@@ -139,6 +141,10 @@ leave_route() { $ADB shell input keyevent KEYCODE_BACK; sleep 1.5; }      # edit
 # `Calibrate` prompt's tap area. The trail is started and switched from its row on the waypoints screen.
 TAP_Y=$((H * 3 / 10))
 press() { $ADB shell "input tap $C $TAP_Y; sleep 0.1; input tap $C $TAP_Y"; }
+ticks() {   # a drag toward waypoints let go early: the row springs back to the compass, whose three ticks show for about a second
+  $ADB shell "input motionevent DOWN $((W * 80 / 100)) $C; input motionevent MOVE $((W * 65 / 100)) $C; input motionevent MOVE $((W * 45 / 100)) $C; input motionevent MOVE $((W * 70 / 100)) $C; input motionevent UP $((W * 70 / 100)) $C"
+  sleep 0.2
+}
 switch_trail() { to_waypoints; tap "Trail" || return 1; sleep 1; from_waypoints; }      # from the compass, and back to it
 flat() { $ADB emu sensor set acceleration 0:0:9.81 > /dev/null; }
 upright() { $ADB emu sensor set acceleration 0:9.81:0 > /dev/null; }
@@ -193,6 +199,8 @@ sec_permission() {
   dialog_choice "Keep approximate location" 2> /dev/null      # asked once more on some images
   sleep 1.5; find_row "Show coordinates" > /dev/null; shot settings-needs-access
   from_settings
+  sleep 3; press; sleep 2.5; dialog_choice "Keep approximate location" 2> /dev/null      # a press's two lines with `Show coordinates` on
+  shot_when coords-needs-access $RED 50 72
 }
 sec_truenorth() {
   pkill -f geo-feed.sh; fresh; magnetic 40; sleep 8
@@ -254,13 +262,23 @@ sec_coords() {
   to_settings; setting "Show coordinates" on; from_settings
   seed none; face 127; shot coords-clean
   location off; sleep 25; shot coords-clean-old
-  location on; home; app_stop; app_start; sleep 1.2; shot coords-locating; sleep 6      # nothing focused: the longitude's row says it
+  location on; home; app_stop; app_start; sleep 1.2; shot coords-locating      # nothing focused: the longitude's row says it
+  ticks; shot coords-locating-ticks; sleep 6      # its descender over the pane ticks, if the first fix has not come yet
   seed $THREE; shot coords-target
+  ticks; shot coords-pane-ticks; sleep 2
+  press; shot_when coords-saved $GREEN 50 72 40; sleep 6      # `Saved Waypoint 4` with its accuracy: the second line at the top
+  location off; home; app_stop; app_start; sleep 4; shot coords-location-off; location on; sleep 6
   # Hold-flat with the coordinates on: the two lines are left out, and a row with a descender stands over the words.
   seed 0:0:4; upright; sleep 3.5; shot coords-holdflat-arrived; flat; sleep 5
   seed $THREE; to_waypoints; tap "3 of 3 targets" || { from_waypoints; return 1; }
   sleep 1; from_waypoints; sleep 1
   upright; sleep 3.5; shot coords-holdflat-no-target; flat; sleep 4
+  # Last, as it leaves a trail laid: `MAG` and the trail's label over the name, and a crumb's save.
+  to_waypoints; tap "0 of 3 targets" || { from_waypoints; return 1; }
+  sleep 1; from_waypoints
+  to_settings; setting "True north" off; setting "Breadcrumb trail" on; from_settings; sleep 3
+  switch_trail || return 1; sleep 1; press; shot_when coords-crumb-saved $GREEN 50 72 40; sleep 6
+  shot coords-trail-mag
 }
 sec_trail() {
   fresh granted; feed $HERE_LAT $HERE_LON; sleep 6
