@@ -111,7 +111,7 @@ for avd in $avds; do
   [ -n "${booted[$avd]}" ] || continue
   if (
     export EMULATOR_ONLY_SERIAL=${serial_of[$avd]}
-    emulator_only || exit 1
+    emulator_pinned || exit 1
     $ADB uninstall $PKG.test > /dev/null 2>&1; $ADB uninstall $PKG > /dev/null 2>&1
     $ADB install -r -t app/build/outputs/apk/debug/app-debug.apk > /dev/null 2>&1 &&
       $ADB install -r -t app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk > /dev/null 2>&1 || exit 1
@@ -255,6 +255,6 @@ while [ $(running_serials | grep -v -x "${serial_of[$last]}" | wc -l) -gt 0 ]; d
   if [ $(date +%s) -gt $deadline ]; then echo "the other emulators did not stop in 90 s: $(running_serials | tr '\n' ' ')"; break; fi
   sleep 2
 done
-if [ -n "${booted[$last]}" ] && (export EMULATOR_ONLY_SERIAL=${serial_of[$last]}; emulator_only && $ADB install -r app/build/outputs/apk/debug/app-debug.apk | tail -1); then :; fi
+if [ -n "${booted[$last]}" ] && (export EMULATOR_ONLY_SERIAL=${serial_of[$last]}; emulator_pinned && $ADB install -r app/build/outputs/apk/debug/app-debug.apk | tail -1); then :; fi
 echo "== left running: $(running_serials | tr '\n' ' ')($last); all-suites took $(( $(date +%s) - began )) s"
 exit $bad

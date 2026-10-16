@@ -28,7 +28,9 @@
 #     <out-dir>/instrument.txt. After the given number of seconds the run is stopped (the app is force-stopped,
 #     which ends the instrumentation) and counts as failed;
 #   - stops the feed and the relay, puts the three animation scales back as they were, uninstalls both apps (Gradle
-#     does too, so the tests' data does not stay on the emulator);
+#     does too, so the tests' data does not stay on the emulator). These calls name the emulator's serial kept from
+#     the first check (`adb -s`) and are sent only while adb lists it as attached: after a check that refused, they
+#     go to that emulator or nowhere;
 #   - writes <out-dir>/TEST-<avd>.xml (JUnit XML, readable by `scripts/test-counts.sh device <out-dir>`) and prints
 #     each test: PASS, FAIL with the first lines of its failure, SKIP, or NOT RUN (named by the listing, with no
 #     result), by scripts/instrument-results.py.
@@ -37,6 +39,9 @@
 # Emulators only (scripts/emulator-only.sh). Needs python3.
 source "$(dirname "$0")/emulator-only.sh" || exit 1
 emulator_pinned || exit 1      # and an emulator's serial to address: no adb call below goes out unpinned
+# The emulator's serial, kept: a later check that refuses unsets ANDROID_SERIAL, and the cleanup after it must still
+# address this emulator and nothing else (`finish`, below).
+pin=$ANDROID_SERIAL
 ADB=~/Library/Android/sdk/platform-tools/adb
 cd "$(dirname "$0")/.." || exit 1
 if [ -z "$2" ]; then echo "usage: scripts/device-tests.sh <out-dir> <seconds> [-e <name> <value> ...]" >&2; exit 1; fi
@@ -88,15 +93,21 @@ done
 
 feed_pid=""; fields_pid=""; run_pid=""
 finish() {
-  if [ -n "$run_pid" ]; then kill $run_pid 2>/dev/null; $ADB shell am force-stop $PKG > /dev/null 2>&1; wait $run_pid 2>/dev/null; run_pid=""; fi
+  # Sent to the kept serial with -s, and only while adb lists it as an attached emulator: a check that refused just
+  # before has unset ANDROID_SERIAL, and an adb call without -s would then go to whatever device is attached.
+  local send=0
+  if [[ "$pin" == emulator-<-> ]] && $ADB devices 2>/dev/null | grep -q -E "^${pin}$(printf '\t')device\$"; then send=1
+  else echo "$avd: the emulator $pin is not attached: the cleanup on it (force-stop, animation scales, uninstall) was not sent" >&2; fi
+  if [ -n "$run_pid" ]; then kill $run_pid 2>/dev/null; [ $send = 1 ] && $ADB -s $pin shell am force-stop $PKG > /dev/null 2>&1; wait $run_pid 2>/dev/null; run_pid=""; fi
   if [ -n "$feed_pid" ]; then kill $feed_pid 2>/dev/null; wait $feed_pid 2>/dev/null; feed_pid=""; fi
   if [ -n "$fields_pid" ]; then kill $fields_pid 2>/dev/null; wait $fields_pid 2>/dev/null; fields_pid=""; fi
+  [ $send = 1 ] || return
   for s in $scales; do
-    if [ -z "${was[$s]}" ] || [ "${was[$s]}" = "null" ]; then $ADB shell settings delete global $s > /dev/null
-    else $ADB shell settings put global $s ${was[$s]}; fi
+    if [ -z "${was[$s]}" ] || [ "${was[$s]}" = "null" ]; then $ADB -s $pin shell settings delete global $s > /dev/null
+    else $ADB -s $pin shell settings put global $s ${was[$s]}; fi
   done
-  $ADB uninstall $PKG.test > /dev/null 2>&1
-  $ADB uninstall $PKG > /dev/null 2>&1
+  $ADB -s $pin uninstall $PKG.test > /dev/null 2>&1
+  $ADB -s $pin uninstall $PKG > /dev/null 2>&1
 }
 trap 'finish; exit 1' INT TERM
 

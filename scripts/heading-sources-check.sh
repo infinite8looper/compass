@@ -17,7 +17,7 @@ if [ ${#headings} -eq 0 ]; then headings=(0 90 200 300); fi
 ANDROID_SERIAL=$ANDROID_SERIAL ./gradlew installDebug installDebugAndroidTest -q > /dev/null || { echo "the app and its tests could not be installed" >&2; exit 1; }
 bad=0
 for h in $headings; do
-  emulator_only || exit 1
+  emulator_pinned || exit 1
   scripts/set-heading.sh $h > /dev/null || { echo "heading $h: could not be set" >&2; bad=1; continue; }
   $ADB shell input keyevent KEYCODE_WAKEUP
   sleep 30
