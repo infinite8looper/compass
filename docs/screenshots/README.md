@@ -187,6 +187,21 @@ In all of them the position was fed and the watch laid flat at a magnetic headin
 | The top of the settings, `Standard` and `Watch face` (2 frames) | `colors-settings-top-large`, `colors-settings-top-small` | API 35: the fades at the list's ends and at the rows' ticks, over the black field, in both modes (taken before the three changes above) |
 | No scheme: the compass with `Watch face` stored, and the row (2 frames) | `colors-not-available-large`, `colors-not-available-small`, `colors-not-available-api37-large` | API 35 and 37, the setting put to 0 with `Watch face` stored |
 
+## Watch-test fix round 1 (2026-10-16)
+
+The uncertain pointer: taken by `UncertainPointerTest` itself (`/data/local/tmp/uncertain-<name>.png`, pulled after `scripts/quick-tests.sh UncertainPointerTest` on `Wear_OS_Large_Round` and `Wear_OS_Small_Round`), the real readout and dial composed in the real activity from the screen state `buildTrail` and `buildTargets` make for the accuracy named, facing true north: the emulators give no position less accurate than 5 m. The gray scheme: two emulators made for it from the API 37 image (`wearos_large_round`, `wearos_small_round`) and deleted after, with `dynamic_color_theme_enabled` 1 and `theme_customization_overlay_packages` set to the owner's watch's (`system_palette` `DCD7CA`, `accent_color` `FF3E32`, `color_source` `home_wallpaper`, `theme_style` `CONTENT`), which gave the app the owner's scheme (`colors-watchface-gray-check-small`: tertiary `#FFC0B7`, error `#FFBFB0`, `onSurface` `#EDE8DA`); eight waypoints with the first eight places a new install gives (`seed-targets.sh 20:108.3 65:298.4 110:180.9 155:43.4 200:245.8 245:75.9 290:148.5 335:265.9`), heading 0, the position fed, and `Colors` tapped to `Watch face`; the settings put back afterwards and read back (unset).
+
+| State | File | How it was produced |
+|-|-|-|
+| A crumb 10 ft away with a 50 ft fix: no line, `10 ft ±50 ft` | `uncertain-crumb-near-large`, `uncertain-crumb-near-small` | `UncertainPointerTest`; the tick at 270 is the trail's other crumb, 400 m west |
+| The same fix, the crumb 328 ft away: its line, `328 ft ±50 ft` | `uncertain-crumb-far-large`, `uncertain-crumb-far-small` | `UncertainPointerTest` |
+| A waypoint 49 ft away with a 98 ft fix: no line, `49 ft ±98 ft` | `uncertain-waypoint-near-large`, `uncertain-waypoint-near-small` | `UncertainPointerTest` |
+| The same fix, the waypoint 328 ft away: its line, `328 ft` | `uncertain-waypoint-far-large`, `uncertain-waypoint-far-small` | `UncertainPointerTest` |
+| `Watch face` with the owner's gray scheme: the compass | `colors-watchface-gray-compass-large`, `colors-watchface-gray-compass-small` | the pointer `#FFC3B2`, north `#FF7865` (the tick 14 degrees right of 0: the dial is true north), the eight waypoints in grays and gray-reds |
+| The settings, `Colors` at `Watch face` | `colors-watchface-gray-settings-large`, `colors-watchface-gray-settings-small` | the value and the switch ticks in the pointer's gray-red, the ink warm white |
+| The waypoints list | `colors-watchface-gray-waypoints-large`, `colors-watchface-gray-waypoints-small` | two swipes up from the top; each row's tick in its waypoint's color |
+| The check screen's `Watch colors` | `colors-watchface-gray-check-small` | settings, `Calibrate`, `Check`, scrolled to the scheme |
+
 ## Icon
 
 Taken on 2026-10-16 (v3 Task 9) from the debug build, by hand: Home pressed twice from the watch face opens the launcher; the start was recorded with `scripts/record.sh` while `am start` opened the app, and one frame kept. The `before` pictures are of commit 87c6664's build.
