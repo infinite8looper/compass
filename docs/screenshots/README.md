@@ -187,6 +187,17 @@ In all of them the position was fed and the watch laid flat at a magnetic headin
 | The top of the settings, `Standard` and `Watch face` (2 frames) | `colors-settings-top-large`, `colors-settings-top-small` | API 35: the fades at the list's ends and at the rows' ticks, over the black field, in both modes (taken before the three changes above) |
 | No scheme: the compass with `Watch face` stored, and the row (2 frames) | `colors-not-available-large`, `colors-not-available-small`, `colors-not-available-api37-large` | API 35 and 37, the setting put to 0 with `Watch face` stored |
 
+## Icon
+
+Taken on 2026-10-16 (v3 Task 9) from the debug build, by hand: Home pressed twice from the watch face opens the launcher; the start was recorded with `scripts/record.sh` while `am start` opened the app, and one frame kept. The `before` pictures are of commit 87c6664's build.
+
+| State | File | How it was produced |
+|-|-|-|
+| The launcher, the icon beside the system's, before: the mark on a black disc | `launcher-before-large`, `launcher-before-small` | API 35 |
+| The launcher, after: the disc `#153D70` filling the mask, the ring at the edge of the 66 dp safe zone | `launcher-after-large`, `launcher-after-small` | API 35 |
+| The start screen, after: the icon with its disc on black | `start-icon-large`, `start-icon-small` | API 35, a frame of the recording about 2 s after `am start` |
+| The start screen, before: the mark alone on black | `start-icon-before-small` | API 35, the same, commit 87c6664's build |
+
 ## Not shown, because an emulator cannot produce it
 
 - The `Calibrate` prompt on the compass, and the calibration frame at less than full (accuracy below high).

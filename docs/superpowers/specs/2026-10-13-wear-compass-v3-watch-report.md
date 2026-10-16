@@ -209,6 +209,13 @@ As built (Task 7, 2026-10-15):
 - The background becomes a colored disc that fills the round mask; the mark is enlarged toward the edge of the 66 dp safe zone; the monochrome layer follows.
 - Shown beside the system's icons in the launcher on an emulator, before and after.
 
+As built (Task 9, 2026-10-16):
+
+- The background layer is the color `#153D70`: the app's blue `#2F8BFF` (hue 213.5, saturation 0.82) at HSV value 0.44, the lightest shade of it on which the needle's red has a contrast of 3 to 1 (3.06; at value 0.45 it is 2.97). White on it has 10.86 to 1. It has 1.93 to 1 with the launcher's black.
+- The ring's radius is 31.2 with a stroke of 3.6, so its outer edge is 33 from the center, 66 across in the 108 canvas; the needle is scaled by 1.2 with it (point 26.4 from the center, 8.4 wide each side). The needle's point is the compass's north red `#FF3B30` (it was `#F44336`, which has 2.95 to 1 on this disc). The monochrome layer has the same paths.
+- The start screen stays black and shows the icon with its disc (`android:windowSplashScreenIconBackgroundColor`), 48 dp across on the emulators; before, it showed the mark alone on black.
+- `IconTest` (unit) reads these values from the resource files. Pictures: `launcher-before-` and `launcher-after-` large and small, `start-icon-` (docs/screenshots).
+
 ## Not possible to verify without the watch
 
 Smoothness on the watch; the drift and which heading source cures it; the feel of the three vibrations and whether the watch supports the primitives; whether the watch returns a color scheme; whether the double pinch arrives; whether calibration is now usable; battery with location running while the app is open.
