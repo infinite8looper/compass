@@ -4,8 +4,7 @@
 # docs/screenshots/<state>-<suffix>.png (MATRIX_OUT names another folder). With no section it runs them all, in
 # this order; each section sets up what it needs, so any one can be run by itself:
 #   permission   the location dialog; `Needs access to precise location` on the compass, the waypoints band and the
-#                settings row (only approximate location granted), and on the compass for a target with `Show
-#                coordinates` on; the compass before any position (`MAG`)
+#                settings row (only approximate location granted); the compass before any position (`MAG`)
 #   truenorth    `True north` switched off and on again without the permission: the system's dialog, the switch on
 #                after `Don't allow`, the compass magnetic with `MAG`
 #   compass      clean; targets; facing; magnetic north and meters; eight colors of the ring; thirty targets;
@@ -14,7 +13,8 @@
 #                and on the edit screen (several frames each)
 #   log          `Saving…`, `Saved Waypoint N`, `No GPS fix`, `Location is off`, `Couldn't save`
 #   coords       coordinates with no target, old, before the first fix (with the pane ticks too), with a target; hold-flat
-#                with them on; a save's two lines; `MAG` and a trail's label; the pane ticks; `Location is off`
+#                with them on; a save's two lines; `MAG` and a trail's label; the pane ticks; `Location is off`; a
+#                press's `Needs access to precise location` after the precise permission is taken back
 #   trail        a crumb saved, laying, the trail's row, retracing, facing the crumb, `Hold to clear`, `Trail complete`
 #   waypoints    empty, a few, thirty (top and end), old distances, the status band after `Log here`
 #   edit         a short name, the color being dragged (finger down), `Hold to delete` late in the hold
@@ -142,7 +142,8 @@ leave_route() { $ADB shell input keyevent KEYCODE_BACK; sleep 1.5; }      # edit
 TAP_Y=$((H * 3 / 10))
 press() { $ADB shell "input tap $C $TAP_Y; sleep 0.1; input tap $C $TAP_Y"; }
 ticks() {   # a drag toward waypoints let go early: the row springs back to the compass, whose three ticks show for about a second
-  $ADB shell "input motionevent DOWN $((W * 80 / 100)) $C; input motionevent MOVE $((W * 65 / 100)) $C; input motionevent MOVE $((W * 45 / 100)) $C; input motionevent MOVE $((W * 70 / 100)) $C; input motionevent UP $((W * 70 / 100)) $C"
+  $ADB shell input motionevent DOWN $((W * 80 / 100)) $C; $ADB shell input motionevent MOVE $((W * 65 / 100)) $C; $ADB shell input motionevent MOVE $((W * 45 / 100)) $C
+  $ADB shell input motionevent MOVE $((W * 70 / 100)) $C; $ADB shell input motionevent UP $((W * 70 / 100)) $C
   sleep 0.2
 }
 switch_trail() { to_waypoints; tap "Trail" || return 1; sleep 1; from_waypoints; }      # from the compass, and back to it
@@ -199,8 +200,6 @@ sec_permission() {
   dialog_choice "Keep approximate location" 2> /dev/null      # asked once more on some images
   sleep 1.5; find_row "Show coordinates" > /dev/null; shot settings-needs-access
   from_settings
-  sleep 3; press; sleep 2.5; dialog_choice "Keep approximate location" 2> /dev/null      # a press's two lines with `Show coordinates` on
-  shot_when coords-needs-access $RED 50 72
 }
 sec_truenorth() {
   pkill -f geo-feed.sh; fresh; magnetic 40; sleep 8
@@ -279,6 +278,12 @@ sec_coords() {
   to_settings; setting "True north" off; setting "Breadcrumb trail" on; from_settings; sleep 3
   switch_trail || return 1; sleep 1; press; shot_when coords-crumb-saved $GREEN 50 72 40; sleep 6
   shot coords-trail-mag
+  # A press's two lines with the coordinates on: approximate location granted and the precise permission taken back
+  # (the system stops the app), so the setting stays on; the press asks again and is answered `Keep approximate location`.
+  $ADB shell pm grant $PKG android.permission.ACCESS_COARSE_LOCATION; $ADB shell pm revoke $PKG android.permission.ACCESS_FINE_LOCATION
+  sleep 1; app_start; sleep 4
+  press; sleep 2.5; dialog_choice "Keep approximate location" || return 1
+  shot_when coords-needs-access $RED 50 72
 }
 sec_trail() {
   fresh granted; feed $HERE_LAT $HERE_LON; sleep 6

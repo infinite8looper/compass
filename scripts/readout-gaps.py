@@ -6,7 +6,9 @@ Measures the compass's readout in a screenshot: the lines of ink inside the circ
 the ink comes to that circle. A pixel is ink when one of its channels is more than THRESHOLD above the
 background's (the commonest color inside the circle); anti-aliased edges count, so a gap is the clear air between
 two lines. Prints one line per picture: each line of ink as top-bottom in pixels from the top of the screen, the
-gaps between them, the smallest gap, and the least distance from any ink to the circle. A picture of several
+gaps between them (rows of pixels with no ink, whatever the sideways place), the smallest gap, the shortest
+distance between the ink of two neighboring lines (sideways place counted: a descender beside a tick, not over it,
+is further from it than the gap says), and the least distance from any ink to the circle. A picture of several
 frames side by side is measured frame by frame (each frame as wide as the picture is tall).
 Needs Pillow.
 """
@@ -36,12 +38,14 @@ def measure(im):
                 inside.append((x, y))
     bg = Counter(px[x, y] for x, y in inside).most_common(1)[0][0]
     ink_rows = {}
+    ink = {}
     margin = None
     for x, y in inside:
         p = px[x, y]
         if max(p[k] - bg[k] for k in range(3)) > THRESHOLD:
             ink_rows.setdefault(y, 0)
             ink_rows[y] += 1
+            ink.setdefault(y, []).append(x)
             d = rr - ((x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2) ** 0.5
             margin = d if margin is None else min(margin, d)
     runs = []
@@ -51,7 +55,13 @@ def measure(im):
         else:
             runs.append([y, y])
     gaps = [b[0] - a[1] - 1 for a, b in zip(runs, runs[1:])]
-    return runs, gaps, margin
+    near = []      # the shortest distance between the ink of two neighboring lines, from pixel edge to pixel edge
+    for a, b in zip(runs, runs[1:]):
+        low = [(x, y) for y in range(max(a[0], a[1] - 8), a[1] + 1) for x in ink.get(y, [])]
+        high = [(x, y) for y in range(b[0], min(b[1], b[0] + 8) + 1) for x in ink.get(y, [])]
+        d = min((max(abs(p[0] - q[0]) - 1, 0) ** 2 + (q[1] - p[1] - 1) ** 2) ** 0.5 for p in low for q in high)
+        near.append(round(d, 1))
+    return runs, gaps, near, margin
 
 
 def main():
@@ -63,11 +73,11 @@ def main():
         w, h = im.size
         frames = [im] if w <= h else [im.crop((i * h, 0, (i + 1) * h, h)) for i in range(w // h)]
         for i, f in enumerate(frames):
-            runs, gaps, margin = measure(f)
+            runs, gaps, near, margin = measure(f)
             name = path if len(frames) == 1 else f"{path}[{i + 1}]"
             lines = " ".join(f"{a}-{b}" for a, b in runs)
             least = min(gaps) if gaps else None
-            print(f"{name}: lines {lines} | gaps {gaps} | smallest gap {least} px | ink to circle {margin:.1f} px" if margin is not None
+            print(f"{name}: lines {lines} | gaps {gaps} | smallest gap {least} px | nearest ink {near} | ink to circle {margin:.1f} px" if margin is not None
                   else f"{name}: no ink inside the readout circle")
 
 
