@@ -356,6 +356,13 @@ fun hueOf(rgb: Int): Float {
     return (sixth * 60f).mod(360f)
 }
 
+/** The largest difference of a red, green or blue channel between [a] and [b], 0 to 255. */
+fun channelsApart(a: Int, b: Int): Int {
+    var most = 0
+    for (shift in 0..16 step 8) most = maxOf(most, abs((a shr shift and 0xFF) - (b shr shift and 0xFF)))
+    return most
+}
+
 /** How far apart the hues of [a] and [b] are, the shorter way round the wheel: 0 to 180 degrees. */
 fun hueApart(a: Int, b: Int): Float = abs(((hueOf(a) - hueOf(b) + 540f) % 360f) - 180f)
 
@@ -401,6 +408,7 @@ enum class WaypointColors { WHEEL, RING }
  */
 data class Palette(
     val roles: RoleColors, val grays: Grays, val waypoints: WaypointColors, val ringThird: Int = ringThirdFor(roles),
+    val gray: Boolean = false,
 )
 
 /** `Standard`: north red, the pointer blue, the app's own grays, and the full wheel for waypoints. */
@@ -417,7 +425,7 @@ val STANDARD_PALETTE = Palette(
  */
 fun paletteFor(mode: ColorMode, scheme: WatchScheme?): Palette =
     if (mode == ColorMode.STANDARD || scheme == null) STANDARD_PALETTE
-    else if (isGrayScheme(scheme)) roleColors(scheme).let { Palette(it, graysFor(scheme), WaypointColors.RING, grayRingThird(scheme)) }
+    else if (isGrayScheme(scheme)) roleColors(scheme).let { Palette(it, graysFor(scheme), WaypointColors.RING, grayRingThird(scheme), gray = true) }
     else Palette(roleColors(scheme), graysFor(scheme), WaypointColors.RING)
 
 /**

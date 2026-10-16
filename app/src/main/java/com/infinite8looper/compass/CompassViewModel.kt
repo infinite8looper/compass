@@ -17,6 +17,7 @@ import com.infinite8looper.compass.data.SettingsStore
 import com.infinite8looper.compass.data.Waypoint
 import com.infinite8looper.compass.data.WaypointDatabase
 import com.infinite8looper.compass.nav.*
+import com.infinite8looper.compass.ui.shownPalette
 import com.infinite8looper.compass.sensors.HeadingReading
 import com.infinite8looper.compass.sensors.HeadingSource
 import com.infinite8looper.compass.sensors.LocationSource
@@ -472,8 +473,12 @@ class CompassViewModel(
     /** Held while a new waypoint's place is chosen and the waypoint stored ([logWaypoint]). */
     private val waypointAdds = Mutex()
 
-    /** Stores a new waypoint as a target. Throws if the waypoint cannot be stored, so the caller can say so. */
-    suspend fun logWaypoint(fix: Fix): Waypoint {
+    /**
+     * Stores a new waypoint as a target. Throws if the waypoint cannot be stored, so the caller can say so. Its place
+     * is chosen for the colors [palette], the ones on screen ([shownPalette]): in a gray scheme a place whose color
+     * is near the error color or the pointer is passed over ([nextWaypointPlace]).
+     */
+    suspend fun logWaypoint(fix: Fix, palette: Palette = shownPalette): Waypoint {
         // The focus falls back to the newest target when none is stored, so pin it down before adding one. Under
         // the lock a step of the focus takes, so the pin cannot write back a focus that a step has just moved on from.
         focusChanges.withLock { targetsAndFocus().second?.let { settingsStore.setFocused(it) } }
@@ -484,7 +489,7 @@ class CompassViewModel(
             val taken = dao.observeAll().first().let { all -> FloatArray(all.size) { all[it].hue } }
             val w = Waypoint(
                 name = "Waypoint $n", lat = fix.point.lat, lon = fix.point.lon, accuracyM = fix.accuracyM,
-                createdAt = System.currentTimeMillis(), hue = nextWaypointPlace(taken), isTarget = true,
+                createdAt = System.currentTimeMillis(), hue = nextWaypointPlace(taken, palette), isTarget = true,
             )
             w.copy(id = dao.insert(w))
         }

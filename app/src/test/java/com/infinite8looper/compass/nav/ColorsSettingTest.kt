@@ -253,7 +253,7 @@ class ColorsSettingTest {
         val taken = ArrayList<Float>()
         val colors = ArrayList<Int>()
         repeat(8) {
-            val place = nextWaypointPlace(taken.toFloatArray())
+            val place = nextWaypointPlace(taken.toFloatArray(), p)
             taken += place
             colors += waypointRgb(p, place)
         }
@@ -274,12 +274,80 @@ class ColorsSettingTest {
         val p = paletteFor(ColorMode.WATCH_FACE, owner)
         val taken = ArrayList<Float>()
         repeat(50) {
-            val place = nextWaypointPlace(taken.toFloatArray())
+            val place = nextWaypointPlace(taken.toFloatArray(), p)
             taken += place
             val c = waypointRgb(p, place)
             assertTrue("$it: %06X north %06X".format(c, p.roles.north), saturationOf(c) < saturationOf(p.roles.north))
         }
         assertTrue("%06X".format(p.roles.north), saturationOf(p.roles.north) >= NORTH_GRAY_SATURATION)
+    }
+
+    // Watch-fix re-review 2, Minors 1 and 2: on a gray scheme the error color (#FF7C65 on the owner's) lies on the
+    // ring between the pointer and north, and Waypoint 2 was #FF7F68, 3 apart in a channel. New waypoints now never
+    // take a place whose color is within WAYPOINT_ROLE_CHANNELS_APART in a channel of the error color or the pointer.
+
+    /** The places [count] new waypoints are given one after another in [p]. */
+    private fun givenIn(p: Palette, count: Int): List<Float> {
+        val taken = ArrayList<Float>()
+        repeat(count) { taken += nextWaypointPlace(taken.toFloatArray(), p) }
+        return taken
+    }
+    private fun assertAwayFromErrorAndPointer(what: String, p: Palette, places: List<Float>) {
+        places.forEachIndexed { i, place ->
+            val c = waypointRgb(p, place)
+            val text = "$what: ${i + 1} at $place %06X, error %06X, pointer %06X".format(c, p.roles.error, p.roles.accent)
+            assertTrue(text, channelsApart(c, p.roles.error) >= WAYPOINT_ROLE_CHANNELS_APART)
+            assertTrue(text, channelsApart(c, p.roles.accent) >= WAYPOINT_ROLE_CHANNELS_APART)
+        }
+    }
+    @Test fun aGraySchemesPaletteSaysSoAndNoOtherDoes() {
+        assertTrue(paletteFor(ColorMode.WATCH_FACE, owner).gray)
+        assertFalse(STANDARD_PALETTE.gray)
+        assertFalse(paletteFor(ColorMode.STANDARD, owner).gray)
+        for (scheme in recorded) assertFalse("$scheme", paletteFor(ColorMode.WATCH_FACE, scheme).gray)
+    }
+    @Test fun noneOfTheOwnersFirstFiftyNewWaypointsIsNearTheErrorColorOrThePointer() {
+        assertEquals(24, WAYPOINT_ROLE_CHANNELS_APART)
+        val p = paletteFor(ColorMode.WATCH_FACE, owner)
+        assertEquals("%06X".format(p.roles.error), 0xFF7C65, p.roles.error)
+        val places = givenIn(p, 50)
+        assertAwayFromErrorAndPointer("owner", p, places)
+        // Still each its own place and its own color.
+        for (i in places.indices) for (j in i + 1 until places.size) {
+            assertTrue("$i $j: ${places[i]} ${places[j]}", abs(shortestDelta(places[i], places[j])) >= 0.01f)
+        }
+        val colors = places.map { waypointRgb(p, it) }
+        assertEquals(colors.joinToString { "%06X".format(it) }, colors.size, colors.toSet().size)
+    }
+    @Test fun onManyRandomGraySchemesNoNewWaypointIsNearTheErrorColorOrThePointer() {
+        // Random schemes whose primary is a light gray (the owner's is #FFF9EB), so that most of them are gray ones.
+        val random = java.util.Random(20261017L)
+        var gray = 0
+        repeat(2_000) {
+            val v = 0x9F + random.nextInt(0x61)
+            val primary = (v shl 16) or ((v - random.nextInt(10)) shl 8) or (v - random.nextInt(10))
+            val scheme = WatchScheme(
+                primary, random.nextInt(0x1000000), random.nextInt(0x1000000),
+                random.nextInt(0x1000000), random.nextInt(0x1000000), random.nextInt(0x1000000),
+            )
+            if (!isGrayScheme(scheme)) return@repeat
+            gray++
+            val p = paletteFor(ColorMode.WATCH_FACE, scheme)
+            assertAwayFromErrorAndPointer("$scheme", p, givenIn(p, 20))
+        }
+        assertTrue("$gray", gray > 1_000)
+    }
+    @Test fun standardAndColorfulSchemesGiveTheSamePlacesAsBefore() {
+        // Only a gray scheme passes over places for the error color and the pointer: the others give the places the
+        // numbering gives with the red and the blue skipped, as nextWaypointPlace(taken) does.
+        for (p in listOf(STANDARD_PALETTE) + recorded.map { paletteFor(ColorMode.WATCH_FACE, it) }) {
+            val taken = ArrayList<Float>()
+            repeat(50) {
+                val place = nextWaypointPlace(taken.toFloatArray(), p)
+                assertEquals(nextWaypointPlace(taken.toFloatArray()), place, 0f)
+                taken += place
+            }
+        }
     }
     @Test fun theRingOfAGraySchemeIsGraysAndGrayReds() {
         val random = java.util.Random(20261016L)

@@ -53,6 +53,7 @@ import com.infinite8looper.compass.nav.menuTextSize
 import com.infinite8looper.compass.nav.Pane
 import com.infinite8looper.compass.nav.ScrollArc
 import com.infinite8looper.compass.nav.ColorMode
+import com.infinite8looper.compass.nav.Palette
 import com.infinite8looper.compass.nav.STANDARD_PALETTE
 import com.infinite8looper.compass.nav.WatchScheme
 import com.infinite8looper.compass.nav.paletteFor
@@ -73,6 +74,9 @@ import com.infinite8looper.compass.nav.softLineColor
 // composed again when it changes, and a place that reads one while drawing is drawn again: nothing has to be told.
 // Setting them to what they already are changes nothing.
 private val palette = mutableStateOf(STANDARD_PALETTE)
+
+/** The colors on screen now, as [followWatchColors] last set them: a new waypoint's place is chosen for them. */
+val shownPalette: Palette get() = palette.value
 
 /** Whether the watch gives a color scheme, so that `Watch face` can be chosen; read with the colors. */
 private val watchFaceColors = mutableStateOf(false)
