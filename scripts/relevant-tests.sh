@@ -2,7 +2,8 @@
 # Usage: scripts/relevant-tests.sh [<git range or commit>]
 # Lists the test classes that cover the files changed, as names for scripts/quick-tests.sh. With no argument the
 # changes are those of the working tree against HEAD (staged, unstaged and new files not yet added); with a range
-# (for example HEAD~3..HEAD, or main...HEAD) or a commit, `git diff --name-only` of it.
+# (for example HEAD~3..HEAD, or main...HEAD), `git diff --name-only` of it; with a commit (no `..` in it), that
+# commit's own change, `git diff <commit>^!` (its parent to it), not the commit against the working tree.
 # For each changed file:
 #   - a test class itself (a file of app/src/androidTest/ or app/src/test/ with @Test in it): that class; any other
 #     file there (a helper, an annotation) is mapped as a file of the app is, below;
@@ -23,8 +24,13 @@
 # Talks to no device. Needs git and python3.
 cd "$(dirname "$0")/.." || exit 1
 if [ -n "$1" ]; then
-  changed=$(git diff --name-only "$1") || exit 1
-  diff=$(git diff -U0 "$1")
+  range=$1
+  if [[ $range != *..* ]]; then
+    git rev-parse --verify -q "$range^{commit}" > /dev/null || { echo "not a commit or a range: $range" >&2; exit 1; }
+    range="$range^!"
+  fi
+  changed=$(git diff --name-only "$range") || exit 1
+  diff=$(git diff -U0 "$range")
 else
   changed=$( { git diff --name-only HEAD; git ls-files --others --exclude-standard; } | sort -u)
   diff=$(git diff -U0 HEAD)

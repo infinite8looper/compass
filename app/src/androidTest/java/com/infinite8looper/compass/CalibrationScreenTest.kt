@@ -61,13 +61,18 @@ class CalibrationScreenTest {
         settings.setBreadcrumbTrail(false)
         Unit
     }
+    /** The automation's flags before setUp added one, put back after each test so the classes after it run as alone. */
+    private var flagsBefore = 0
     @Before fun setUp() {
         // The windows on screen are asked for by their list (nodes()), which the system gives only with this flag.
         val automation = instrumentation.uiAutomation
+        flagsBefore = automation.serviceInfo.flags
         automation.serviceInfo = automation.serviceInfo.apply { flags = flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS }
         reset()
     }
     @After fun tearDown() {
+        val automation = instrumentation.uiAutomation
+        automation.serviceInfo = automation.serviceInfo.apply { flags = flagsBefore }
         reset()
         // The two-minute test lets the screen go to sleep; the next test needs it awake.
         instrumentation.uiAutomation.executeShellCommand("input keyevent KEYCODE_WAKEUP").close()

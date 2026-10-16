@@ -114,11 +114,6 @@ class DialVibrationsTest {
     }
 
     /**
-     * The branch for a watch without the primitives, which no emulator is: each dial row's haptic feedback constant,
-     * played as `play` plays it there. The three play, and play three effects that differ from each other and from the
-     * press's.
-     */
-    /**
      * The dial asks the player on every frame how long the lines stay quiet after the target's vibration. That makes
      * nothing new (no per-frame allocation on the compass): counted with the runtime's own allocation counter for
      * this thread, over as many asks as about a minute of frames, once the compositions are ready.
@@ -156,6 +151,11 @@ class DialVibrationsTest {
         }
     }
 
+    /**
+     * The branch for a watch without the primitives, which no emulator is: each dial row's haptic feedback constant,
+     * played as `play` plays it there. The three play, and play three effects that differ from each other and from the
+     * press's.
+     */
     @Test fun theConstantsPlayThreeDifferentEffectsDifferentFromThePress() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             Thread.sleep(2_000)

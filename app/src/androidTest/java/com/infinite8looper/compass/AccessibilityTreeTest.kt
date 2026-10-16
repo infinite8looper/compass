@@ -51,12 +51,32 @@ class AccessibilityTreeTest {
     @Before fun setUp() = reset()
     @After fun tearDown() = reset()
 
+    /**
+     * Every node of the active window's tree, read whole: the root and each child refreshed from the system. A tree
+     * that cannot be read (no active window, or a node that could not be refreshed) is read again, up to three times
+     * 200 ms apart, and then fails the test, so a check that finds nothing in it has read a real tree, never an
+     * empty list standing for one.
+     */
     private fun nodes(): List<AccessibilityNodeInfo> {
-        val root = InstrumentationRegistry.getInstrumentation().uiAutomation.rootInActiveWindow ?: return emptyList()
-        val all = ArrayList<AccessibilityNodeInfo>()
-        fun walk(n: AccessibilityNodeInfo) { all += n; for (i in 0 until n.childCount) n.getChild(i)?.let(::walk) }
-        walk(root)
-        return all
+        repeat(3) { attempt ->
+            if (attempt > 0) SystemClock.sleep(200)
+            val root = InstrumentationRegistry.getInstrumentation().uiAutomation.rootInActiveWindow ?: return@repeat
+            if (!root.refresh()) return@repeat
+            val all = ArrayList<AccessibilityNodeInfo>()
+            var whole = true
+            fun walk(n: AccessibilityNodeInfo) {
+                all += n
+                for (i in 0 until n.childCount) {
+                    val child = n.getChild(i)
+                    if (child == null || !child.refresh()) { whole = false; return }
+                    walk(child)
+                }
+            }
+            walk(root)
+            if (whole) return all
+        }
+        fail("the active window's tree could not be read whole in three tries")
+        return emptyList()
     }
 
     /** The app's nodes, once the compass has drawn either its heading or, on a watch held upright, the hold-flat hint. */
