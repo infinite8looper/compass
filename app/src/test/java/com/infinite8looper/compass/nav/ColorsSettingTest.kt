@@ -349,6 +349,48 @@ class ColorsSettingTest {
             }
         }
     }
+
+    /**
+     * The first 50 places new waypoints were given one after another by `nextWaypointPlace(taken)` at 5a10810, the
+     * code before gray schemes passed over places for the error color and the pointer (watch-fix re-review 3,
+     * Minor 1). Printed by that commit's own code; the palette took no part in the choice then.
+     */
+    private val placesBeforeTheGrayRule = floatArrayOf(
+        108.32498f, 298.35693f, 180.91284f, 43.404907f, 245.83301f, 75.86499f, 148.45288f, 265.89697f, 318.4209f,
+        128.38892f, 160.849f, 31.00879f, 95.928955f, 285.96094f, 63.468994f, 51.073242f, 136.05713f, 306.0249f,
+        83.53296f, 273.56494f, 326.08887f, 115.99292f, 168.51685f, 253.50073f, 38.676758f, 241.10498f, 293.6289f,
+        261.16895f, 313.69287f, 281.2329f, 156.1211f, 333.75684f, 103.59717f, 71.13721f, 123.66113f, 176.18506f,
+        91.20117f, 143.7251f, 58.74121f, 131.3291f, 111.26514f, 321.36133f, 98.86914f, 163.78906f, 288.90137f,
+        66.40918f, 248.77295f, 301.29688f, 33.94922f, 171.45703f,
+    )
+    @Test fun standardAndColorfulSchemesGiveThePlacesTheCodeGaveBeforeTheGrayRule() {
+        for (p in listOf(STANDARD_PALETTE) + recorded.map { paletteFor(ColorMode.WATCH_FACE, it) }) {
+            assertFalse(p.gray)
+            val given = givenIn(p, placesBeforeTheGrayRule.size)
+            placesBeforeTheGrayRule.forEachIndexed { i, before ->
+                assertEquals("%06X %06X place ${i + 1}".format(p.roles.accent, p.roles.north), before, given[i], 0f)
+            }
+        }
+    }
+
+    /**
+     * A gray palette whose ring is one gray and whose error color and pointer are that gray: every place is within
+     * WAYPOINT_ROLE_CHANNELS_APART of them, so none is left to choose after passing over those (watch-fix re-review
+     * 3, Minor 2). New waypoints are then given the places they would be given without passing over any for the
+     * colors, each its own place, not the first place again and again.
+     */
+    @Test fun whereEveryPlaceIsNearTheErrorColorOrThePointerTheChoiceIsMadeWithoutPassingOverThem() {
+        val oneGray = 0x8A8580
+        val p = Palette(
+            RoleColors(accent = oneGray, north = oneGray, error = oneGray),
+            Grays(STANDARD_INK, STANDARD_DIM, STANDARD_FAINT, STANDARD_LABEL),
+            WaypointColors.RING, ringThird = oneGray, gray = true,
+        )
+        for (i in 0 until 4096) assertTrue("place ${hueForIndex(i)}", nearTheRoles(p, hueForIndex(i)))
+        val given = givenIn(p, placesBeforeTheGrayRule.size)
+        placesBeforeTheGrayRule.forEachIndexed { i, before -> assertEquals("place ${i + 1}", before, given[i], 0f) }
+        assertEquals(given.size, given.toSet().size)
+    }
     @Test fun theRingOfAGraySchemeIsGraysAndGrayReds() {
         val random = java.util.Random(20261016L)
         var gray = 0
