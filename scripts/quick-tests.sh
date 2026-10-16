@@ -5,8 +5,8 @@
 # run of the test runner, and the named unit test classes, if any (after --unit). No emulator is booted or stopped.
 # The emulator: the one named (by its serial, or by its AVD's name among the running emulators), or else the one
 # attached; with another emulator running too it has to be named.
-# It builds the app and the test app once (./gradlew assembleDebug assembleDebugAndroidTest, with
-# testDebugUnitTest --tests for each unit class), then runs scripts/device-tests.sh on the emulator, which lays it
+# It builds the app and the test app once (./gradlew assembleDebug assembleDebugAndroidTest), then in a Gradle call
+# of its own runs the unit classes (testDebugUnitTest --tests for each), then runs scripts/device-tests.sh on the emulator, which lays it
 # flat at a magnetic heading of 40 and checks that it is awake, installs both apps, switches the animations off,
 # starts scripts/geo-feed.sh and scripts/field-requests.sh for the run, runs the tests, puts all of that back and
 # uninstalls the apps; it prints PASS, FAIL (with the first lines of the failure), SKIP or NOT RUN for each test.
@@ -53,19 +53,21 @@ fi
 cd "$(dirname "$0")/.." || exit 1
 if [ -z "$JAVA_HOME" ]; then export JAVA_HOME=$(/usr/libexec/java_home -v 17) || exit 1; fi
 full() { if [[ $1 == *.* ]]; then echo $1; else echo com.infinite8looper.compass.$1; fi; }
-tasks=(assembleDebug assembleDebugAndroidTest)
 bad=0
+# The app and the test app are built in a Gradle call of their own, first, so the device run never takes an APK left
+# from an earlier build: a failed build stops here, whatever the unit tests do after.
+echo "== build: ./gradlew -q assembleDebug assembleDebugAndroidTest"
+if ! ./gradlew -q assembleDebug assembleDebugAndroidTest > app/build/quick-tests-gradle.log 2>&1; then
+  tail -20 app/build/quick-tests-gradle.log; exit 1
+fi
 if [ ${#unit} -gt 0 ]; then
-  tasks+=(testDebugUnitTest)
+  tasks=(testDebugUnitTest)
   # The unit test classes are in packages of their own (nav, ui): a simple name matches the class in any of them.
   for u in $unit; do if [[ $u == *.* ]]; then tasks+=(--tests "$u"); else tasks+=(--tests "*.$u"); fi; done
-fi
-echo "== build: ./gradlew -q ${tasks[*]}"
-if ! ./gradlew -q $tasks > app/build/quick-tests-gradle.log 2>&1; then
-  if [ ${#unit} -gt 0 ] && [ -f app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk ] && grep -q "There were failing tests" app/build/quick-tests-gradle.log; then
-    echo "unit tests failed"; bad=1
-  else
-    tail -20 app/build/quick-tests-gradle.log; exit 1
+  echo "== unit tests: ./gradlew -q ${tasks[*]}"
+  if ! ./gradlew -q $tasks > app/build/quick-tests-unit.log 2>&1; then
+    if grep -q "There were failing tests" app/build/quick-tests-unit.log; then echo "unit tests failed"; bad=1
+    else tail -20 app/build/quick-tests-unit.log; exit 1; fi
   fi
 fi
 if [ ${#unit} -gt 0 ]; then

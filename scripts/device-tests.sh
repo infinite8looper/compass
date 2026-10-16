@@ -16,9 +16,11 @@
 #   - uninstalls the app and the test app, installs both (`adb install -r -t`, the way Gradle's connected tests
 #     install them: no runtime permission is granted at install), and sets the three animation scales
 #     (window_animation_scale, transition_animation_scale, animator_duration_scale) to 0, as Gradle does for
-#     `animationsDisabled = true` (app/build.gradle.kts), noting what they were;
+#     `animationsDisabled = true` (app/build.gradle.kts), noting what they were; from the installs on, a stop (INT,
+#     TERM) or a failure runs the cleanup below;
 #   - lists the tests the run would run (the same arguments and `-e log true`, which runs none), into
-#     <out-dir>/listing.txt;
+#     <out-dir>/listing.txt. Each install and the listing has 300 s (scripts/deadline.sh); one that takes longer is
+#     stopped, and the run counts as not run;
 #   - starts scripts/geo-feed.sh at 43.7022,-72.2896 and scripts/field-requests.sh for this emulator;
 #   - looks again that the emulator is attached and that no device that is not an emulator is, then runs
 #     `adb shell am instrument -r -w <arguments> -e additionalTestOutputDir
@@ -38,6 +40,7 @@
 # skipped or not run test, a run cut short or past its deadline, a watch not flat or not awake, a refused check).
 # Emulators only (scripts/emulator-only.sh). Needs python3.
 source "$(dirname "$0")/emulator-only.sh" || exit 1
+source "$(dirname "$0")/deadline.sh" || exit 1
 emulator_pinned || exit 1      # and an emulator's serial to address: no adb call below goes out unpinned
 # The emulator's serial, kept: a later check that refuses unsets ANDROID_SERIAL, and the cleanup after it must still
 # address this emulator and nothing else (`finish`, below).
@@ -79,18 +82,10 @@ if [ "$awake" != "Awake" ]; then
 fi
 emulator_pinned || { echo "$avd: not run"; exit 1; }
 
-$ADB uninstall $PKG.test > /dev/null 2>&1
-$ADB uninstall $PKG > /dev/null 2>&1
-$ADB install -r -t $APP | tail -1 | grep -q '^Success' || { echo "$avd: the app could not be installed, not run"; exit 1; }
-$ADB install -r -t $TESTAPK | tail -1 | grep -q '^Success' || { echo "$avd: the test app could not be installed, not run"; $ADB uninstall $PKG > /dev/null 2>&1; exit 1; }
-$ADB shell mkdir -p /sdcard/Android/media/$PKG/additional_test_output
+# From here on the emulator is changed (apps installed, animation scales set), so the cleanup is set up first: a stop
+# (INT, TERM) or a failure from here on puts back what was changed.
 scales=(window_animation_scale transition_animation_scale animator_duration_scale)
-typeset -A was
-for s in $scales; do
-  was[$s]=$($ADB shell settings get global $s | tr -d '\r')
-  $ADB shell settings put global $s 0
-done
-
+typeset -A was      # the scales as they were, each noted just before it is set
 feed_pid=""; fields_pid=""; run_pid=""
 finish() {
   # Sent to the kept serial with -s, and only while adb lists it as an attached emulator: a check that refused just
@@ -102,7 +97,8 @@ finish() {
   if [ -n "$feed_pid" ]; then kill $feed_pid 2>/dev/null; wait $feed_pid 2>/dev/null; feed_pid=""; fi
   if [ -n "$fields_pid" ]; then kill $fields_pid 2>/dev/null; wait $fields_pid 2>/dev/null; fields_pid=""; fi
   [ $send = 1 ] || return
-  for s in $scales; do
+  # Only the scales that were set are put back.
+  for s in ${(k)was}; do
     if [ -z "${was[$s]}" ] || [ "${was[$s]}" = "null" ]; then $ADB -s $pin shell settings delete global $s > /dev/null
     else $ADB -s $pin shell settings put global $s ${was[$s]}; fi
   done
@@ -111,8 +107,20 @@ finish() {
 }
 trap 'finish; exit 1' INT TERM
 
-$ADB shell am instrument -r -w "$@" -e log true $RUNNER 2>&1 | python3 -I scripts/instrument-results.py stamp > $out/listing.txt
+# The installs and the listing have a deadline of their own (scripts/deadline.sh): past it they count as failed.
+install_apk() { $ADB install -r -t $1 | tail -1 | grep -q '^Success'; }
+$ADB uninstall $PKG.test > /dev/null 2>&1
+$ADB uninstall $PKG > /dev/null 2>&1
+deadline 300 "$avd: installing the app" install_apk $APP || { echo "$avd: the app could not be installed, not run"; finish; exit 1; }
+deadline 300 "$avd: installing the test app" install_apk $TESTAPK || { echo "$avd: the test app could not be installed, not run"; finish; exit 1; }
+$ADB shell mkdir -p /sdcard/Android/media/$PKG/additional_test_output
+for s in $scales; do
+  was[$s]=$($ADB shell settings get global $s | tr -d '\r')
+  $ADB shell settings put global $s 0
+done
 
+list_tests() { $ADB shell am instrument -r -w "$@" -e log true $RUNNER 2>&1 | python3 -I scripts/instrument-results.py stamp > $out/listing.txt; }
+deadline 300 "$avd: listing the tests" list_tests "$@" || { echo "$avd: the tests could not be listed, not run"; finish; exit 1; }
 scripts/geo-feed.sh -72.2896 43.7022 $(( seconds + 120 )) > /dev/null 2>&1 &
 feed_pid=$!
 scripts/field-requests.sh $(( seconds + 120 )) > /dev/null 2>&1 &

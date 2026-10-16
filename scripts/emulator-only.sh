@@ -59,7 +59,7 @@ emulator_only() {
   fi
   emulators=($(echo "$serials" | grep -E '^emulator-[0-9]+$'))
   if [ -n "$EMULATOR_ONLY_SERIAL" ]; then
-    if ! print -r -- "$EMULATOR_ONLY_SERIAL" | grep -q -E '^emulator-[0-9]+$'; then
+    if [[ ! $EMULATOR_ONLY_SERIAL =~ '^emulator-[0-9]+$' ]]; then      # the whole value, one line
       unset ANDROID_SERIAL
       echo "refusing: EMULATOR_ONLY_SERIAL is not an emulator's serial ($EMULATOR_ONLY_SERIAL)." >&2
       return 1

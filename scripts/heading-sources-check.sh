@@ -9,6 +9,7 @@
 # At the end it lays the watch flat at 40 again, the pose scripts/all-suites.sh leaves.
 # Exit status 0 when every heading passed, 1 otherwise. Emulators only.
 source "$(dirname "$0")/emulator-only.sh" || exit 1
+emulator_pinned || exit 1      # an emulator's serial to address, before Gradle installs on it
 cd "$(dirname "$0")/.." || exit 1
 ADB=~/Library/Android/sdk/platform-tools/adb
 if [ -z "$JAVA_HOME" ]; then export JAVA_HOME=$(/usr/libexec/java_home -v 17) || exit 1; fi
