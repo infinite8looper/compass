@@ -17,6 +17,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,16 +45,23 @@ import com.infinite8looper.compass.nav.colorsRow
 import com.infinite8looper.compass.nav.backupSwitchTap
 import com.infinite8looper.compass.nav.NEEDS_PRECISE_LOCATION
 import com.infinite8looper.compass.nav.NorthRef
+import com.infinite8looper.compass.nav.PRIVACY_POLICY_CLICK_LABEL
+import com.infinite8looper.compass.nav.PRIVACY_POLICY_LABEL
+import com.infinite8looper.compass.nav.PRIVACY_POLICY_URL
+import com.infinite8looper.compass.nav.PhoneOpen
+import com.infinite8looper.compass.nav.phoneOpenAfter
+import com.infinite8looper.compass.nav.privacyRow
 import com.infinite8looper.compass.nav.Pane
 import com.infinite8looper.compass.nav.PaneView
 import com.infinite8looper.compass.nav.Units
 import com.infinite8looper.compass.nav.accuracyLabel
 import com.infinite8looper.compass.nav.trailSettingDetail
 import com.infinite8looper.compass.sensors.WatchButtons
+import kotlinx.coroutines.launch
 
 /**
  * The settings, one of the three screens that sit side by side: a row for each switch, in the spec's order, and
- * `Colors` before `Back up waypoints`, then `Calibrate` and the version, inside the frame, which shows how far the list is scrolled.
+ * `Colors` before `Back up waypoints`, then `Calibrate`, the version and last `Privacy policy`, inside the frame, which shows how far the list is scrolled.
  * A switch is its row: one tap anywhere on the row turns it, and the tick at the right shows which way it stands.
  *
  * [paneView] says how much of the screen the wearer has in front of them. The screen is built when the three
@@ -106,6 +114,9 @@ fun SettingsScreen(vm: CompassViewModel, paneView: () -> PaneView, onCalibrate: 
     // The trail's row speaks of a press only on a watch with a button the app can act on.
     val context = LocalContext.current
     val trailDetail = remember(context) { trailSettingDetail(WatchButtons.assignable(context)) }
+    // Where a tap on `Privacy policy` has got to; it is kept while the ring of screens turns.
+    var phoneOpen by remember { mutableStateOf(PhoneOpen.NOT_SENT) }
+    val scope = rememberCoroutineScope()
     // Until the settings file has been read the rows show defaults, which a tap would then store.
     val ready = stored != null
 
@@ -222,6 +233,25 @@ fun SettingsScreen(vm: CompassViewModel, paneView: () -> PaneView, onCalibrate: 
                 item(key = "version") {
                     InstrumentRow(centered = true) {
                         Text("Compass ${BuildConfig.VERSION_NAME}\nMIT License", color = Faint, style = styles.footer)
+                    }
+                }
+                item(key = "privacy") {
+                    // The last row. A tap asks the paired phone to open the policy; the smaller line then says it did,
+                    // or, with no phone that took it, shows the policy's address. A screen reader says what a tap does.
+                    val row = privacyRow(phoneOpen)
+                    InstrumentRow(
+                        Modifier.clickable(enabled = row.takesTap, role = Role.Button, onClickLabel = PRIVACY_POLICY_CLICK_LABEL) {
+                            inView {
+                                phoneOpen = PhoneOpen.SENDING
+                                scope.launch { phoneOpen = phoneOpenAfter(openOnPhone(context, PRIVACY_POLICY_URL)) }
+                            }
+                        },
+                        fitContent = true,
+                    ) {
+                        Column {
+                            Text(PRIVACY_POLICY_LABEL, color = AccentColor, style = styles.labelOn, maxLines = LABEL_LINES, overflow = TextOverflow.Ellipsis)
+                            Text(row.detail, color = Dim, style = styles.detail, maxLines = 2 + DETAIL_SPARE_LINES, overflow = TextOverflow.Ellipsis)
+                        }
                     }
                 }
             }

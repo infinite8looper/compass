@@ -59,3 +59,39 @@ fun colorsRow(mode: ColorMode, available: Boolean): ColorsRow = when {
     mode == ColorMode.STANDARD -> ColorsRow(COLORS_STANDARD, ColorMode.WATCH_FACE, COLORS_USE_WATCH_FACE)
     else -> ColorsRow(COLORS_WATCH_FACE, ColorMode.STANDARD, COLORS_USE_STANDARD)
 }
+
+// The `Privacy policy` row, the last of the settings (the words are proposed, for the owner to approve).
+
+/** What the row is. */
+const val PRIVACY_POLICY_LABEL = "Privacy policy"
+/** What a tap on the row does, said by a screen reader (the row's click label). */
+const val PRIVACY_POLICY_CLICK_LABEL = "Open on your phone"
+/** The page a tap opens on the paired phone: the compass's section of the published policy. */
+const val PRIVACY_POLICY_URL = "https://infinite8looper.github.io/privacy.html#compass"
+/** The policy's address as the watch shows it when the phone did not open it: the link without its scheme and section. */
+const val PRIVACY_POLICY_ADDRESS = "infinite8looper.github.io/privacy.html"
+/** What the row says once the phone has taken the link. */
+const val PRIVACY_OPENED_ON_PHONE = "Opened on your phone"
+/** How long the watch waits for the phone to take the link before it shows [PRIVACY_POLICY_ADDRESS] instead. */
+const val PHONE_OPEN_WAIT_MS = 10_000L
+
+/** Where a tap on the `Privacy policy` row has got to: not tapped yet, the phone being asked, opened there, or not. */
+enum class PhoneOpen { NOT_SENT, SENDING, OPENED, NOT_OPENED }
+
+/** What the `Privacy policy` row shows under its label ([detail]) and whether it takes a tap ([takesTap]). */
+data class PrivacyRow(val detail: String, val takesTap: Boolean)
+
+/**
+ * The `Privacy policy` row in each [state]. Where the phone did not open the link the row shows the address, in two
+ * lines broken before the path, since it is one word too long for one line. While the phone is being asked the row
+ * takes no second tap; after an answer a tap asks again.
+ */
+fun privacyRow(state: PhoneOpen): PrivacyRow = when (state) {
+    PhoneOpen.NOT_SENT -> PrivacyRow("", true)
+    PhoneOpen.SENDING -> PrivacyRow("", false)
+    PhoneOpen.OPENED -> PrivacyRow(PRIVACY_OPENED_ON_PHONE, true)
+    PhoneOpen.NOT_OPENED -> PrivacyRow(PRIVACY_POLICY_ADDRESS.replaceFirst("/", "\n/"), true)
+}
+
+/** What came of asking the phone: [delivered] true when it took the link, false when the call failed, null when no answer came in [PHONE_OPEN_WAIT_MS]. */
+fun phoneOpenAfter(delivered: Boolean?): PhoneOpen = if (delivered == true) PhoneOpen.OPENED else PhoneOpen.NOT_OPENED

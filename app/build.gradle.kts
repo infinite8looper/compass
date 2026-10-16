@@ -92,6 +92,8 @@ dependencies {
     implementation("androidx.wear.compose:compose-foundation:1.7.1")
     implementation("androidx.wear.compose:compose-navigation:1.7.1")
     implementation("androidx.wear:wear-input:1.2.0")
+    // The settings' `Privacy policy` row opens the policy on the paired phone (RemoteActivityHelper).
+    implementation("androidx.wear:wear-remote-interactions:1.2.0")
     implementation("androidx.room:room-runtime:2.8.5")
     implementation("androidx.room:room-ktx:2.8.5")
     ksp("androidx.room:room-compiler:2.8.5")

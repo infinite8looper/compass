@@ -19,10 +19,12 @@
 #   trail        a crumb saved, laying, the trail's row, retracing, facing the crumb, `Hold to clear`, `Trail complete`
 #   waypoints    empty, a few, thirty (top and end), old distances, the status band after `Log here`
 #   edit         a short name, the color being dragged (finger down), `Hold to delete` late in the hold
-#   settings     top, middle, end; `Breadcrumb trail` and `Show coordinates` on; every switch off
+#   settings     top, middle, end, `Colors` in the middle, `Privacy policy` and the address a tap on it shows with no phone;
+#                `Breadcrumb trail` and `Show coordinates` on; every switch off
 #   calibration  seven segments of the ring lit; interference
 #   check        the check screen, opened from calibration's `Check` row: its top and each of its parts (debug build only)
 #   panes        the three screens side by side; the row half way through a swipe; the compass's three ticks
+#   play         for the store listing: the waypoints list and the compass with two targets, `Waypoint 1` in focus
 # It wipes the app's data (pm clear), puts rows in its database with the device's sqlite3, feeds positions
 # (scripts/geo-feed.sh), sets the virtual sensors, switches the emulator's location setting off and on again, and
 # for `Couldn't save` makes the database file read-only for one press (it is put back also if the script is stopped). Emulators only; it refuses anything else.
@@ -373,6 +375,10 @@ sec_settings() {
   for k in 1 2 3; do $ADB shell input swipe $C $((H * 35 / 100)) $C $((H * 85 / 100)) 150; done; sleep 1; shot settings-top
   find_row "Blind navigation" > /dev/null; shot settings-middle
   find_row "Calibrate" > /dev/null; shot settings-end
+  find_row "Colors" > /dev/null; shot settings-colors
+  # The last row. No phone is paired with an emulator, so a tap shows the policy's address on the watch.
+  find_row "Privacy policy" > /dev/null; shot settings-privacy
+  tap "Privacy policy" || return 1; sleep 3; shot settings-privacy-address
   setting "Breadcrumb trail" on; setting "Show coordinates" on; find_row "Breadcrumb trail" > /dev/null; shot settings-trail-coords-on
   for s in "True north" "Feet and miles" "Tick feedback" "Blind navigation" "Breadcrumb trail" "Show coordinates" "Back up waypoints"; do setting "$s" off; done
   tap "Turn off" || return 1; sleep 1.5      # turning the backup off is asked first, on a screen of its own
@@ -396,6 +402,12 @@ sec_calibration() {
   # 92 microtesla through the back toward the upper right, a region none of the six reached: it lights (33%) with the warning.
   $ADB emu sensor set magnetic-field 46:46:-65 > /dev/null; sleep 3; shot calibrate-interference
   magnetic 40; sleep 2; leave_route; from_settings
+}
+sec_play() {   # the store's compass and list: two targets, `Waypoint 1` in focus (a tap on its row), Standard colors
+  fresh granted; feed $HERE_LAT $HERE_LON; sleep 8
+  seed 300:52.5:1200 60:137.5:400
+  to_waypoints; tap_row "Waypoint 1" || { from_waypoints; return 1; }; sleep 1.5; shot play-waypoints; from_waypoints
+  face 290; sleep 1; shot play-compass
 }
 sec_check() {
   # The check screen, from calibration's `Check` row (debug build): its top, then each part scrolled to the middle.
@@ -426,7 +438,7 @@ sec_panes() {
   sleep 2
 }
 
-ALL=(permission truenorth compass moving log coords trail waypoints edit settings calibration check panes)
+ALL=(permission truenorth compass moving log coords trail waypoints edit settings calibration check panes play)
 [ $# -eq 0 ] && set -- $ALL
 for s in "$@"; do
   if [[ ${ALL[(i)$s]} -gt ${#ALL} ]]; then echo "no section '$s' (sections: $ALL)" >&2; exit 1; fi
