@@ -310,7 +310,9 @@ class RingScreensTest {
             scrollListToItsEnd()
             // The system's tree can lag a scroll by a moment, so what it holds is waited for, here and below.
             shows("the settings list scrolled past its header") { !onScreen("Settings") }
-            val row = listOf("Blind navigation", "Breadcrumb trail", "Show coordinates", "Back up waypoints").first { place(it) != null }
+            // At its end the list may show only its last rows: since the Play-release preparation `Calibrate`, the
+            // version and `Privacy policy` (2026-10-16).
+            val row = listOf("Blind navigation", "Breadcrumb trail", "Show coordinates", "Back up waypoints", "Calibrate", "Privacy policy").first { place(it) != null }
             val before = place(row)
             for (pane in listOf(Pane.COMPASS, Pane.WAYPOINTS, Pane.SETTINGS)) { swipe(toTheLeft = true); showsPane(pane) }
             waitsFor { !onScreen("Settings") && place(row) == before }
