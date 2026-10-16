@@ -4,7 +4,7 @@
 # boots the named one with scripts/emulator.sh, waits up to 120 s for its package manager, and installs the debug
 # app if it has been built. Does not restart an emulator that is already the named one.
 # AVDs: Wear_OS_Large_Round, Wear_OS_Small_Round (API 35), Wear_OS_API34, Wear_OS_API33, Wear_OS_Newest (API 37).
-EMULATOR_ONLY_MAY_BE_NONE=1   # this script boots the emulator, so none may be attached yet
+typeset +x EMULATOR_ONLY_MAY_BE_NONE=1   # this script boots the emulator, so none may be attached yet
 source "$(dirname "$0")/emulator-only.sh" || exit 1
 ADB=~/Library/Android/sdk/platform-tools/adb
 APK=app/build/outputs/apk/debug/app-debug.apk

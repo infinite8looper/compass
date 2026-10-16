@@ -21,11 +21,19 @@
 #   - If EMULATOR_ONLY_ANY=1 is set (and no EMULATOR_ONLY_SERIAL), any number of emulators may be attached, none
 #     included: it returns 1 only for the reasons above that concern devices that are not emulators, and leaves
 #     ANDROID_SERIAL unset, so a script that sets it must name each emulator it addresses (scripts/all-suites.sh).
+# EMULATOR_ONLY_MAY_BE_NONE and EMULATOR_ONLY_ANY count only when the script that sources this sets them itself,
+# unexported (`typeset +x EMULATOR_ONLY_ANY=1`): one that arrives from the environment, or is exported, is ignored, so
+# neither can be handed to a script from outside (exported by hand, or leaked from another script).
+# `emulator_pinned` is `emulator_only` and, besides, requires ANDROID_SERIAL to be set to an emulator's serial
+# (emulator-NNNN): the scripts that address one emulator call it, so no adb call of theirs goes out unpinned.
 # The answer comes from `adb devices` each time. A device plugged in after a check is not addressed by calls that
 # are pinned, and is refused at the next check.
 EMULATOR_ONLY_ADB=~/Library/Android/sdk/platform-tools/adb
 emulator_only() {
-  local out serials other emulators
+  local out serials other emulators any=0 may_be_none=0
+  # Set by the script itself and not exported, or not at all (above).
+  [[ "$EMULATOR_ONLY_ANY" = 1 && ${(t)EMULATOR_ONLY_ANY} != *export* ]] && any=1
+  [[ "$EMULATOR_ONLY_MAY_BE_NONE" = 1 && ${(t)EMULATOR_ONLY_MAY_BE_NONE} != *export* ]] && may_be_none=1
   out=$($EMULATOR_ONLY_ADB devices 2>/dev/null)
   # adb can print lines of its own before the list (it does when this call starts its server). The devices are the
   # lines after the one that heads the list, each a serial, a tab and a state. No heading, or a line there that is
@@ -61,11 +69,11 @@ emulator_only() {
       return 0
     fi
     unset ANDROID_SERIAL
-    if [ "$EMULATOR_ONLY_MAY_BE_NONE" = "1" ]; then return 0; fi
+    if [ $may_be_none = 1 ]; then return 0; fi
     echo "refusing: the emulator $EMULATOR_ONLY_SERIAL is not attached and ready." >&2
     return 1
   fi
-  if [ "$EMULATOR_ONLY_ANY" = "1" ]; then
+  if [ $any = 1 ]; then
     unset ANDROID_SERIAL
     return 0
   fi
@@ -76,11 +84,19 @@ emulator_only() {
   fi
   if [ ${#emulators} -eq 0 ]; then
     unset ANDROID_SERIAL
-    if [ "$EMULATOR_ONLY_MAY_BE_NONE" = "1" ]; then return 0; fi
+    if [ $may_be_none = 1 ]; then return 0; fi
     echo "no emulator is attached: start one with scripts/emulator.sh" >&2
     return 1
   fi
   export ANDROID_SERIAL=${emulators[1]}
   return 0
+}
+emulator_pinned() {
+  emulator_only || return 1
+  if [[ "$ANDROID_SERIAL" != emulator-<-> ]]; then
+    unset ANDROID_SERIAL
+    echo "refusing: no emulator's serial to address (ANDROID_SERIAL is not emulator-NNNN), so no call is sent." >&2
+    return 1
+  fi
 }
 emulator_only

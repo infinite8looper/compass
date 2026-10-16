@@ -8,7 +8,7 @@
 # AVDs: Wear_OS_Large_Round (API 35, the default), Wear_OS_Small_Round (API 35), Wear_OS_API34, Wear_OS_API33,
 # Wear_OS_Newest (Wear OS 7.0, API 37, large round; a signed image: no `adb root` and no sqlite3 on it).
 # The other scripts assume one attached device: stop a running emulator with `adb emu kill` before booting another.
-EMULATOR_ONLY_MAY_BE_NONE=1   # this script boots the emulator, so none may be attached yet
+typeset +x EMULATOR_ONLY_MAY_BE_NONE=1   # this script boots the emulator, so none may be attached yet
 PORT=$2
 if [ -n "$PORT" ]; then
   if ! [[ $PORT =~ '^55(5[4-9]|[67][0-9]|8[0-4])$' ]] || (( PORT % 2 )); then

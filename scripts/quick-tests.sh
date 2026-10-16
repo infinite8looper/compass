@@ -45,6 +45,7 @@ fi
 if [ -n "$pick" ]; then export EMULATOR_ONLY_SERIAL=$pick; fi
 if [ ${#device} -gt 0 ]; then
   source "$(dirname "$0")/emulator-only.sh" || exit 1
+  emulator_pinned || exit 1      # and an emulator's serial to address
 else
   # Unit tests alone need no device, and none is addressed.
   :
@@ -89,7 +90,7 @@ sys.exit(1 if bad else 0)
 PY
 fi
 if [ ${#device} -gt 0 ]; then
-  emulator_only || exit 1
+  emulator_pinned || exit 1
   avd=$($ADB shell getprop ro.boot.qemu.avd_name | tr -d '\r')
   sdk=$($ADB shell getprop ro.build.version.sdk | tr -d '\r')
   names=()

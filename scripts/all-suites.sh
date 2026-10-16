@@ -46,7 +46,7 @@
 # scripts/device-tests.sh), addressing its emulator by its serial alone. A run that is refused counts as not run,
 # and the exit status is 1.
 # Needs JDK 17 (found with /usr/libexec/java_home) and python3.
-EMULATOR_ONLY_ANY=1   # several emulators run at once here; each one is named by its serial wherever it is addressed
+typeset +x EMULATOR_ONLY_ANY=1   # several emulators run at once here; each one is named by its serial wherever it is addressed
 source "$(dirname "$0")/emulator-only.sh" || exit 1
 ADB=~/Library/Android/sdk/platform-tools/adb
 PKG=com.infinite8looper.compass
@@ -134,7 +134,11 @@ fi
 device_run() {
   local avd=$1 sdk before_on before_seed rc=0 args=()
   export EMULATOR_ONLY_SERIAL=${serial_of[$avd]}
-  emulator_only || { echo "$avd: not run (its emulator is not attached, or a device that is not an emulator is)"; return 1; }
+  emulator_pinned || { echo "$avd: not run (its emulator is not attached, or a device that is not an emulator is)"; return 1; }
+  # The emulator on that serial must be the one planned: a port taken by another emulator after the plan was made
+  # would otherwise have the suite run there, under this AVD's name.
+  local found=$($ADB shell getprop ro.boot.qemu.avd_name 2>/dev/null | tr -d '\r')
+  if [ "$found" != "$avd" ]; then echo "$avd: not run (${serial_of[$avd]} is ${found:-an emulator whose AVD could not be read}, not $avd)"; return 1; fi
   local deadline=$(( $(date +%s) + 120 ))
   until $ADB shell pm path android 2>/dev/null | grep -q "^package:"; do
     if [ $(date +%s) -gt $deadline ]; then echo "$avd: the package manager did not answer in 120 s, not run"; return 1; fi

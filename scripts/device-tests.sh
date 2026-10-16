@@ -36,6 +36,7 @@
 # skipped or not run test, a run cut short or past its deadline, a watch not flat or not awake, a refused check).
 # Emulators only (scripts/emulator-only.sh). Needs python3.
 source "$(dirname "$0")/emulator-only.sh" || exit 1
+emulator_pinned || exit 1      # and an emulator's serial to address: no adb call below goes out unpinned
 ADB=~/Library/Android/sdk/platform-tools/adb
 cd "$(dirname "$0")/.." || exit 1
 if [ -z "$2" ]; then echo "usage: scripts/device-tests.sh <out-dir> <seconds> [-e <name> <value> ...]" >&2; exit 1; fi
@@ -71,7 +72,7 @@ if [ "$awake" != "Awake" ]; then
   echo "$avd: the screen would not stay awake after the watch was laid flat ($awake), not run"
   exit 1
 fi
-emulator_only || { echo "$avd: not run"; exit 1; }
+emulator_pinned || { echo "$avd: not run"; exit 1; }
 
 $ADB uninstall $PKG.test > /dev/null 2>&1
 $ADB uninstall $PKG > /dev/null 2>&1
@@ -106,7 +107,7 @@ feed_pid=$!
 scripts/field-requests.sh $(( seconds + 120 )) > /dev/null 2>&1 &
 fields_pid=$!
 # Looked at again at the last moment: the tests wipe the app's data and must run on this emulator alone.
-if ! emulator_only; then finish; echo "$avd: not run"; exit 1; fi
+if ! emulator_pinned; then finish; echo "$avd: not run"; exit 1; fi
 echo "$avd: running on $ANDROID_SERIAL"
 started=$(date +%s)
 $ADB shell am instrument -r -w "$@" -e additionalTestOutputDir /sdcard/Android/media/$PKG/additional_test_output $RUNNER 2>&1 \
