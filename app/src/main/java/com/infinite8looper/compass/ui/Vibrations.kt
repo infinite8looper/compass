@@ -184,8 +184,8 @@ class Vibrations private constructor(private val view: View) {
         private val askedNow = MutableStateFlow(false)
 
         /**
-         * Whether the vibrator has been asked ([prepare]'s thread has ended): from then on [branch] says how each row
-         * plays on this watch. Set once for the process.
+         * Whether the vibrator has been asked ([prepare]'s thread has ended, normally or by an exception): from then on
+         * [branch] says how each row plays on this watch. Set once for the process.
          */
         val asked: StateFlow<Boolean> = askedNow
 
@@ -198,19 +198,23 @@ class Vibrations private constructor(private val view: View) {
             preparing = true
             val app = context.applicationContext
             Thread({
-                val vibrator = app.getSystemService(VibratorManager::class.java)?.defaultVibrator?.takeIf { it.hasVibrator() }
-                if (vibrator != null) {
-                    val effects = Array(Feel.entries.size) { i -> composition(vibrator, Feel.entries[i]) }
-                    val lengths = IntArray(Feel.entries.size) { i -> if (effects[i] == null) -1 else lengthOf(vibrator, Feel.entries[i]) }
-                    prepared = Prepared(vibrator, effects, lengths)
+                // Asked is set however the thread ends, so the check screen's rows stop waiting even if asking threw.
+                try {
+                    val vibrator = app.getSystemService(VibratorManager::class.java)?.defaultVibrator?.takeIf { it.hasVibrator() }
+                    if (vibrator != null) {
+                        val effects = Array(Feel.entries.size) { i -> composition(vibrator, Feel.entries[i]) }
+                        val lengths = IntArray(Feel.entries.size) { i -> if (effects[i] == null) -1 else lengthOf(vibrator, Feel.entries[i]) }
+                        prepared = Prepared(vibrator, effects, lengths)
+                    }
+                    if (BuildConfig.DIAGNOSTICS) {
+                        val effects = prepared?.effects
+                        Log.i(TAG, "dial vibrations: " + Feel.entries.joinToString {
+                            it.name + " " + (if (effects?.get(it.ordinal) != null) "primitives" else "constant")
+                        })
+                    }
+                } finally {
+                    askedNow.value = true
                 }
-                if (BuildConfig.DIAGNOSTICS) {
-                    val effects = prepared?.effects
-                    Log.i(TAG, "dial vibrations: " + Feel.entries.joinToString {
-                        it.name + " " + (if (effects?.get(it.ordinal) != null) "primitives" else "constant")
-                    })
-                }
-                askedNow.value = true
             }, "vibrations").start()
         }
 
