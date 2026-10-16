@@ -24,7 +24,7 @@ Every picture here is a capture from an emulator, taken on 2026-10-13 from the d
 | A target with location off | `compass-location-off` | `compass`: the app stopped and started with location off |
 | `Locating…` | `compass-locating` | `compass`: location on again, the app started, 1.2 s |
 | The three ticks that show which screen is in view | `compass-pane-ticks` | `panes`: a drag toward waypoints let go early; taken as the row comes to rest |
-| Hold-flat, no target (4 frames, 0.45 s apart) | `holdflat-frames` | `moving`: `adb emu sensor set acceleration 0:9.81:0` |
+| Hold-flat, no target (4 frames, 0.45 s apart) | `holdflat-frames` | `moving`: `~/Library/Android/sdk/platform-tools/adb -s emulator-5554 emu sensor set acceleration 0:9.81:0` |
 | Hold-flat with a target (4 frames) | `holdflat-target-frames` | `moving`: the same with three targets |
 | A long name sliding (4 frames, 1.7 s apart) | `name-sliding-compass` | `moving`: the focused waypoint renamed in the database to a 60-character name |
 
@@ -63,11 +63,11 @@ The `coords` pictures were taken again on 2026-10-15 (v3 Task 8), with the latit
 | `No GPS fix` with no position: `Try again outdoors` right under it, in the latitude's row | `coords-no-gps-fix` | `coords`: a double tap, Home and location off at once, 23 s, location on, the app started |
 | `No GPS fix` while an old position shows: `Try again outdoors` at the top, drawn smaller in the narrower slot there, the coordinates with ` (old)` | `coords-no-gps-fix-old` | `coords`: location off 12 s with the app on screen, then on for a double tap and off again, 18 s |
 | A target with location off: `Location is off` under the heading, no coordinates | `coords-location-off` | `coords`: location off, the app stopped and started |
-| Hold-flat with coordinates on: the two lines left out, `Arrived at target` over `Hold flat` | `coords-holdflat-arrived` | `coords`: `seed-targets.sh 0:0:4`, `adb emu sensor set acceleration 0:9.81:0` |
+| Hold-flat with coordinates on: the two lines left out, `Arrived at target` over `Hold flat` | `coords-holdflat-arrived` | `coords`: `seed-targets.sh 0:0:4`, `~/Library/Android/sdk/platform-tools/adb -s emulator-5554 emu sensor set acceleration 0:9.81:0` |
 | The same with `No target` | `coords-holdflat-no-target` | `coords`: three waypoints, the waypoints header tapped to clear all, the same pose |
 | `Saved Crumb 1` with its accuracy at the top, over `MAG` and `Trail 1` | `coords-crumb-saved` | `coords`: `True north` off, the trail started from its row, a double tap |
 | `MAG` and `Trail 1` over the name, with the distance and the coordinates | `coords-trail-mag` | `coords`: the same, after the status |
-| `Hold flat` over `MAG` and `Trail 1` | `coords-holdflat-mag` | `coords`: the same, `adb emu sensor set acceleration 0:9.81:0` |
+| `Hold flat` over `MAG` and `Trail 1` | `coords-holdflat-mag` | `coords`: the same, `~/Library/Android/sdk/platform-tools/adb -s emulator-5554 emu sensor set acceleration 0:9.81:0` |
 | `Needs access to` under the heading and `precise location` right under it, in the latitude's row (no coordinate row shows without the permission) | `coords-needs-access` | `coords`: approximate location granted and the precise permission revoked with `pm`, the app started, a double tap answered `Keep approximate location` |
 
 ## Breadcrumb trail
@@ -116,11 +116,11 @@ The `coords` pictures were taken again on 2026-10-15 (v3 Task 8), with the latit
 | `Breadcrumb trail` and `Show coordinates` on | `settings-trail-coords-on` | `settings`: `Show coordinates` tapped (location already granted; the trail is on by default), scrolled to `Breadcrumb trail` |
 | Every switch off (3 frames: top, middle, end) | `settings-all-off` | `settings`: each row tapped, and `Turn off` answered to the backup's question |
 | Calibration: seven segments of the ring lit, `Covered 29%`, and the `Check` row at the bottom (2026-10-15, v3 Tasks 6 and 7; retaken in Task 7 fix round 1 with the ring at 0.21 of the radius) | `calibrate` | `calibration`: `Calibrate` tapped at heading 40, then the fields `0:20:-45 -20:0:-45 0:-20:-45 20:0:-45 45:20:0 0:20:45` set through the console |
-| Interference (2026-10-15, retaken in v3 Task 6 fix round 1 and, with the larger ring, in Task 7 fix round 1) | `calibrate-interference` | `calibration`: then `adb emu sensor set magnetic-field 46:46:-65` (92 microtesla, through the back toward the upper right): that segment lights too, 33%, with the warning and the red frame |
+| Interference (2026-10-15, retaken in v3 Task 6 fix round 1 and, with the larger ring, in Task 7 fix round 1) | `calibrate-interference` | `calibration`: then `~/Library/Android/sdk/platform-tools/adb -s emulator-5554 emu sensor set magnetic-field 46:46:-65` (92 microtesla, through the back toward the upper right): that segment lights too, 33%, with the warning and the red frame |
 | The release build's calibration: no `Check` row, the ring at 0.21 of the radius (2026-10-15, v3 Task 7 fix round 2) | `calibrate-release` (small only) | by hand: `./gradlew assembleRelease`, the unsigned APK aligned and signed with this machine's debug key in a scratch folder (`zipalign`, `apksigner`), installed in place of the debug build, `Calibrate` tapped; the debug build installed again after |
 | The check screen, its top: `Heading source` and `Fused heading` (2026-10-15, v3 Task 7; retaken in fix round 1 with the row's new label, with `check-inputs` and `check-vibrations`) | `check-top` | `check`: `Check` tapped on calibration at heading 40 |
 | The check screen in the watch build (minified, not debuggable): its top, and `Wear SDK reached` `Yes`, `One-handed gestures` `No` (2026-10-15, v3 Task 7 fix round 1) | `check-watch-build`, `check-watch-build-inputs` (small only) | by hand: `./gradlew assembleWatch`, `app-watch.apk` installed in place of the debug build, `Calibrate` and `Check` tapped, scrolled; the debug build installed again after |
-| The check screen at `Watch colors`: the scheme's colors with their dots (large: `dynamic_color_theme_enabled` 1, the API 35 image's `#D9E2FF` primary), or `None` | `check-watch-colors`, `check-watch-colors-none` (large) | `check`: scrolled; the large one with the setting put to 1 with `adb shell settings put global` and deleted after, the `-none` one and the small one without it |
+| The check screen at `Watch colors`: the scheme's colors with their dots (large: `dynamic_color_theme_enabled` 1, the API 35 image's `#D9E2FF` primary), or `None` | `check-watch-colors`, `check-watch-colors-none` (large) | `check`: scrolled; the large one with the setting put to 1 with `~/Library/Android/sdk/platform-tools/adb -s emulator-5554 shell settings put global` and deleted after, the `-none` one and the small one without it |
 | The check screen at `Inputs` | `check-inputs` | `check`: scrolled |
 | The check screen at `Vibrations` | `check-vibrations` | `check`: scrolled |
 | The check screen's end: the `Play` rows, each saying `Primitives` | `check-end` | `check`: twelve swipes up |
@@ -128,7 +128,7 @@ The `coords` pictures were taken again on 2026-10-15 (v3 Task 8), with the latit
 
 ## The largest font size
 
-The system's font scale set to 1.24, the largest step of the Wear OS font size setting (`adb -s emulator-5554 shell settings put system font_scale 1.24`), by hand and not by the script. Three waypoints, one named `Trailhead parking lot north`, three crumbs, `Breadcrumb trail` on and a trail being laid.
+The system's font scale set to 1.24, the largest step of the Wear OS font size setting (`~/Library/Android/sdk/platform-tools/adb -s emulator-5554 shell settings put system font_scale 1.24`), by hand and not by the script. Three waypoints, one named `Trailhead parking lot north`, three crumbs, `Breadcrumb trail` on and a trail being laid.
 
 | State | File | How it was produced |
 |-|-|-|
@@ -140,7 +140,7 @@ The system's font scale set to 1.24, the largest step of the Wear OS font size s
 | Waypoints with the `Drop crumb` row | `font-largest-waypoints` | a second Back, the list scrolled up by one row |
 | Edit, a name on two lines | `font-largest-edit` | a long press on `Trailhead parking lot north` |
 | Calibration, with the `Check` row (2026-10-15, v3 Tasks 6 and 7; retaken in Task 7 fix round 1 with the ring at 0.21 of the radius) | `font-largest-calibration` | `scripts/screenshot-matrix.sh <size> calibration` with the font scale at 1.24, into a scratch folder (`MATRIX_OUT`), and copied |
-| Calibration with interference: the warning, drawn smaller to hold its three lines, clear of the frame and above `Check` (2026-10-15, retaken in v3 Task 7 fix round 1) | `font-largest-calibration-interference` | the same run: `adb emu sensor set magnetic-field 46:46:-65` |
+| Calibration with interference: the warning, drawn smaller to hold its three lines, clear of the frame and above `Check` (2026-10-15, retaken in v3 Task 7 fix round 1) | `font-largest-calibration-interference` | the same run: `~/Library/Android/sdk/platform-tools/adb -s emulator-5554 emu sensor set magnetic-field 46:46:-65` |
 | The check screen, its top and its end (2026-10-15, v3 Task 7) | `font-largest-check-top`, `font-largest-check-end` (small only) | `scripts/screenshot-matrix.sh small calibration check` with the font scale at 1.24, into a scratch folder (`MATRIX_OUT`), and copied |
 | The question before backups are turned off | `font-largest-backup-off-question` | `Back up waypoints` tapped |
 
@@ -164,8 +164,8 @@ The system's font scale set to 1.24, the largest step of the Wear OS font size s
 The `accent-` pictures need the system's color scheme switched on through `adb`, since no image does it from the watch face:
 
 ```
-adb -s emulator-5554 shell settings put global dynamic_color_theme_enabled 1
-adb -s emulator-5554 shell settings put secure theme_customization_overlay_packages '{"android.theme.customization.system_palette":"00AA55","android.theme.customization.accent_color":"00AA55","android.theme.customization.color_source":"preset","android.theme.customization.theme_style":"TONAL_SPOT"}'
+~/Library/Android/sdk/platform-tools/adb -s emulator-5554 shell settings put global dynamic_color_theme_enabled 1
+~/Library/Android/sdk/platform-tools/adb -s emulator-5554 shell settings put secure theme_customization_overlay_packages '{"android.theme.customization.system_palette":"00AA55","android.theme.customization.accent_color":"00AA55","android.theme.customization.color_source":"preset","android.theme.customization.theme_style":"TONAL_SPOT"}'
 ```
 
 The app follows when it next comes back on screen (Home, then open it again). `settings delete global dynamic_color_theme_enabled` switches the scheme off; this image also reads the setting as unset after every boot.
@@ -176,7 +176,7 @@ The `colors-standard-` and `colors-watchface-` pictures of the large and small w
 
 The others were taken earlier on 2026-10-14, before those three changes, from the debug build, by hand (adb, `scripts/swipe.sh`, `scripts/tap-text.sh`): eight targets seeded with `scripts/seed-targets.sh 20:0 65:45 110:90 155:135 200:180 245:225 290:270 335:315` (each 45 degrees of place apart, 20 degrees of bearing off it), the four frames with the edit screen of `Waypoint 5` (place 180). In those the `Watch face` accent is the one deepened only to 0.15 (`#D8E1FF` on API 35) or not deepened (`#B7CFFF` with the seed `2F8BFF`), and the ring's third anchor is the error color.
 
-In all of them the position was fed and the watch laid flat at a magnetic heading of 40; `dynamic_color_theme_enabled` was put to 1 or 0 with `adb shell settings put global`; the API 37 image had the seed `2F8BFF` written as in "Other emulators".
+In all of them the position was fed and the watch laid flat at a magnetic heading of 40; `dynamic_color_theme_enabled` was put to 1 or 0 with `~/Library/Android/sdk/platform-tools/adb -s emulator-5554 shell settings put global`; the API 37 image had the seed `2F8BFF` written as in "Other emulators".
 
 | State | File | How it was produced |
 |-|-|-|
