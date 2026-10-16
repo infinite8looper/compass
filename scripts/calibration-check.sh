@@ -68,8 +68,11 @@ warned=$(scripts/ui-dump.sh 2>/dev/null | grep -c "Magnetic interference nearby"
 echo "field 46:46:-65 (92 microtesla): ${now:-none}, warning shown: $warned"
 awake
 if [ "$now" != "54%" ] || [ "$warned" -lt 1 ]; then bad=1; echo "  the 92 microtesla field did not light its segment (54%), or no warning" >&2; fi
-# Whether the window manager keeps the screen on for the app (a window of it asks to be kept on).
-kept_on() { $ADB shell dumpsys power | grep -q "SCREEN_BRIGHT_WAKE_LOCK.*'WindowManager.*com\.infinite8looper\.compass"; }
+# Whether the window manager keeps the screen on for the app (a window of it asks to be kept on): its screen-bright
+# wake lock, whose work source names the app's package (API 34, 35 and 37) or only its uid (API 33, as
+# `ws=WorkSource{10088}`).
+uid=$($ADB shell pm list packages -U com.infinite8looper.compass | tr -d '\r' | sed -n 's/^package:com\.infinite8looper\.compass uid:\([0-9]*\).*/\1/p' | head -1)
+kept_on() { $ADB shell dumpsys power | grep -E -q "SCREEN_BRIGHT_WAKE_LOCK.*'WindowManager.*(com\.infinite8looper\.compass|WorkSource\{${uid:-none}[ }])"; }
 if scripts/ui-dump.sh 2>/dev/null | grep -q "text='Check'"; then
   before=$now
   scripts/tap-text.sh Check > /dev/null
