@@ -1,0 +1,14 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- The watch's own theme, without the window's swipe-to-dismiss: on the three side-by-side screens a right
+         swipe turns to the next screen and never closes the app. Up to API level 35 the navigation host swipes the
+         screens opened from a row back itself, which does not depend on this. Above that it leaves the swipe to the
+         system's back gesture, which this switches off, so there the app puts those screens in a swipe box of its
+         own (SwipeBack in ui/CompassApp.kt). Lint's advice against switching it off is about apps that would
+         then have no way back; here the swipe has another meaning, by design. -->
+    <style name="AppTheme" parent="@android:style/Theme.DeviceDefault">
+        <item name="android:windowSwipeToDismiss" tools:ignore="WearBackNavigation">false</item>
+        <!-- The start screen shows the launcher icon with its disc (colors.xml), on the theme's black: the icon at
+             the start matches the launcher's, on a black background. -->
+        <item name="android:windowSplashScreenIconBackgroundColor">@color/ic_launcher_background</item>
+    </style>
+</resources>

@@ -1,0 +1,5 @@
+<resources>
+    <!-- The launcher icon's disc: the app's blue (2F8BFF, hue 213.5) at HSV value 0.44, the lightest shade of it on
+         which the needle's red (FF3B30) has 3 to 1 (3.06); white on it has 10.9 to 1. IconTest checks these. -->
+    <color name="ic_launcher_background">#153D70</color>
+</resources>

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Only the waypoint database and the settings file are backed up or transferred; everything else is left out
+  because an <include> turns off the default of including all app data.
+
+  The system also copies the journal and log files that lie next to a listed database (-journal, -wal), listed or
+  not. The app asks for a database without a write-ahead log and with a journal that is emptied after every change;
+  a platform whose default is a write-ahead log keeps one anyway. In either case the backup agent hands nothing over
+  in a pass where one of those files holds any bytes, or where the database file is not on record as rebuilt.
+
+  The two files are handed to a cloud backup only when the transport says it encrypts the backup end to end (on a
+  watch: a screen lock is set). Device-to-device transfer does not depend on that.
+
+  These rules are applied by the system's own copy (BackupAgent.onFullBackup). The marker file that the app's backup
+  agent hands over by itself while "Back up waypoints" is off by the wearer's doing does not pass through them: it is
+  handed over whether or not the transport encrypts, and in a device-to-device transfer too. It holds no waypoint, no
+  crumb and no setting other than that the switch is off. The system restores only the
+  files named here, so a marker is never restored.
+-->
+<data-extraction-rules>
+    <cloud-backup disableIfNoEncryptionCapabilities="true">
+        <include domain="database" path="waypoints.db" />
+        <include domain="file" path="datastore/settings.preferences_pb" />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="database" path="waypoints.db" />
+        <include domain="file" path="datastore/settings.preferences_pb" />
+    </device-transfer>
+</data-extraction-rules>
