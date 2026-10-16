@@ -20,10 +20,12 @@
 # Deadlines: the switch has the deadlines of scripts/switch-emulator.sh (90 s for the old emulator to stop, 300 s
 # to boot, 120 s for the package manager); the Gradle run has 40 minutes, after which it is stopped and counted as
 # failed (ALL_SUITES_GRADLE_SECONDS changes that).
-# One test runs on Wear_OS_Newest (API 37) alone, by the owner's decision of 2026-10-15 ("API 37 only"):
-# CalibrationScreenTest#withNoNewSegmentTheScreenIsLetGoTwoMinutesAfterOpening, which waits about two minutes. On every
-# other image the run is given it as `notClass`, so it is not run there and not counted (neither passed nor skipped);
-# each such line says so. On API 37 the run must have passed it, or the run counts as failed.
+# Two tests run on Wear_OS_Newest (API 37) alone, by the owner's decisions of 2026-10-15 ("API 37 only" and "Add
+# it, API 37 only"): CalibrationScreenTest#withNoNewSegmentTheScreenIsLetGoTwoMinutesAfterOpening, which waits about
+# two minutes, and CheckScreenTest#theCheckScreenKeepsTheDisplayOnForTwoMinutesFromEachTouchAndTurnOfTheCrown, which
+# waits about four. On every other image the run is given them as `notClass`, so they are not run there and not
+# counted (neither passed nor skipped); each such line says so. On API 37 the run must have passed both, or the run
+# counts as failed.
 # Exit status: 0 if every run succeeded, no test failed and no test was skipped, 1 otherwise: on an emulator
 # laid flat no test of this suite is skipped, so a skipped one means a test did not check its subject.
 # The last emulator in the list is left running with the debug app installed again, and every emulator the suite
@@ -42,7 +44,7 @@ if [ ${#avds} -eq 0 ]; then avds=(Wear_OS_API33 Wear_OS_API34 Wear_OS_Newest Wea
 out=app/build/all-suites
 mkdir -p $out || exit 1
 gradle_seconds=${ALL_SUITES_GRADLE_SECONDS:-2400}
-TWO_MINUTE_TEST=CalibrationScreenTest#withNoNewSegmentTheScreenIsLetGoTwoMinutesAfterOpening
+ONLY_37=(CalibrationScreenTest#withNoNewSegmentTheScreenIsLetGoTwoMinutesAfterOpening CheckScreenTest#theCheckScreenKeepsTheDisplayOnForTwoMinutesFromEachTouchAndTurnOfTheCrown)
 feed_pid=""
 gradle_pid=""
 fields_pid=""
@@ -106,7 +108,10 @@ for avd in $avds; do
   scripts/field-requests.sh $(( gradle_seconds + 120 )) > /dev/null 2>&1 &
   fields_pid=$!
   only37=()
-  if [ "$sdk" != "37" ]; then only37=("-Pandroid.testInstrumentationRunnerArguments.notClass=com.infinite8looper.compass.$TWO_MINUTE_TEST"); fi
+  if [ "$sdk" != "37" ]; then
+    named=(com.infinite8looper.compass.${^ONLY_37})
+    only37=("-Pandroid.testInstrumentationRunnerArguments.notClass=${(j:,:)named}")
+  fi
   ANDROID_SERIAL=$ANDROID_SERIAL ./gradlew connectedDebugAndroidTest $only37 > $out/suite-$avd.log 2>&1 &
   gradle_pid=$!
   deadline=$(( $(date +%s) + gradle_seconds ))
@@ -131,16 +136,18 @@ for avd in $avds; do
     if [ ${#counts} -lt 3 ]; then counts=(0 0 0); bad=1; fi
     sum_passed=$(( sum_passed + counts[1] )); sum_failed=$(( sum_failed + counts[2] )); sum_skipped=$(( sum_skipped + counts[3] ))
     if [ "$sdk" = "37" ]; then
-      # The two-minute test must be among the passed ones here: its one image.
+      # The tests run here alone must be among the passed ones: their one image.
+      for t in $ONLY_37; do
       if ! python3 -c 'import glob,sys,xml.etree.ElementTree as ET
 cls, name = sys.argv[2].split("#")
 for f in glob.glob(sys.argv[1] + "/**/*.xml", recursive=True):
     for tc in ET.parse(f).getroot().iter("testcase"):
         if tc.get("classname", "").endswith(cls) and tc.get("name") == name and len(tc) == 0: sys.exit(0)
-sys.exit(1)' $out/results-$avd $TWO_MINUTE_TEST; then echo "$avd: $TWO_MINUTE_TEST did not pass here, its one image"; bad=1; fi
+sys.exit(1)' $out/results-$avd $t; then echo "$avd: $t did not pass here, its one image"; bad=1; fi
+      done
       note=""
     else
-      note=" (without $TWO_MINUTE_TEST, which runs on API 37 alone)"
+      note=" (without ${(j:, :)ONLY_37}, which run on API 37 alone)"
     fi
     summary+=("$avd (API $sdk): ${counts[1]} passed, ${counts[2]} failed, ${counts[3]} skipped, gradle $gstatus$note")
     if [ "${counts[2]}" != "0" ]; then bad=1; fi

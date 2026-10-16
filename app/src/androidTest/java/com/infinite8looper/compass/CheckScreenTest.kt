@@ -288,7 +288,7 @@ class CheckScreenTest {
      * The check screen keeps the display on while it is open (owner, 2026-10-15: "Keep on while open", as calibration):
      * kept on with it on top (calibration under it is not composed then, so this is its own), and let go once the
      * wearer has left it and calibration for the settings. The two minutes and the touches that count them again are
-     * the rule `checkAwakeUntil` (CheckTest).
+     * the rule `checkAwakeUntil` (CheckTest), seen on the device by the next test.
      */
     @Test fun theScreenIsKeptOnWhileTheCheckScreenIsOpenAndNotAfterLeavingIt() = runBlocking {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
@@ -325,6 +325,62 @@ class CheckScreenTest {
                 if (!visible(SOURCE_ROW)) break
             }
             assertFalse("the crown did not scroll the list; on screen: ${wordsOnScreen()}", visible(SOURCE_ROW))
+        }
+        Unit
+    }
+
+    /** A tap where [text] is, as a finger gives it: down and up on the touch screen. */
+    private fun tapOn(text: String) {
+        val bounds = Rect().also { r -> nodes().first { it.isVisibleToUser && it.text?.toString() == text }.getBoundsInScreen(r) }
+        val down = SystemClock.uptimeMillis()
+        for ((action, at) in listOf(MotionEvent.ACTION_DOWN to down, MotionEvent.ACTION_UP to down + 60)) {
+            val e = MotionEvent.obtain(down, at, action, bounds.exactCenterX(), bounds.exactCenterY(), 0)
+            e.source = InputDevice.SOURCE_TOUCHSCREEN
+            assertTrue(instrumentation.uiAutomation.injectInputEvent(e, true))
+            e.recycle()
+        }
+    }
+
+    /** Waits until [ms] after [from] (uptime). */
+    private suspend fun until(from: Long, ms: Long) { delay((from + ms - SystemClock.uptimeMillis()).coerceAtLeast(0)) }
+
+    /**
+     * The check screen keeps the display on for two minutes counted again from each touch and from each turn of the
+     * crown (nav/Check.kt, `checkAwakeUntil`), then lets it go. A tap on the title at 15 s after the opening: still kept
+     * on at 128 s, past the opening's two minutes. A turn of the crown then: still kept on at 143 s, past the tap's two
+     * minutes; let go between 110 s and 130 s after the turn. About four minutes: run on API 37 alone
+     * (scripts/all-suites.sh).
+     */
+    @Test fun theCheckScreenKeepsTheDisplayOnForTwoMinutesFromEachTouchAndTurnOfTheCrown() = runBlocking {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            try {
+                openCheck()
+                // The screen's own clock starts when it is composed, before this.
+                val opened = SystemClock.uptimeMillis()
+                assertTrue("the check screen open, the screen not kept on", keptOn(scenario))
+                until(opened, 15_000)
+                val tappedAt = SystemClock.uptimeMillis()
+                tapOn("Check")
+                until(opened, 128_000)
+                assertTrue("kept on two minutes from the opening, not from the tap at 15 s: let go by 128 s", keptOn(scenario))
+                val turnedAt = SystemClock.uptimeMillis()
+                turnCrown(1f)
+                until(opened, 143_000)
+                assertTrue(
+                    "kept on two minutes from the tap at ${(tappedAt - opened) / 1000} s, not from the turn of the crown at " +
+                        "${(turnedAt - opened) / 1000} s: let go by 143 s",
+                    keptOn(scenario),
+                )
+                while (keptOn(scenario)) {
+                    assertTrue("still kept on 130 s after the turn of the crown", SystemClock.uptimeMillis() - turnedAt < 130_000)
+                    delay(250)
+                }
+                val letGo = SystemClock.uptimeMillis() - turnedAt
+                Log.i("CheckScreenTest", "API ${Build.VERSION.SDK_INT}: let go $letGo ms after the turn of the crown")
+                assertTrue("let go $letGo ms after the turn of the crown, before two minutes", letGo >= 110_000)
+            } finally {
+                instrumentation.uiAutomation.executeShellCommand("input keyevent KEYCODE_WAKEUP").close()
+            }
         }
         Unit
     }
