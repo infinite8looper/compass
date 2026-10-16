@@ -39,10 +39,16 @@ const val ACCENT_MIN_SATURATION = 0.30f
 const val ACCENT_INK_SATURATION_APART = 0.2f
 
 /**
- * Under this saturation a color is a gray. A scheme's primary under it, once it reads, is not used; the ink and the
- * grays taken from a scheme ([graysFor]) are held under it. The grays of the schemes the emulators gave had up to 0.085.
+ * Under this saturation a color is a gray. A scheme's primary under it, once it reads, makes a gray scheme
+ * ([isGrayScheme]); the ink and the grays taken from a scheme ([graysFor]) are held under it. The grays of the schemes the emulators gave had up to 0.085.
  */
 const val GRAY_SATURATION = 0.10f
+
+/**
+ * In a gray scheme ([isGrayScheme]) the pointer is a gray-red toward north, near it in hue: north is told from it by
+ * its saturation, at least this much more (the margin by which the error color is told from the accent too).
+ */
+const val NORTH_POINTER_SATURATION_APART = 0.3f
 
 /** North is at least this many degrees of hue from the pointer. */
 const val MIN_HUE_APART = 60f
@@ -85,12 +91,14 @@ data class RoleColors(val accent: Int, val north: Int, val error: Int)
  *   pointer could not be told from the ticks, nor a gray switch that is on from one that is off.
  *
  * The primary alone is kept when it is pale (v3): one under [ACCENT_MIN_SATURATION] once it reads, but at or over
- * [GRAY_SATURATION], is deepened to [ACCENT_MIN_SATURATION], with its hue and its brightness kept ([deepened]). Only a
- * primary under [GRAY_SATURATION], which is a gray, is not used.
+ * [GRAY_SATURATION], is deepened to [ACCENT_MIN_SATURATION], with its hue and its brightness kept ([deepened]). A
+ * primary under [GRAY_SATURATION] is a gray, and is not used as the accent as it stands (below).
  *
- * A scheme whose primary is not used is not used at all: all three colors are the app's own, so the app's blue
- * never stands beside a north from the watch. A tertiary or an error color that is not used gives only its own
- * role the app's red.
+ * A primary under [GRAY_SATURATION] makes a gray scheme ([isGrayScheme], [grayRoleColors]) when the tertiary or the
+ * error color is a color: north is made from that color and the pointer is a gray-red between the primary and north
+ * (owner, 2026-10-16). A scheme whose primary is a gray and that has no color at all is not used: all three colors
+ * are the app's own, so the app's blue never stands beside a north from the watch. A tertiary or an error color
+ * that is not used gives only its own role the app's red.
  *
  * Then north is kept apart from the accent and deep enough to find among the ticks: on the color that is
  * returned, its hue is at least [MIN_HUE_APART] from the accent's, its saturation at least
@@ -105,10 +113,87 @@ data class RoleColors(val accent: Int, val north: Int, val error: Int)
  */
 fun roleColors(scheme: WatchScheme?): RoleColors {
     val own = RoleColors(FALLBACK_ACCENT, FALLBACK_NORTH, FALLBACK_ERROR)
-    val accent = scheme?.let { usableAccent(it.primary) } ?: return own
+    if (scheme == null) return own
+    if (isGrayScheme(scheme)) return grayRoleColors(scheme)
+    val accent = usableAccent(scheme.primary) ?: return own
     val north = northFor(accent, usable(scheme.tertiary) ?: FALLBACK_NORTH)
     val error = usable(scheme.error)?.takeUnless { looksLike(it, accent) } ?: FALLBACK_ERROR
     return RoleColors(accent, north, error)
+}
+
+/**
+ * Whether [scheme] is a gray scheme: its primary, once it reads on black, has less than [GRAY_SATURATION] (a gray),
+ * and its tertiary or its error color is a color ([MIN_SATURATION] or more once it reads), which north is made from.
+ */
+fun isGrayScheme(scheme: WatchScheme): Boolean =
+    saturationOf(readable(scheme.primary and 0xFFFFFF)) < GRAY_SATURATION && (usable(scheme.tertiary) ?: usable(scheme.error)) != null
+
+/**
+ * The three roles of a gray scheme ([isGrayScheme]). Owner, 2026-10-16: "For a color scheme like mine, North should
+ * be the red from the watch face, and the marker colors and other elements should be gray or gray-red. I.e. North is
+ * the dominant theme color and the waypoints and other UI elements come from other theme colors with
+ * interpolation".
+ *
+ * - North is made from the tertiary, or from the error color where the tertiary is a gray. The tertiary comes first
+ *   because it is the color the system makes from the watch face's own accent (on the owner's watch the tertiary
+ *   0xFFC0B7 from the watch face's accent_color #FF3E32), where the error color is the system's error tone. Its hue
+ *   and brightness are kept and it is deepened to at least [NORTH_MIN_SATURATION] and to
+ *   [NORTH_POINTER_SATURATION_APART] more than the pointer's, and made to read on black.
+ * - The pointer (the accent) is the primary, made to read, mixed with north: the least share of north that gives it
+ *   [ACCENT_MIN_SATURATION], a gray-red that the ink (under [GRAY_SATURATION]) and north are both told from by
+ *   saturation.
+ * - The error color is the scheme's as for any scheme: the app's red where it looks like the pointer ([looksLike]).
+ *
+ * The bounds are checked on the colors returned, in whole red, green and blue.
+ */
+private fun grayRoleColors(scheme: WatchScheme): RoleColors {
+    val from = usable(scheme.tertiary) ?: usable(scheme.error) ?: FALLBACK_NORTH
+    val primary = readable(scheme.primary and 0xFFFFFF)
+    val hue = hueOf(from)
+    // Aimed at as fractions, never read back from a rounded color on the way (as for [northFor]): the saturation is
+    // raised until north is deep enough beside the pointer made toward it, and the brightness until it reads; at
+    // full brightness a hue too dark to read gives up saturation instead.
+    var saturation = maxOf(saturationOf(from), NORTH_MIN_SATURATION, ACCENT_MIN_SATURATION + NORTH_POINTER_SATURATION_APART)
+    var value = valueOf(from)
+    repeat(NORTH_PASSES) {
+        val north = fromHsv(hue, minOf(1f, saturation), value)
+        if (contrastOnBlack(north) < MIN_CONTRAST) {
+            if (value < 1f) value = minOf(1f, value + NORTH_STEP) else saturation -= NORTH_STEP
+            return@repeat
+        }
+        val accent = towardNorth(primary, north)
+        if (saturationOf(north) >= NORTH_MIN_SATURATION && saturationOf(north) - saturationOf(accent) >= NORTH_POINTER_SATURATION_APART) {
+            val error = usable(scheme.error)?.takeUnless { looksLike(it, accent) } ?: FALLBACK_ERROR
+            return RoleColors(accent, north, error)
+        }
+        saturation = minOf(1f, saturation + NORTH_STEP)
+    }
+    // Not reached for any color: at full brightness 0.61 of saturation reads at every hue. The app's own set stands in.
+    return RoleColors(FALLBACK_ACCENT, FALLBACK_NORTH, FALLBACK_ERROR)
+}
+
+/**
+ * [gray] (a color that reads on black) mixed with [north] (one that reads too), straight in red, green and blue, and
+ * made to read on black ([readable]): with the least share of north, found by halving, at which the result has
+ * [ACCENT_MIN_SATURATION].
+ */
+private fun towardNorth(gray: Int, north: Int): Int {
+    fun mix(share: Float): Int {
+        fun channel(shift: Int): Int {
+            val a = gray shr shift and 0xFF
+            val b = north shr shift and 0xFF
+            return (a + (b - a) * share).roundToInt()
+        }
+        return readable((channel(16) shl 16) or (channel(8) shl 8) or channel(0))
+    }
+    if (saturationOf(gray) >= ACCENT_MIN_SATURATION) return gray
+    var low = 0f
+    var high = 1f
+    repeat(20) {
+        val mid = (low + high) / 2f
+        if (saturationOf(mix(mid)) >= ACCENT_MIN_SATURATION) high = mid else low = mid
+    }
+    return mix(high)
 }
 
 /**
@@ -310,7 +395,20 @@ val STANDARD_PALETTE = Palette(
  */
 fun paletteFor(mode: ColorMode, scheme: WatchScheme?): Palette =
     if (mode == ColorMode.STANDARD || scheme == null) STANDARD_PALETTE
+    else if (isGrayScheme(scheme)) roleColors(scheme).let { Palette(it, graysFor(scheme), WaypointColors.RING, grayRingThird(scheme)) }
     else Palette(roleColors(scheme), graysFor(scheme), WaypointColors.RING)
+
+/**
+ * The third anchor of a gray scheme's ring, after the gray-red pointer and north: a gray of the scheme, so that the
+ * waypoints' colors are grays and gray-reds between the three (owner, 2026-10-16). It is the scheme's `outline`, or
+ * where it gives none its `onSurfaceVariant`, else its primary; made to read on black ([readable]) and held under
+ * [GRAY_SATURATION] (its hue and brightness kept).
+ */
+fun grayRingThird(scheme: WatchScheme): Int {
+    val from = (scheme.outline ?: scheme.onSurfaceVariant ?: scheme.primary) and 0xFFFFFF
+    val gray = if (saturationOf(from) < GRAY_SATURATION) from else fromHsv(hueOf(from), GRAY_SATURATION - 0.01f, valueOf(from))
+    return readable(gray)
+}
 
 /**
  * The ink and the grays on a watch whose scheme is [scheme]: the ink from its `onSurface`, the secondary text from

@@ -89,11 +89,19 @@ class WatchColorsTest {
         val edge = roles(0x000080, paleRed).accent
         assertEquals(edge, roles(edge, paleRed).accent)
     }
-    @Test fun aNearBlackPrimaryHasNoColorToKeepAndGivesTheBlue() {
-        assertEquals(blue, roles(0x101010, paleRed).accent)
-        assertEquals(blue, roles(0x000000, paleRed).accent)
-        // Lightened until it reads, this one is a gray with no color left in it.
-        assertEquals(blue, roles(0x0A0808, paleRed).accent)
+    @Test fun aNearBlackPrimaryHasNoColorToKeepAndMakesAGrayScheme() {
+        // Owner, 2026-10-16, on a watch-face scheme like the one on their watch (primary 0xFFF9EB, a gray): "For a color
+    // scheme like mine, North should be the red from the watch face, and the marker colors and other elements should be
+    // gray or gray-red. I.e. North is the dominant theme color and the waypoints and other UI elements come from other
+    // theme colors with interpolation". Until then a primary under GRAY_SATURATION gave way to the app's whole set.
+        // Lightened until it reads, each of these is a gray with no color left in it: the pointer is a gray-red
+        // toward north, which comes from the tertiary.
+        for (primary in listOf(0x101010, 0x000000, 0x0A0808)) {
+            val roles = roles(primary, paleRed)
+            assertNotEquals(blue, roles.accent)
+            assertEquals(hueOf(paleRed), hueOf(roles.north), 2f)
+            assertTrue(hueApart(roles.accent, roles.north) < 15f)
+        }
     }
     @Test fun aDarkErrorColorIsLightenedToo() {
         val error = roles(paleBlue, paleViolet, error = 0x8C1D18).error
@@ -110,12 +118,18 @@ class WatchColorsTest {
         assertEquals(0.28f, saturationOf(paleBlue), 0.005f)
         assertEquals(0.02f, saturationOf(0xE8EAED), 0.005f)
     }
-    @Test fun aGrayPrimaryGivesTheBlue() {
-        assertEquals(blue, roles(0x808080, paleRed).accent)
-        assertEquals(blue, roles(0xFFFFFF, paleRed).accent)
-        assertEquals(blue, roles(0xE8EAED, paleRed).accent)
+    @Test fun aGrayPrimaryBesideAColorMakesAGraySchemeWithAGrayRedPointer() {
+        // Owner, 2026-10-16, on a watch-face scheme like the one on their watch (primary 0xFFF9EB, a gray): "For a color
+    // scheme like mine, North should be the red from the watch face, and the marker colors and other elements should be
+    // gray or gray-red. I.e. North is the dominant theme color and the waypoints and other UI elements come from other
+    // theme colors with interpolation". Until then a primary under GRAY_SATURATION gave way to the app's whole set.
         // A gray with a little warmth is still a gray among the ink and the dim text.
-        assertEquals(blue, roles(0x8A8580, paleRed).accent)
+        for (primary in listOf(0x808080, 0xFFFFFF, 0xE8EAED, 0x8A8580)) {
+            assertTrue(isGrayScheme(WatchScheme(primary, paleRed, paleRed)))
+            val accent = roles(primary, paleRed).accent
+            assertNotEquals(blue, accent)
+            assertTrue("%06X".format(accent), hueApart(accent, paleRed) < 15f)
+        }
     }
     @Test fun aPrimaryWithTheAccentsLeastSaturationIsUsedAsItIs() {
         // The owner (2026-10-14), on a pale accent: "Deepen to ~0.3 saturation". Until then a primary of 0.15 or
@@ -146,12 +160,15 @@ class WatchColorsTest {
             assertTrue(what, contrastOnBlack(accent) >= MIN_CONTRAST)
         }
     }
-    @Test fun aPrimaryBelowTheSaturationOfAGrayIsStillNotUsed() {
+    @Test fun aPrimaryBelowTheSaturationOfAGrayIsTakenForAGray() {
         // The least saturation a primary needs to be deepened rather than taken for a gray: the grays of the
-        // schemes the emulators gave have up to 0.085.
+        // schemes the emulators gave have up to 0.085. Taken for a gray it is no longer thrown away with the rest
+        // of the scheme (owner, 2026-10-16): the pointer takes north's hue instead of its own.
         assertEquals(0.10f, GRAY_SATURATION, 0f)
-        assertEquals(blue, roles(0xE6E6FF, paleRed).accent)      // 0.098
-        assertNotEquals(blue, roles(0xE5E5FF, paleRed).accent)   // 0.102
+        assertTrue(isGrayScheme(WatchScheme(0xE6E6FF, paleRed, paleRed)))      // 0.098
+        assertFalse(isGrayScheme(WatchScheme(0xE5E5FF, paleRed, paleRed)))     // 0.102
+        assertTrue(hueApart(roles(0xE6E6FF, paleRed).accent, paleRed) < 15f)
+        assertEquals(240f, hueOf(roles(0xE5E5FF, paleRed).accent), 1.5f)
     }
     @Test fun aGrayTertiaryGivesTheRedAndAGrayErrorGivesTheRed() {
         assertEquals(RoleColors(paleBlueAccent, red, red), roles(paleBlue, 0x808080, error = 0x909090))
@@ -268,15 +285,20 @@ class WatchColorsTest {
     }
     // A primary that cannot be used: all three are the app's own
 
-    @Test fun aSchemeWhosePrimaryIsRejectedGivesTheWholeFallbackSet() {
+    @Test fun aGrayPrimaryBesideAColorNoLongerGivesTheWholeFallbackSet() {
+        // Owner, 2026-10-16, on a watch-face scheme like the one on their watch (primary 0xFFF9EB, a gray): "For a color
+    // scheme like mine, North should be the red from the watch face, and the marker colors and other elements should be
+    // gray or gray-red. I.e. North is the dominant theme color and the waypoints and other UI elements come from other
+    // theme colors with interpolation". Until then a primary under GRAY_SATURATION gave way to the app's whole set.
+        // A gray primary beside a tertiary and an error color that could both have been used: north is the
+        // tertiary's hue, and the pointer is a gray-red toward it. A near-black one, and a pale one that is a gray.
         val own = roleColors(null)
-        // A gray primary beside a tertiary and an error color that could both have been used.
-        assertEquals(own, roles(0x808080, 0x2F6BFF, paleRed))
-        assertEquals(own, roles(0x808080, 0xFF7AA8, 0xFFBEB9))
-        // A near-black one, and a pale one that is a gray (v3: a pale primary above that is deepened and kept,
-        // in aPalePrimaryJustUnderTheLeastSaturationIsDeepenedAndKept).
-        assertEquals(own, roles(0x101010, 0xFF7AA8, paleRed))
-        assertEquals(own, roles(0xE6E6FF, 0xFF7AA8, paleRed))
+        for ((primary, tertiary) in listOf(0x808080 to 0x2F6BFF, 0x808080 to 0xFF7AA8, 0x101010 to 0xFF7AA8, 0xE6E6FF to 0xFF7AA8)) {
+            val roles = roles(primary, tertiary)
+            val what = "%06X %06X -> %s".format(primary, tertiary, roles)
+            assertNotEquals(what, own, roles)
+            assertEquals(what, hueOf(tertiary), hueOf(roles.north), 2f)
+        }
     }
     @Test fun theFixedColorsOfTheApi35ImageAreNowUsed() {
         // Until v3 the whole scheme gave way to the app's own colors, its primary having 0.149. v3 spec: "A pale
@@ -365,7 +387,10 @@ class WatchColorsTest {
                 assertTrue(what, contrastOnBlack(roles.north) >= MIN_CONTRAST)
                 assertTrue(what, contrastOnBlack(roles.accent) >= MIN_CONTRAST)
                 assertTrue(what, saturationOf(roles.north) >= NORTH_MIN_SATURATION)
-                assertTrue(what, hueApart(roles.accent, roles.north) >= MIN_HUE_APART)
+                // Apart in hue; or, in a gray scheme (owner, 2026-10-16), where the pointer is a gray-red toward
+                // north, apart in saturation.
+                if (isGrayScheme(WatchScheme(primary, tertiary, paleRed))) assertNorthApartInSaturation(what, roles)
+                else assertTrue(what, hueApart(roles.accent, roles.north) >= MIN_HUE_APART)
             }
         }
     }
@@ -381,6 +406,7 @@ class WatchColorsTest {
     @Test fun theBoundsHoldExactlyOnTheReturnedColorsOfManyRandomSchemes() {
         val random = java.util.Random(20261012L)
         var used = 0
+        var gray = 0
         repeat(150_000) {
             val scheme = WatchScheme(random.nextInt(0x1000000), random.nextInt(0x1000000), random.nextInt(0x1000000))
             val roles = roleColors(scheme)
@@ -391,10 +417,69 @@ class WatchColorsTest {
             assertTrue(what, saturationOf(roles.accent) >= MIN_SATURATION)
             assertTrue(what, saturationOf(roles.accent) >= ACCENT_MIN_SATURATION)
             assertTrue(what, saturationOf(roles.north) >= NORTH_MIN_SATURATION)
-            assertTrue(what, hueApart(roles.accent, roles.north) >= MIN_HUE_APART)
+            // Apart in hue; or, in a gray scheme (owner, 2026-10-16), apart in saturation.
+            if (isGrayScheme(scheme)) { assertNorthApartInSaturation(what, roles); gray++ }
+            else assertTrue(what, hueApart(roles.accent, roles.north) >= MIN_HUE_APART)
             if (roles != roleColors(null)) used++
         }
         // Most random schemes are used, so the bounds were tried on colors from schemes and not only on the app's own.
         assertTrue("$used", used > 100_000)
+        // And some were gray schemes.
+        assertTrue("$gray", gray > 1_000)
     }
+
+    // Gray watch-face schemes. Owner, 2026-10-16, on a watch-face scheme like the one on their watch (primary 0xFFF9EB, a gray): "For a color
+    // scheme like mine, North should be the red from the watch face, and the marker colors and other elements should be
+    // gray or gray-red. I.e. North is the dominant theme color and the waypoints and other UI elements come from other
+    // theme colors with interpolation". Until then a primary under GRAY_SATURATION gave way to the app's whole set.
+
+    /** The scheme of the owner's watch as the app gets it (system_palette #DCD7CA, accent_color #FF3E32, CONTENT). */
+    private val owner = WatchScheme(0xFFF9EB, 0xFFC0B7, 0xFFBFB0, 0xEDE8DA, 0xD3CEC1, 0xAAA699)
+
+    /** North is told from a gray-red pointer by its saturation: at least [NORTH_POINTER_SATURATION_APART] more. */
+    private fun assertNorthApartInSaturation(what: String, roles: RoleColors) {
+        assertTrue(what, saturationOf(roles.north) - saturationOf(roles.accent) >= NORTH_POINTER_SATURATION_APART)
+    }
+
+    @Test fun theOwnersSchemeIsAGraySchemeAndIsUsed() {
+        assertTrue(saturationOf(owner.primary) < GRAY_SATURATION)
+        assertTrue(isGrayScheme(owner))
+        val roles = roleColors(owner)
+        // Until 2026-10-16: the pointer 0x2F8BFF and north 0xFF3B30, the app's own.
+        assertNotEquals(FALLBACK_ACCENT, roles.accent)
+        assertNotEquals(FALLBACK_NORTH, roles.north)
+    }
+    @Test fun northIsTheRedTheSchemeMadeFromTheWatchFacesAccent() {
+        // The tertiary, 0xFFC0B7, is what the system made from the watch face's accent_color #FF3E32: north keeps
+        // its hue, deepened so it stands out among the ink ticks, and reads on black.
+        val north = roleColors(owner).north
+        val what = "%06X".format(north)
+        assertEquals(what, hueOf(0xFFC0B7), hueOf(north), 2f)
+        assertTrue(what, saturationOf(north) >= NORTH_MIN_SATURATION)
+        assertTrue(what, contrastOnBlack(north) >= MIN_CONTRAST)
+    }
+    @Test fun thePointerIsAGrayRedBetweenThePrimaryAndNorth() {
+        val roles = roleColors(owner)
+        val what = "%06X %06X".format(roles.accent, roles.north)
+        // A mix of the primary (hue 42) and north (hue 7): its hue between theirs, with the accent's least saturation.
+        assertTrue(what, hueOf(roles.accent) >= hueOf(roles.north) - 2f && hueOf(roles.accent) <= hueOf(owner.primary) + 2f)
+        assertTrue(what, saturationOf(roles.accent) >= ACCENT_MIN_SATURATION)
+        assertTrue(what, saturationOf(roles.accent) < ACCENT_MIN_SATURATION + 0.02f)
+        assertTrue(what, contrastOnBlack(roles.accent) >= MIN_CONTRAST)
+    }
+    @Test fun northIsToldFromThePointerByItsSaturation() {
+        assertEquals(0.3f, NORTH_POINTER_SATURATION_APART, 0f)
+        assertNorthApartInSaturation("owner", roleColors(owner))
+    }
+    @Test fun anErrorColorThatLooksLikeTheGrayRedPointerGivesTheRed() {
+        // 0xFFBFB0 (hue 11, 0.31) is within 60 degrees and 0.3 of saturation of the pointer: deleting is not drawn
+        // like something to tap, as for any scheme.
+        assertEquals(FALLBACK_ERROR, roleColors(owner).error)
+    }
+    @Test fun aGraySchemeWhoseTertiaryIsAGrayTakesNorthFromItsErrorColor() {
+        val roles = roleColors(WatchScheme(0xFFF9EB, 0x9E9E9E, 0xFF7AA8))
+        assertEquals(hueOf(0xFF7AA8), hueOf(roles.north), 2f)
+        assertNorthApartInSaturation("%06X %06X".format(roles.accent, roles.north), roles)
+    }
+
 }

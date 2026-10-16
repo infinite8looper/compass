@@ -2,6 +2,7 @@ package com.infinite8looper.compass.nav
 
 import org.junit.Assert.*
 import org.junit.Test
+import kotlin.math.abs
 
 /**
  * The `Colors` setting (v3 spec, "Colors"): `Standard`, the default, and `Watch face`.
@@ -115,8 +116,16 @@ class ColorsSettingTest {
             val first = waypointRgb(p, hueForIndex(0))
             val all = "$what -> first %06X, accent %06X, north %06X, third %06X".format(first, p.roles.accent, p.roles.north, p.ringThird)
             assertEquals(all, p.ringThird, first)
-            assertTrue(all, hueApart(first, p.roles.north) >= MIN_HUE_APART)
-            assertTrue(all, hueApart(first, p.roles.accent) >= MIN_HUE_APART)
+            if (p.roles != STANDARD_PALETTE.roles && saturationOf(p.ringThird) < GRAY_SATURATION) {
+                // A gray scheme (owner, 2026-10-16: "the marker colors and other elements should be gray or
+                // gray-red"): the third anchor is a gray of the scheme, told from north and the gray-red pointer by
+                // having almost no color.
+                assertTrue(all, saturationOf(p.roles.north) - saturationOf(first) >= NORTH_POINTER_SATURATION_APART)
+                assertTrue(all, saturationOf(p.roles.accent) - saturationOf(first) >= ACCENT_INK_SATURATION_APART)
+            } else {
+                assertTrue(all, hueApart(first, p.roles.north) >= MIN_HUE_APART)
+                assertTrue(all, hueApart(first, p.roles.accent) >= MIN_HUE_APART)
+            }
         }
         for (scheme in recorded) check("$scheme", paletteFor(ColorMode.WATCH_FACE, scheme))
         val random = java.util.Random(20261017L)
@@ -181,10 +190,12 @@ class ColorsSettingTest {
         for (scheme in recorded) assertThreeAnchorsApart("$scheme", paletteFor(ColorMode.WATCH_FACE, scheme))
     }
     @Test fun theRingOfManyRandomSchemesHasThreeAnchorsApartInHue() {
+        // Where the rule applies: a gray scheme (owner, 2026-10-16) has a gray-red ring instead
+        // (theRingOfAGraySchemeIsGraysAndGrayReds).
         val random = java.util.Random(20261015L)
         repeat(20_000) {
             val scheme = WatchScheme(random.nextInt(0x1000000), random.nextInt(0x1000000), random.nextInt(0x1000000))
-            assertThreeAnchorsApart("$scheme", paletteFor(ColorMode.WATCH_FACE, scheme))
+            if (!isGrayScheme(scheme)) assertThreeAnchorsApart("$scheme", paletteFor(ColorMode.WATCH_FACE, scheme))
         }
     }
     @Test fun theSchemesErrorColorIsTheThirdAnchorWhereItIsApartFromBoth() {
@@ -204,11 +215,75 @@ class ColorsSettingTest {
         assertThreeAnchorsApart("api35", p)
     }
     @Test fun aSchemeWhosePrimaryGivesWayStillHasAThirdAnchorAndNotARepeatedRed() {
-        // A gray primary: the roles are the app's own blue, red and red; the ring is not blue, red, red.
-        val p = paletteFor(ColorMode.WATCH_FACE, WatchScheme(0x808080, 0xFF7AA8, 0xFFBEB9))
+        // A scheme of grays: the roles are the app's own blue, red and red; the ring is not blue, red, red. (Until
+        // 2026-10-16 a gray primary beside a color, 0x808080 with 0xFF7AA8, gave way too; the owner: "For a color
+        // scheme like mine, North should be the red from the watch face, and the marker colors and other elements
+        // should be gray or gray-red".)
+        val p = paletteFor(ColorMode.WATCH_FACE, WatchScheme(0x808080, 0x9E9E9E, 0x6E6E6E))
         assertEquals(RoleColors(FALLBACK_ACCENT, FALLBACK_NORTH, FALLBACK_ERROR), p.roles)
         assertEquals(widestGapMiddle(FALLBACK_ACCENT, FALLBACK_NORTH), hueOf(p.ringThird), 1.5f)
-        assertThreeAnchorsApart("gray primary", p)
+        assertThreeAnchorsApart("grays", p)
+    }
+
+    // A gray scheme's ring. Owner, 2026-10-16: "For a color scheme like mine, North should be the red from the watch
+    // face, and the marker colors and other elements should be gray or gray-red. I.e. North is the dominant theme
+    // color and the waypoints and other UI elements come from other theme colors with interpolation".
+
+    private val owner = WatchScheme(0xFFF9EB, 0xFFC0B7, 0xFFBFB0, 0xEDE8DA, 0xD3CEC1, 0xAAA699)
+
+    /** The largest difference of a red, green or blue channel between [a] and [b]. */
+    private fun channelsApart(a: Int, b: Int) = (0..2).maxOf { abs((a shr (8 * it) and 0xFF) - (b shr (8 * it) and 0xFF)) }
+
+    /** Gray or gray-red: under [GRAY_SATURATION], or within 40 degrees of hue of north's red. */
+    private fun grayOrGrayRed(rgb: Int, north: Int) = saturationOf(rgb) < GRAY_SATURATION || hueApart(rgb, north) <= 40f
+
+    @Test fun theOwnersRingIsThePointerNorthAndAGrayOfTheScheme() {
+        val p = paletteFor(ColorMode.WATCH_FACE, owner)
+        val what = "%06X %06X %06X".format(p.roles.accent, p.roles.north, p.ringThird)
+        // The third anchor is the scheme's outline, a gray, made to read on black.
+        assertTrue(what, saturationOf(p.ringThird) < GRAY_SATURATION)
+        assertTrue(what, contrastOnBlack(p.ringThird) >= MIN_CONTRAST)
+        assertEquals(what, hueOf(owner.outline!!), hueOf(p.ringThird), 3f)
+        // The ink and the grays are the scheme's, as for any scheme.
+        assertEquals(graysFor(owner), p.grays)
+    }
+    @Test fun theOwnersFirstWaypointsAreGrayOrGrayRedAndEachItsOwnColor() {
+        val p = paletteFor(ColorMode.WATCH_FACE, owner)
+        val taken = ArrayList<Float>()
+        val colors = ArrayList<Int>()
+        repeat(8) {
+            val place = nextWaypointPlace(taken.toFloatArray())
+            taken += place
+            colors += waypointRgb(p, place)
+        }
+        val what = colors.joinToString { "%06X".format(it) } + " north %06X".format(p.roles.north)
+        for (c in colors) {
+            assertTrue(what, grayOrGrayRed(c, p.roles.north))
+            assertTrue(what, contrastOnBlack(c) >= MIN_CONTRAST)
+            // Not north's red; and not the pointer: the places skipped for the red and the blue keep a new waypoint at
+            // least a twelfth of the way from the pointer to north, as on any ring.
+            assertTrue(what, channelsApart(c, p.roles.north) >= 24)
+            assertTrue(what, channelsApart(c, p.roles.accent) >= channelsApart(p.roles.accent, p.roles.north) / 12)
+        }
+        for (i in colors.indices) for (j in i + 1 until colors.size) assertTrue("$what: $i $j", channelsApart(colors[i], colors[j]) >= 12)
+    }
+    @Test fun theRingOfAGraySchemeIsGraysAndGrayReds() {
+        val random = java.util.Random(20261016L)
+        var gray = 0
+        repeat(20_000) {
+            val scheme = WatchScheme(
+                random.nextInt(0x1000000), random.nextInt(0x1000000), random.nextInt(0x1000000),
+                random.nextInt(0x1000000), random.nextInt(0x1000000), random.nextInt(0x1000000),
+            )
+            if (!isGrayScheme(scheme)) return@repeat
+            gray++
+            val p = paletteFor(ColorMode.WATCH_FACE, scheme)
+            val what = "$scheme -> %06X %06X %06X".format(p.roles.accent, p.roles.north, p.ringThird)
+            assertTrue(what, saturationOf(p.ringThird) < GRAY_SATURATION)
+            assertTrue(what, contrastOnBlack(p.ringThird) >= MIN_CONTRAST)
+            assertTrue(what, hueApart(p.roles.accent, p.roles.north) <= 40f)
+        }
+        assertTrue("$gray", gray > 100)
     }
 
     // The accent and the ink. The owner (2026-10-14), on a pale accent: "Deepen to ~0.3 saturation".
