@@ -462,9 +462,10 @@ private fun BoxScope.CompassReadout(
         // The hold-flat drawing has more room when the rows next to the heading are empty. A row added next to the
         // heading belongs here too.
         val linesAroundHeading = focused != null || lines.main != null
-        // The place under the row under the heading holds one thing, and [readout] says which: a status's second
-        // line, or the words of the hold-flat hint, or the calibrate prompt. The hold-flat drawing loops whether
-        // or not its words have the place.
+        // A status's second line, the words of the hold-flat hint and the calibrate prompt share a place (under the row
+        // under the heading, or at the top of the readout with the coordinates on), and [readout] says which of them
+        // shows; a second line with no coordinate row showing stands right under its first ([detailRow]). The
+        // hold-flat drawing loops whether or not its words show.
         val calibrate = lines.prompt == ReadoutPrompt.CALIBRATE
         // A tap on the compass does nothing, with one exception: while the calibrate prompt shows, the part of
         // the dial from the prompt's word away from the middle is its tap area ([promptTapArea]), as tall as a touch
@@ -536,7 +537,11 @@ private fun BoxScope.CompassReadout(
                 color = color, style = bodyStyle, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.slot(rows.main, 0.78f),
             )
         }
-        lines.detail?.let { StatusLine(it.words, toneColor(it.tone), styles.detail, Modifier.slot(rows.detail, 0.62f), view = paneView) }
+        // A status's second line: right under the first while no coordinate row shows, at the top while one does.
+        lines.detail?.let {
+            val row = detailRow(rows, lines)
+            StatusLine(it.words, toneColor(it.tone), styles.detail, Modifier.slot(row, detailWidth(row)), view = paneView)
+        }
 
         // The watch's own position, when the setting asks for it: two small, quiet lines together under the row
         // under the heading, the latitude over the longitude. They stay through a save, a failure, the

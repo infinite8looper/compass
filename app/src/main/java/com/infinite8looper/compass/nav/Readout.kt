@@ -23,8 +23,8 @@ data class ReadoutLine(val words: String, val tone: ReadoutTone, val note: Strin
 
 /**
  * The four lines. [main] is the row under the heading: a status's words, the focused target's distance, or
- * `No target`. [detail] is the smaller row under it (at the top of the readout with the coordinates on), which only a
- * status has. [latitude] and [longitude] are the coordinates' rows, together under the row under the heading, the
+ * `No target`. [detail] is the smaller row under it (with the coordinates on, at the top of the readout while a
+ * coordinate row shows something, [detailRow]), which only a status has. [latitude] and [longitude] are the coordinates' rows, together under the row under the heading, the
  * first over the second; the second also carries the one line
  * that stands for the coordinates while there are none (`Locating…`, `Location is off`). [mainIsStatus] says [main]
  * holds a status, which is drawn smaller before it is cut short. [prompt] is which of the two prompts about the compass

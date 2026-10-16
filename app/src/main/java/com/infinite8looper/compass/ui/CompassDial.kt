@@ -27,8 +27,6 @@ private const val RING_OUTER = 0.84f
 private const val RING_INNER = 0.72f
 private const val LETTER_RADIUS = 0.555f
 private const val LETTER_SIZE = 0.146f
-/** Nothing but the readout is drawn inside this fraction of the radius: the letters' inner edge is at about 0.50. */
-internal const val READOUT_RADIUS = 0.47f
 
 private const val HEAVY_TICK = 0.022f
 // A target's line runs a little past both edges of the ring and is heavier than a heavy tick.

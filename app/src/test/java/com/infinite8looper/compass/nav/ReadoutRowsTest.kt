@@ -8,6 +8,9 @@ class ReadoutRowsTest {
     /** The least air between two lines, in dial radii: 2 px on the smaller round screen (radius 192 px). */
     private val air = 2f / 192f
 
+    /** The radii, in pixels, of the two round screens the pictures are taken on. */
+    private val SCREENS = listOf(192, 227)
+
     private fun check(rows: ReadoutRows, name: String) {
         // The heading's digits end above the tallest letter of the row under them.
         assertTrue("$name: heading over the row under it: ${headingGap(rows.main, READOUT_BODY_SIZE)}", headingGap(rows.main, READOUT_BODY_SIZE) >= air)
@@ -41,6 +44,12 @@ class ReadoutRowsTest {
         // `Calibrate` or `Hold flat` (no descender) over `MAG` and the trail's label (`Trail 12`: a tall letter).
         val promptOverTop = rowGap(rows.prompt, READOUT_BODY_SIZE, false, rows.top, READOUT_DETAIL_SIZE, true)
         assertTrue("the prompt over MAG: $promptOverTop", promptOverTop >= air)
+        // Counted in whole rows of pixels, as the pictures are: at 2.5 px of air above, `Hold flat` over `MAG` left one
+        // clear row on the smaller round screen (v3 Task 8 review). Two on both screens.
+        for (radius in SCREENS) {
+            val clear = clearRows(rowBottom(rows.prompt, READOUT_BODY_SIZE, descends = false), rows.top - TALL_LETTER_TOP * READOUT_DETAIL_SIZE, radius)
+            assertTrue("the prompt over MAG on a screen of radius $radius px: $clear clear rows", clear >= 2)
+        }
         // A status's second line with a descender (`precise location`, `Try again outdoors`) over the same row.
         val detailOverTop = rowGap(rows.detail, READOUT_DETAIL_SIZE, true, rows.top, READOUT_DETAIL_SIZE, true)
         assertTrue("the smaller row over MAG: $detailOverTop", detailOverTop >= air)
@@ -69,6 +78,83 @@ class ReadoutRowsTest {
         assertEquals("the smaller row in the latitude's place", -0.345f, rows.detail, 4f / 227f)
         // `MAG` and the trail's label, and the name, stay where they were.
         assertEquals(-0.27f, rows.top, 0f); assertEquals(-0.185f, rows.name, 0f)
+    }
+
+    /**
+     * The owner, 2026-10-16: "Keep together when free (Recommended)". When the coordinates are not showing, a status's
+     * second line goes in the latitude's row, right under the first line (`Needs access to` / `precise location`, and
+     * the failures with no position); when they are showing (`Saved Waypoint 1` with `±16 ft`), it keeps the top.
+     */
+    @Test fun aStatusSecondLineStandsRightUnderItsFirstWhenNoCoordinateRowShows() {
+        val rows = readoutRows(coordinates = true)
+        fun lines(status: LogStatus, position: GeoPoint?, noPosition: LogFailure? = null, stale: Boolean = false) = readout(
+            status = status, units = Units.IMPERIAL, focus = FocusKind.NONE, distanceM = null, arrived = false, noTarget = false,
+            position = position, stale = stale, fixAccuracyM = 5f, noPosition = noPosition, showCoordinates = true, holdFlat = false,
+        )
+        val here = GeoPoint(43.7022, -72.2896)
+        // Not showing: the permission is not held, or a press failed with no position known. Under the first line.
+        val needsAccess = lines(LogStatus.Failed(LogFailure.NO_PERMISSION), null, LogFailure.NO_PERMISSION)
+        assertNull(needsAccess.latitude); assertNull(needsAccess.longitude); assertNotNull(needsAccess.detail)
+        assertEquals(rows.detailAlone, detailRow(rows, needsAccess), 0f)
+        val noFix = lines(LogStatus.Failed(LogFailure.NO_FIX), null)
+        assertNull(noFix.latitude); assertNull(noFix.longitude)
+        assertEquals(rows.detailAlone, detailRow(rows, noFix), 0f)
+        // Showing: a save with its accuracy, and a failure while an old position is known. At the top.
+        val saved = lines(LogStatus.Saved("Waypoint 1", 5f, 0L), here)
+        assertNotNull(saved.latitude)
+        assertEquals(rows.detail, detailRow(rows, saved), 0f)
+        val noFixOld = lines(LogStatus.Failed(LogFailure.NO_FIX), here, stale = true)
+        assertNotNull(noFixOld.latitude)
+        assertEquals(rows.detail, detailRow(rows, noFixOld), 0f)
+        // `Locating…` alone in the longitude's row is showing too: the second line keeps the top, clear of it.
+        val savingLocating = lines(LogStatus.Saving(5f), null)
+        assertNull(savingLocating.latitude); assertNotNull(savingLocating.longitude)
+        assertEquals(rows.detail, detailRow(rows, savingLocating), 0f)
+
+        // The latitude's row: within 2 px of it on the larger round screen, right under the first line.
+        assertEquals("the second line in the latitude's row", rows.latitude, rows.detailAlone, 2f / 227f)
+        assertTrue("under the row under the heading", rows.detailAlone > rows.main)
+        for ((name, row) in listOf("top" to rows.top, "name" to rows.name, "prompt" to rows.prompt, "detail" to rows.detail))
+            assertFalse("$name stands between the two lines", row > rows.main && row < rows.detailAlone)
+        val under = rowGap(rows.main, READOUT_BODY_SIZE, true, rows.detailAlone, READOUT_DETAIL_SIZE, true)
+        assertTrue("the first line over the second: $under", under >= air)
+        val overTicks = paneTicksTopOnCompass() - rowBottom(rows.detailAlone, READOUT_DETAIL_SIZE, descends = true)
+        assertTrue("the second line over the pane ticks: $overTicks", overTicks >= air)
+        for (radius in SCREENS) {
+            val clear = clearRows(rowBottom(rows.main, READOUT_BODY_SIZE, descends = true), rows.detailAlone - TALL_LETTER_TOP * READOUT_DETAIL_SIZE, radius)
+            assertTrue("the first line over the second on a screen of radius $radius px: $clear clear rows", clear >= 2)
+        }
+        // With the coordinates switched off nothing changes: under the row under the heading, as in v2.
+        val off = readoutRows(coordinates = false)
+        assertEquals(0.30f, off.detailAlone, 0f)
+        assertEquals(0.30f, detailRow(off, needsAccess), 0f); assertEquals(0.30f, detailRow(off, saved), 0f)
+    }
+
+    /**
+     * A status's second line, `Try again outdoors` the widest (the full width of its slot), stays inside the circle the
+     * cardinal letters sweep wherever it stands: at the top, where that circle is narrow, its slot is narrower, and
+     * the words are drawn smaller to fit it (down to three quarters) before they are cut short.
+     */
+    @Test fun aSecondLineStaysInsideTheReadoutCircleInEveryPlace() {
+        val margin = 1f / 192f
+        for (coordinates in listOf(false, true)) {
+            val rows = readoutRows(coordinates)
+            for (row in listOf(rows.detail, rows.detailAlone)) {
+                val width = detailWidth(row)
+                assertTrue("no wider than the slot under the heading: $width", width <= DETAIL_WIDTH + 1e-6f)
+                // The slot's corners at the top of a tall letter and at the bottom of a descender.
+                for (y in listOf(row - TALL_LETTER_TOP * READOUT_DETAIL_SIZE, row + DESCENDER_BOTTOM * READOUT_DETAIL_SIZE)) {
+                    val corner = kotlin.math.sqrt((width / 2) * (width / 2) + y * y)
+                    assertTrue("coordinates $coordinates, row $row: a corner at ${corner} of the radius", corner <= READOUT_RADIUS - margin)
+                }
+            }
+        }
+        // Under the heading the slot is as wide as before.
+        assertEquals(DETAIL_WIDTH, detailWidth(readoutRows(false).detail), 0f)
+        assertEquals(DETAIL_WIDTH, detailWidth(readoutRows(true).detailAlone), 0f)
+        // `Try again outdoors` is 0.615 of the radius wide at full size (118 px on the smaller round screen): drawn at
+        // three quarters it fits the top slot.
+        assertTrue(0.615f * 0.75f <= detailWidth(readoutRows(true).detail))
     }
 
     /** The pane ticks show under the longitude for about a second around a swipe. Their places are the ones the screen draws them at. */
@@ -118,6 +204,20 @@ class ReadoutRowsTest {
         assertEquals(1f - 0.058f - 0.042f, rowGap(0f, 0.1f, true, 1f, 0.1f, true), 1e-6f)
         // Without a descender the upper row ends at its baseline; digits are a little lower than a tall letter.
         assertEquals(1f - 0.040f - 0.0375f, rowGap(0f, 0.1f, false, 1f, 0.1f, false), 1e-6f)
+    }
+
+    /**
+     * A clear row is a whole row of pixels with no ink: on a screen of radius 192 px whose middle is at 192 px, ink that
+     * ends at 131.3 px reaches into row 131, and ink that begins at 133.8 px is in row 133, so only row 132 is clear
+     * (2.5 px of air, one clear row: `Hold flat` over `MAG` in the v3 Task 8 pictures).
+     */
+    @Test fun clearRowsAreTheWholeRowsOfPixelsBetweenTwoLinesInk() {
+        assertEquals(1, clearRows((131.3f - 192f) / 192f, (133.8f - 192f) / 192f, 192))
+        // Ink ending exactly on a row's edge leaves that row clear.
+        assertEquals(2, clearRows((131f - 192f) / 192f, (133.5f - 192f) / 192f, 192))
+        assertEquals(2, clearRows((131.5f - 227f) / 227f, (134.5f - 227f) / 227f, 227))
+        // Touching or overlapping: none.
+        assertTrue(clearRows(0.1f, 0.1f, 192) <= 0); assertTrue(clearRows(0.2f, 0.1f, 192) < 0)
     }
 
     @Test fun theShownDegreeIsTheHeadingRoundedAndThereIsNoneWithoutAHeading() {
