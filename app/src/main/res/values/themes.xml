@@ -7,5 +7,8 @@
          then have no way back; here the swipe has another meaning, by design. -->
     <style name="AppTheme" parent="@android:style/Theme.DeviceDefault">
         <item name="android:windowSwipeToDismiss" tools:ignore="WearBackNavigation">false</item>
+        <!-- The start screen shows the launcher icon with its disc (colors.xml), on the theme's black: the icon at
+             the start matches the launcher's, on a black background. -->
+        <item name="android:windowSplashScreenIconBackgroundColor">@color/ic_launcher_background</item>
     </style>
 </resources>

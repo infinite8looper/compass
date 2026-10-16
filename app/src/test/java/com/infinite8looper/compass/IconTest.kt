@@ -117,6 +117,23 @@ class IconTest {
         }
     }
 
+    /**
+     * The start screen shows the launcher icon as the launcher does, its disc behind the mark, on a black screen. Wear
+     * app quality WO-V15: "Show a 48x48dp app icon on a black background during app startup." and "The splash
+     * screen icon must match the app launcher icon."
+     */
+    @Test
+    fun theStartScreenShowsTheIconsDiscOnBlack() {
+        val style = children(xml("values/themes.xml"), "style").single { it.getAttribute("name") == "AppTheme" }
+        val items = children(style, "item").associate { it.getAttribute("name") to it.textContent.trim() }
+        assertEquals(
+            "the icon's disc behind the mark at the start", "@color/ic_launcher_background",
+            items["android:windowSplashScreenIconBackgroundColor"],
+        )
+        val screen = items["android:windowSplashScreenBackground"]
+        assertTrue("the start screen is black: $screen", screen == null || screen == "@android:color/black")
+    }
+
     @Test
     fun theMonochromeLayerHasTheForegroundsShapes() {
         val color = paths("drawable/ic_launcher_foreground.xml")
