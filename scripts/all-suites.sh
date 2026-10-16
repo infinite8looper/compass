@@ -27,7 +27,8 @@
 #     back as they were before (a setting that was unset is deleted) and reads them back, and a setting that does
 #     not read back as it was makes the run count as failed;
 #   - prints the counts of each emulator and the sum, then stops the named emulators but the last one, which is
-#     left running with the debug app installed again; an emulator it was not given by name is left running. Every emulator the suite ran on was left lying flat at the
+#     left running with the debug app installed again; a named emulator that was already running before the run is
+#     stopped too; an emulator it was not given by name (with no names, any but the four above) is left running. Every emulator the suite ran on was left lying flat at the
 #     magnetic heading of 40: the pose is not put back to upright.
 # Two tests run on Wear_OS_Newest (API 37) alone, by the owner's decisions of 2026-10-15 ("API 37 only" and "Add
 # it, API 37 only"): CalibrationScreenTest#withNoNewSegmentTheScreenIsLetGoTwoMinutesAfterOpening, which waits about
@@ -258,7 +259,8 @@ for line in $summary; do echo "$line"; done
 echo "all: $sum_passed passed, $sum_failed failed, $sum_skipped skipped, over ${#avds} emulator(s)"
 
 # Back to one emulator of those named, the last one, with the debug app installed again; the other named ones are
-# stopped. An emulator this run did not name (one another session uses, say) is left alone.
+# stopped, also one that was running before this run. An emulator this run did not name (one another session uses,
+# say) is left alone.
 last=${avds[-1]}
 stop=()
 for avd in $avds; do

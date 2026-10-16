@@ -150,7 +150,7 @@ The `watch` build type is for trying the app on a watch. It is made as the relea
 
 ## Tests
 
-Unit and instrumented tests, and the scripts that run them on the emulators, are described in [docs/TESTING.md](docs/TESTING.md). What the emulators cannot show, and how to check each on a watch, is listed in [docs/WATCH-CHECKLIST.md](docs/WATCH-CHECKLIST.md). The design is in [docs/superpowers/specs/2026-10-11-wear-compass-v2-redesign.md](docs/superpowers/specs/2026-10-11-wear-compass-v2-redesign.md) and [the first spec](docs/superpowers/specs/2026-10-11-wear-compass-design.md).
+Unit and instrumented tests, and the scripts that run them on the emulators, are described in [docs/TESTING.md](docs/TESTING.md). What the emulators cannot show, and how to check each on a watch, is listed in [docs/WATCH-CHECKLIST.md](docs/WATCH-CHECKLIST.md). The design is in [docs/superpowers/specs/2026-10-13-wear-compass-v3-watch-report.md](docs/superpowers/specs/2026-10-13-wear-compass-v3-watch-report.md), which changes [docs/superpowers/specs/2026-10-11-wear-compass-v2-redesign.md](docs/superpowers/specs/2026-10-11-wear-compass-v2-redesign.md) where it says so, and [the first spec](docs/superpowers/specs/2026-10-11-wear-compass-design.md).
 
 ## License
 

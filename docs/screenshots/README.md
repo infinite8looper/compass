@@ -1,10 +1,10 @@
 # Screenshots
 
-Every picture here is a capture from an emulator, taken on 2026-10-13 from the debug build. Nothing was drawn or edited. A picture marked "frames" is several captures joined side by side, first on the left.
+Every picture here is a capture from an emulator, added in commits dated from 2026-10-13 to 2026-10-16, from the debug build unless its row names another: `calibrate-release` is from the release build, `check-watch-build` and `check-watch-build-inputs` from the watch build. Nothing was drawn or edited. A picture marked "frames" is several captures joined side by side, first on the left.
 
 - `<state>-large.png` is from `Wear_OS_Large_Round` (API 35, 454 x 454) and `<state>-small.png` from `Wear_OS_Small_Round` (API 35, 384 x 384). They were made with `scripts/screenshot-matrix.sh`, a section at a time (`scripts/screenshot-matrix.sh large trail`); the section named in each row is the argument that makes that row's pictures again. The `settings` pictures are from a later build than the rest, and the `coords` pictures from a later one still (v3 Task 8, 2026-10-15), with the rows standing as `Show coordinates` puts them now.
 - The position fed is 43.7022, -72.2896 (`scripts/geo-feed.sh`). Waypoints are put in the app's database with `scripts/seed-targets.sh <bearing>:<place on the color ring>:<meters>`. "Three targets" is `60:137.5:400 200:275:1500 300:52.5:5000`. A heading is set with the emulator's magnetic-field sensor and corrected until the compass shows it.
-- The emulators give no color scheme, so the accent is blue and north and the error color are red, except in the `accent-` and `colors-watchface-` pictures. The pictures taken before the `Colors` setting (all but the `colors-` ones) show the waypoints' colors on the v2 ring of the blue and the red; with `Standard`, the default since then, a waypoint's place is a hue on the full wheel, as the `colors-standard-` pictures show.
+- The library gives a color scheme only on API 35 and newer, and there only while the system setting `dynamic_color_theme_enabled` is 1 (put to 1 through `adb` for the pictures that show a scheme: no image does it from the watch face; see the `accent-` pictures below); below API 35 it gives none whatever the setting, and `Standard` reads none. So the accent is blue and north and the error color are red in every picture but the `accent-` and `colors-watchface-` ones, which have the API 35 and API 37 images' schemes with the setting put to 1. The pictures taken before the `Colors` setting (all but the `colors-` ones) show the waypoints' colors on the v2 ring of the blue and the red; with `Standard`, the default since then, a waypoint's place is a hue on the full wheel, as the `colors-standard-` pictures show.
 - The emulators report only high magnetometer accuracy and a position accuracy of 5 m; what that leaves unseen is listed at the end.
 
 ## Compass
@@ -92,7 +92,7 @@ The `coords` pictures were taken again on 2026-10-15 (v3 Task 8), with the latit
 |-|-|-|
 | No waypoints | `waypoints-empty` | `waypoints`: after `pm clear` |
 | A few, one not a target, long names | `waypoints-few` | `waypoints`: three waypoints renamed, one row tapped |
-| Thirty, top of the list (retaken in v3 Task 10, as `compass-many`) | `waypoints-many` | `waypoints`: `seed-targets.sh many` |
+| Thirty, top of the list (`waypoints-many-large` retaken in v3 Task 10, as `compass-many`; `waypoints-many-small` is the picture of 2026-10-14, commit 370d544: it shows only the top of the list, where no waypoint's color shows) | `waypoints-many` | `waypoints`: `seed-targets.sh many` |
 | Thirty, end of the list (retaken in v3 Task 10: `Waypoint 1` green, `Waypoint 2` magenta) | `waypoints-many-end` | `waypoints`: twelve swipes up |
 | Old distances | `waypoints-old` | `waypoints`: location off, 25 s |
 | A long name sliding (3 frames, 2.2 s apart) | `name-sliding-list` | `moving` |

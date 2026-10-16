@@ -54,6 +54,26 @@ The owner was away while this was written. Each line below is the controller's c
 13. **The icon** gets a colored disc that fills the round mask, with a larger mark.
 14. **A build for the watch**: a build type that is optimized like a release and signed with the local debug key, for testing only.
 
+On 2026-10-16 the owner was asked about seventeen rulings made for them, which take in items 1, 2, 3, 5, 6, 7, 8, 10 and 11 above and rulings made in the As-built sections below, and accepted all of them: "Accept all (Recommended)". They are:
+
+1. Item 1: saving is a double tap on the dial; a single tap does nothing.
+2. Items 2 and 3: a trail is started and ended only from the `Trail` row; the side button is used only where `WearableButtons` describes an assignable `STEM` key and the button count is above one or unknown.
+3. Item 5: an instant save from a position up to 10 seconds old, written with its own accuracy however poor, which reverses the v2 rule; the position in hand includes the provider's last known position, waited for at most 500 ms (Saving, As built).
+4. Item 6: location runs while the compass or the waypoints screen is on screen (battery not measured).
+5. Item 7: true north asks for the permission when it is switched on, and asks for a position when none is stored.
+6. Items 8 and 10: three dial vibrations, with the `VIBRATE` permission; calibration keeps the screen on for two minutes from the opening or from the last new segment.
+7. Item 11: fused stays the default heading, the source is not stored, and the blend's time constant is 5 seconds.
+8. A refinement does not change the status shown or its accuracy; a new name or color does not end a refinement; a second save in the 10 seconds is a row of its own (Saving, As built).
+9. The confirming vibration waits until 250 ms after the press (Saving, As built).
+10. The dial's three vibrations play only with `Tick feedback` on (Vibrations, As built).
+11. The target's vibration is silent while the position is old (Vibrations, As built).
+12. Where the primitives are missing, the target plays as `CONFIRM`, the feel of the save's confirmation and of the lock pulse, taken as 300 ms long (Vibrations, As built).
+13. `Standard` never reads the color scheme; a stored `Watch face` stays stored where the watch gives no scheme and is drawn as `Standard`; a color set by hand is not held to the 25 degrees (Colors, As built).
+14. Calibration: 24 regions of equal area; a field of any strength lights its region; an estimated heading error of 0 is taken as no estimate; the large-error prompt shows above 30 degrees and goes below 25; the interference warning is 1.2 radii wide (Calibration and Heading, As built).
+15. The check screen: its row at the bottom of calibration; a turn of the crown counts as a touch; calibration's two minutes count again on the return from it, the lit segments kept (Check screen and Calibration, As built).
+16. The double pinch is registered only while the compass is at rest in view (Inputs, As built).
+17. The icon and the readout: the disc `#153D70`, 1.93 to 1 against the launcher's black; the needle's red `#FF3B30` in place of `#F44336`; the start screen shows the disc; the top slot of a status's second line narrowed to 0.49 of the radius, with wider words drawn smaller, down to three quarters (Icon and Readout with coordinates, As built).
+
 ## Inputs
 
 - A double tap anywhere on the compass dial, in view, saves a waypoint, or drops a crumb while the trail mode is laying. It goes through the same view-model call, status band and permission flow as the side button's single press did.
@@ -67,8 +87,8 @@ As built (Task 2, 2026-10-13):
 - A double tap is two taps whose second goes down within the system's double-tap time after the first is let go (and not sooner than its minimum), no further apart than the system's double-tap distance, with the compass at rest in view when the first went down and when the second was let go (`nextTap`, `nav/Inputs.kt`). Those times are the touch events' own (`PointerInputChange.uptimeMillis`, read before the tap detector handles the event), not the times the app handles them, as Android's own double-tap detector measures it; on a busy API 34 emulator touches were handled 60 to 215 ms late, which had made two taps 120 ms apart measure 359 ms (fix round 1, continued, 2026-10-14). Each tap is taken when it is let go; a tap that is no partner of the one before it waits for one in its turn, so a stray tap does not use up the double tap after it, and a third tap close behind a double tap is not a second one (fix round 1, 2026-10-14). The long press comes at the system's long-press time as before. A tap followed by a held touch is a long press; a tap followed by a swipe is a swipe.
 - The one-handed primary action is registered only while the compass is at rest in view. The library acts on every registered gesture whose screen it takes to be active, and the ring of screens does not tell it which screen that is, so the app composes the modifier in and out. When the gesture arrives the library plays a vibration of its own (its long-press feedback). No emulator has the gesture service, API 37 included, so the double pinch was never delivered to the app.
 - The watch has an assignable button when `WearableButtons.getButtonInfo` describes one of `KEYCODE_STEM_1`, `KEYCODE_STEM_2`, `KEYCODE_STEM_3` and `getButtonCount` is above one or unknown (`hasAssignableButton`). This is what the watch says: a watch can describe a button and keep its presses for itself, and what the Pixel Watch 3 says is not known. The emulator images at API 33, 34, 35 and 37 report a count of 0 and describe no key.
-- The trail row's words on a watch with no button, proposed: `Trail row on waypoints`.
-- For a screen reader to stop on the dial and offer `Save waypoint here`, the dial has a name, proposed: `Compass` (the app's name). No screen reader was run.
+- The trail row's words on a watch with no button, approved by the owner on 2026-10-16: `Trail row on waypoints`.
+- For a screen reader to stop on the dial and offer `Save waypoint here`, the dial has a name, approved by the owner on 2026-10-16: `Compass` (the app's name). No screen reader was run.
 
 ## Saving
 
@@ -113,8 +133,8 @@ As built (Task 3, 2026-10-14):
 As built (Task 4, 2026-10-14):
 
 - The table (`ui/Vibrations.kt`): thin `TICK` at 0.5, thick `THUD` at 1.0, target two `CLICK`s at 0.7 50 ms apart; without primitives `SEGMENT_FREQUENT_TICK` (`CLOCK_TICK` on API 33), `GESTURE_START` and `CONFIRM`, chosen because on the four emulator images they play three different effects, none the press's. The press, the confirming vibration, the lock, the heartbeat and the long press are rows of the same table, as haptic feedback constants.
-- Implementer's ruling, for the owner: the three are played only with `Tick feedback` on.
-- Controller's ruling: the target's vibration is silent while the position is old, as blind navigation is.
+- Implementer's ruling, accepted by the owner on 2026-10-16 ("Accept all (Recommended)"): the three are played only with `Tick feedback` on.
+- Controller's ruling, accepted by the owner on 2026-10-16 ("Accept all (Recommended)"): the target's vibration is silent while the position is old, as blind navigation is.
 - The target's vibration is not held back by a line played just before it (the line's is cut short); a line is not played while the target's lasts (its primitives' durations, at least 150 ms), and neither is the target's again (fix round 2: a pointer rocking on the bearing can pass it again sooner, and each new one would cut the one before short). Where the target plays as `CONFIRM`, whose length the app cannot ask, that time is 300 ms, the length of `CONFIRM` on the emulator images. Only the pointer's motion passes the target: a new position that moves the bearing past a still pointer gives nothing.
 
 ## Colors
@@ -222,6 +242,12 @@ Smoothness on the watch; the drift and which heading source cures it; the feel o
 
 As built (Task 10, 2026-10-16): these, in this order, and the other things the tasks left for the watch (the side button, the estimated heading error and the large-error prompt, a watch that cannot work out the magnetic heading, the check screen's display, the icon, the hold-flat drawing on the smaller watch) are a checklist for the owner's watch, with what to look at on the check screen for each: `docs/WATCH-CHECKLIST.md`. The `watch` build for it is made with `./gradlew assembleWatch` (`app/build/outputs/apk/watch/app-watch.apk`).
 
-## Words shown to wearers, proposed
+## Words shown to wearers
 
-Approved by the owner on 2026-10-14: the `Colors` row's click label, `Use watch face colors` / `Use standard colors`. For the owner to approve or change: `Colors`, `Standard`, `Watch face`, `Not available on this watch`; the calibration instruction `Turn your wrist slowly in every direction`; the ring's label `Covered`, and beside it the share lit (`50%`); the estimated heading error's label `Error` and value `±12°` (built by Task 6, not in the spec before); the accessibility action `Save waypoint here` (also built as the label the double pinch is given, which the system may show or speak); the trail row's words on a watch with no button (built as `Trail row on waypoints`); the dial's name for a screen reader (built as `Compass`). Built by Task 6 fix round 1 for the check screen's `Heading source` row on a watch that cannot work out the magnetic heading: `Magnetic unavailable`, `Blend unavailable`. Built by Task 7 for the check screen (debug and watch builds only), not in the spec before: calibration's row `Check`; the screen's title `Check`; `Heading source` with `Fused`, `Magnetic`, `Blend`; `Error`, `Level`, `Field`; the parts `Watch colors`, `Inputs`, `Vibrations`; `Color scheme`, `None`, `Primary`, `Tertiary`, `Error color`, `On surface`, `On surface variant`, `Outline`; `Buttons`, `Unknown`, `Side keys`, `STEM_1` to `STEM_3`, `Assignable button`, `Wear SDK`, `Wear SDK reached`, `One-handed gestures`, `Yes`, `No`; the primitives `Click`, `Thud`, `Spin`, `Quick rise`, `Slow rise`, `Quick fall`, `Tick`, `Low tick`; `Play thin line`, `Play thick line`, `Play target`, with `Primitives` or `Constant`; `--` for a value there is none of. Built by Task 7 fix round 1 in place of the three headings' row labels `Fused`, `Magnetic`, `Blend` (which were also the source row's value): `Fused heading`, `Magnetic heading`, `Blend heading`.
+Approved by the owner on 2026-10-14: the `Colors` row's click label, `Use watch face colors` / `Use standard colors`.
+
+Approved by the owner on 2026-10-16 ("Approve A and B (Recommended)"), A, the words in every build: `Colors`, `Standard`, `Watch face`, `Not available on this watch`; the calibration instruction `Turn your wrist slowly in every direction`; the ring's label `Covered`, and beside it the share lit (`50%`); the estimated heading error's label `Error` and value `±12°` (built by Task 6, not in the spec before); the accessibility action `Save waypoint here` (also built as the label the double pinch is given, which the system may show or speak); the trail row's words on a watch with no button (built as `Trail row on waypoints`); the dial's name for a screen reader (built as `Compass`).
+
+Approved by the owner on 2026-10-16 (the same answer), B, the check screen's words, in the debug and watch builds only: built by Task 6 fix round 1 for the check screen's `Heading source` row on a watch that cannot work out the magnetic heading: `Magnetic unavailable`, `Blend unavailable`. Built by Task 7 for the check screen (debug and watch builds only), not in the spec before: calibration's row `Check`; the screen's title `Check`; `Heading source` with `Fused`, `Magnetic`, `Blend`; `Error`, `Level`, `Field`; the parts `Watch colors`, `Inputs`, `Vibrations`; `Color scheme`, `None`, `Primary`, `Tertiary`, `Error color`, `On surface`, `On surface variant`, `Outline`; `Buttons`, `Unknown`, `Side keys`, `STEM_1` to `STEM_3`, `Assignable button`, `Wear SDK`, `Wear SDK reached`, `One-handed gestures`, `Yes`, `No`; the primitives `Click`, `Thud`, `Spin`, `Quick rise`, `Slow rise`, `Quick fall`, `Tick`, `Low tick`; `Play thin line`, `Play thick line`, `Play target`, with `Primitives` or `Constant`; `--` for a value there is none of. Built by Task 7 fix round 1 in place of the three headings' row labels `Fused`, `Magnetic`, `Blend` (which were also the source row's value): `Fused heading`, `Magnetic heading`, `Blend heading`.
+
+Proposed, not built: `Taps at ticks and the target`, as the `Tick feedback` row's second line in place of `Faint tap at each tick mark` (Task 4).
