@@ -17,6 +17,9 @@
 # the check screen, goes Back to calibration, and requires the same share and the screen still kept on (the window
 # manager's screen-bright wake lock held for the app, `dumpsys power`): a visit to the check screen keeps the regions
 # lit. A build without the row (release) skips this part and says so.
+# Calibration's ring is kept across openings, restarts and the end of the app's process (owner, 2026-10-16: "Until
+# accuracy drops (Recommended)"), so the check starts by wiping the app's data (pm clear: no region lit), and ends by
+# stopping the app's process (am force-stop), starting it again, opening calibration and requiring the same share.
 # Exit status 0 when it passed, 1 otherwise. Emulators only.
 source "$(dirname "$0")/emulator-only.sh" || exit 1
 cd "$(dirname "$0")/.." || exit 1
@@ -26,21 +29,26 @@ finish() { $ADB emu sensor set acceleration 0:0:9.81 > /dev/null; scripts/set-he
 $ADB emu sensor set acceleration 0:0:9.81 > /dev/null
 $ADB emu sensor set magnetic-field 0:20:-45 > /dev/null
 $ADB shell input keyevent KEYCODE_WAKEUP
-$ADB shell am start -W -n com.infinite8looper.compass/.MainActivity > /dev/null
-sleep 3
-# Two of the images put the screen to sleep a moment after a change of pose; the swipe is tried until the settings show.
-for i in 1 2 3; do
-  $ADB shell input keyevent KEYCODE_WAKEUP; sleep 1
-  scripts/swipe.sh right > /dev/null; sleep 2
-  scripts/ui-dump.sh 2>/dev/null | grep -q "text='Settings'" && break
-done
-for i in 1 2 3 4 5 6; do
-  scripts/ui-dump.sh 2>/dev/null | grep -q "text='Calibrate'" && break
-  scripts/swipe.sh up 300 0.4 > /dev/null; sleep 1
-done
-scripts/tap-text.sh Calibrate > /dev/null || { echo "the Calibrate row was not found" >&2; finish; exit 1; }
-sleep 2
-if ! scripts/ui-dump.sh 2>/dev/null | grep -q "text='Covered'"; then echo "calibration did not open" >&2; finish; exit 1; fi
+$ADB shell pm clear com.infinite8looper.compass > /dev/null
+# Starts the app and opens calibration from the settings; returns 1 when calibration did not open.
+open_calibration() {
+  $ADB shell am start -W -n com.infinite8looper.compass/.MainActivity > /dev/null
+  sleep 3
+  # Two of the images put the screen to sleep a moment after a change of pose; the swipe is tried until the settings show.
+  for i in 1 2 3; do
+    $ADB shell input keyevent KEYCODE_WAKEUP; sleep 1
+    scripts/swipe.sh right > /dev/null; sleep 2
+    scripts/ui-dump.sh 2>/dev/null | grep -q "text='Settings'" && break
+  done
+  for i in 1 2 3 4 5 6; do
+    scripts/ui-dump.sh 2>/dev/null | grep -q "text='Calibrate'" && break
+    scripts/swipe.sh up 300 0.4 > /dev/null; sleep 1
+  done
+  scripts/tap-text.sh Calibrate > /dev/null || { echo "the Calibrate row was not found" >&2; return 1; }
+  sleep 2
+  scripts/ui-dump.sh 2>/dev/null | grep -q "text='Covered'" || { echo "calibration did not open" >&2; return 1; }
+}
+open_calibration || { finish; exit 1; }
 last=$(share); echo "opened: ${last:-none}"
 bad=0
 # The power manager's wakefulness (Awake, Dozing, Asleep, Dreaming), logged and checked after each change of pose.
@@ -88,6 +96,17 @@ if scripts/ui-dump.sh 2>/dev/null | grep -q "text='Check'"; then
   if [ "$on" != "yes" ]; then bad=1; echo "  calibration did not keep the screen on after the check screen" >&2; fi
 else
   echo "no Check row (a build without the check screen): the visit to it is not checked"
+fi
+# The end of the app's process: the ring is read from its file by the next start.
+kept=$(share)
+$ADB shell am force-stop com.infinite8looper.compass
+sleep 1
+if open_calibration; then
+  restarted=$(share)
+  echo "after the app's process was stopped and started again: ${restarted:-none}"
+  if [ "$restarted" != "$kept" ]; then bad=1; echo "  the share went from $kept to ${restarted:-none} across the end of the process" >&2; fi
+else
+  bad=1
 fi
 $ADB shell input keyevent KEYCODE_BACK
 finish

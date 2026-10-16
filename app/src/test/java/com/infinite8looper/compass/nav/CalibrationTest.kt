@@ -221,4 +221,87 @@ class CalibrationTest {
         // Whichever is later: a segment from before the opening does not shorten it.
         assertEquals(121_000L, calibrationAwakeUntil(openedAtMs = 1_000L, lastNewRegionAtMs = 0L))
     }
+
+    // The ring's memory. Owner, 2026-10-16, on how long the lit segments are kept: "Until accuracy drops
+    // (Recommended)": they are kept across openings, restarts and the end of the app's process, and start over only
+    // when the magnetometer reports that its accuracy has fallen to low or unreliable. A sensor that has just been
+    // registered may report a low level before it reports the one it had (the start-up): such a report does not
+    // clear the ring.
+
+    private val unreliable = 0; private val low = 1; private val medium = 2; private val high = 3
+
+    @Test fun aFallToLowOrUnreliableClearsTheRing() {
+        assertEquals(RingMemoryStep.CLEAR, ringMemoryStep(storedLevel = high, reported = low, sinceRegisteredMs = 10_000L, settled = true))
+        assertEquals(RingMemoryStep.CLEAR, ringMemoryStep(storedLevel = high, reported = unreliable, sinceRegisteredMs = 10_000L, settled = true))
+        assertEquals(RingMemoryStep.CLEAR, ringMemoryStep(storedLevel = medium, reported = low, sinceRegisteredMs = 10_000L, settled = true))
+        // Low to unreliable is a fall to unreliable.
+        assertEquals(RingMemoryStep.CLEAR, ringMemoryStep(storedLevel = low, reported = unreliable, sinceRegisteredMs = 10_000L, settled = true))
+        // No level stored yet: a low report clears (an empty ring, or one lit before any level was known).
+        assertEquals(RingMemoryStep.CLEAR, ringMemoryStep(storedLevel = null, reported = low, sinceRegisteredMs = 0L, settled = true))
+    }
+
+    @Test fun aFallThatStopsAboveLowOrARiseOnlyStoresTheLevel() {
+        assertEquals(RingMemoryStep.STORE_LEVEL, ringMemoryStep(storedLevel = high, reported = medium, sinceRegisteredMs = 10_000L, settled = true))
+        assertEquals(RingMemoryStep.STORE_LEVEL, ringMemoryStep(storedLevel = low, reported = high, sinceRegisteredMs = 10_000L, settled = true))
+        assertEquals(RingMemoryStep.STORE_LEVEL, ringMemoryStep(storedLevel = unreliable, reported = low, sinceRegisteredMs = 10_000L, settled = true))
+        assertEquals(RingMemoryStep.STORE_LEVEL, ringMemoryStep(storedLevel = null, reported = high, sinceRegisteredMs = 0L, settled = true))
+    }
+
+    @Test fun theSameLevelOrNoLevelChangesNothing() {
+        assertEquals(RingMemoryStep.KEEP, ringMemoryStep(storedLevel = high, reported = high, sinceRegisteredMs = 10_000L, settled = true))
+        assertEquals(RingMemoryStep.KEEP, ringMemoryStep(storedLevel = low, reported = low, sinceRegisteredMs = 10_000L, settled = true))
+        assertEquals(RingMemoryStep.KEEP, ringMemoryStep(storedLevel = high, reported = null, sinceRegisteredMs = 10_000L, settled = true))
+    }
+
+    @Test fun aLowReportInTheStartUpBeforeTheStoredLevelCameDoesNotClear() {
+        assertEquals(3_000L, RING_STARTUP_MS)
+        assertEquals(RingMemoryStep.KEEP, ringMemoryStep(storedLevel = high, reported = unreliable, sinceRegisteredMs = 0L, settled = false))
+        assertEquals(RingMemoryStep.KEEP, ringMemoryStep(storedLevel = high, reported = low, sinceRegisteredMs = 2_999L, settled = false))
+        // Nor is a lower level that is not low stored then: the next start-up compares with the level kept.
+        assertEquals(RingMemoryStep.KEEP, ringMemoryStep(storedLevel = high, reported = medium, sinceRegisteredMs = 500L, settled = false))
+    }
+
+    @Test fun aLowReportAfterTheStoredLevelCameOrAfterTheStartUpClears() {
+        // The stored level (or better) has come since the sensor was registered: a fall now is a fall.
+        assertEquals(RingMemoryStep.CLEAR, ringMemoryStep(storedLevel = high, reported = low, sinceRegisteredMs = 500L, settled = true))
+        // Three seconds on, a low level is the sensor's own, whatever came before.
+        assertEquals(RingMemoryStep.CLEAR, ringMemoryStep(storedLevel = high, reported = low, sinceRegisteredMs = 3_000L, settled = false))
+        assertEquals(RingMemoryStep.CLEAR, ringMemoryStep(storedLevel = medium, reported = unreliable, sinceRegisteredMs = 60_000L, settled = false))
+    }
+
+    @Test fun theStartUpIsOverWithAReportAtTheStoredLevelOrBetter() {
+        assertFalse(ringMemorySettles(settled = false, storedLevel = high, reported = null))
+        assertFalse(ringMemorySettles(settled = false, storedLevel = high, reported = low))
+        assertFalse(ringMemorySettles(settled = false, storedLevel = high, reported = medium))
+        assertTrue(ringMemorySettles(settled = false, storedLevel = high, reported = high))
+        assertTrue(ringMemorySettles(settled = false, storedLevel = medium, reported = high))
+        // Nothing stored: there is nothing to wait for.
+        assertTrue(ringMemorySettles(settled = false, storedLevel = null, reported = null))
+        // Once over, it stays over.
+        assertTrue(ringMemorySettles(settled = true, storedLevel = high, reported = low))
+    }
+
+    /** One run of the sensor as the view model follows it: the level kept and whether the ring was cleared. */
+    private fun run(stored: Int?, reports: List<Pair<Long, Int?>>): Pair<Int?, Boolean> {
+        var level = stored; var settled = false; var cleared = false
+        for ((at, reported) in reports) {
+            when (ringMemoryStep(level, reported, at, settled)) {
+                RingMemoryStep.CLEAR -> { cleared = true; level = reported }
+                RingMemoryStep.STORE_LEVEL -> level = reported
+                RingMemoryStep.KEEP -> Unit
+            }
+            settled = ringMemorySettles(settled, level, reported)
+        }
+        return level to cleared
+    }
+
+    @Test fun aStartUpThatReportsUnreliableThenLowThenItsLevelKeepsTheRing() {
+        assertEquals(high to false, run(high, listOf(0L to null, 20L to unreliable, 200L to low, 900L to high, 5_000L to high)))
+    }
+
+    @Test fun aFallAfterTheStartUpClearsTheRingOnce() {
+        assertEquals(low to true, run(high, listOf(20L to unreliable, 900L to high, 10_000L to low, 10_020L to low)))
+        // A sensor that stays low past the start-up is taken at its word.
+        assertEquals(low to true, run(high, listOf(20L to low, 1_000L to low, 3_000L to low)))
+    }
 }

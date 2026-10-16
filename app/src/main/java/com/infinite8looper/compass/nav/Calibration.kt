@@ -113,3 +113,51 @@ fun calibrationAwakeUntil(openedAtMs: Long, lastNewRegionAtMs: Long?): Long =
 
 fun calibrationKeepsAwake(nowMs: Long, openedAtMs: Long, lastNewRegionAtMs: Long?): Boolean =
     nowMs < calibrationAwakeUntil(openedAtMs, lastNewRegionAtMs)
+
+// The ring's memory. Owner, 2026-10-16: "Until accuracy drops (Recommended)": the lit segments are kept across
+// openings of calibration, restarts of the app and the end of its process, and start over only when the
+// magnetometer reports that its accuracy has fallen to low or unreliable. With the regions the level the
+// magnetometer last reported is kept (the stored level), and each report while the sensor runs is weighed here.
+
+/** What a report of the magnetometer's level does to the ring kept. */
+enum class RingMemoryStep {
+    /** Nothing changes. */
+    KEEP,
+    /** The level reported is kept as the stored level; the ring stays. */
+    STORE_LEVEL,
+    /** The ring starts over (no region lit), and the level reported is kept. */
+    CLEAR,
+}
+
+/**
+ * How long after the sensor is registered a report below the stored level may be its start-up's: a sensor that has
+ * just been registered may say unreliable or low before it says the level it had. For this long, and only until a
+ * report at the stored level or better has come ([ringMemorySettles]), such a report is not taken.
+ */
+const val RING_STARTUP_MS = 3_000L
+
+/**
+ * What the report [reported] (a SensorManager accuracy, null for none) does to the ring kept, whose stored level is
+ * [storedLevel] (null where none is kept), [sinceRegisteredMs] after the sensor was registered, with [settled]
+ * whether a report at the stored level or better has come since then ([ringMemorySettles]):
+ * - no report: [RingMemoryStep.KEEP];
+ * - in the start-up (before [RING_STARTUP_MS] and not settled), a report below the stored level: [RingMemoryStep.KEEP];
+ * - a report of low or unreliable below the stored level, or with none stored: [RingMemoryStep.CLEAR];
+ * - another level than the stored one: [RingMemoryStep.STORE_LEVEL];
+ * - the stored level again: [RingMemoryStep.KEEP].
+ */
+fun ringMemoryStep(storedLevel: Int?, reported: Int?, sinceRegisteredMs: Long, settled: Boolean): RingMemoryStep {
+    if (reported == null) return RingMemoryStep.KEEP
+    val below = storedLevel == null || reported < storedLevel
+    if (storedLevel != null && below && !settled && sinceRegisteredMs < RING_STARTUP_MS) return RingMemoryStep.KEEP
+    if (reported <= ACCURACY_LOW && below) return RingMemoryStep.CLEAR
+    return if (reported != storedLevel) RingMemoryStep.STORE_LEVEL else RingMemoryStep.KEEP
+}
+
+/**
+ * Whether the sensor's start-up is over for [ringMemoryStep], after the report [reported], given whether it was
+ * before ([settled]): once a report at the stored level [storedLevel] or better has come, or at once where no level
+ * is stored. It stays over until the sensor is registered again.
+ */
+fun ringMemorySettles(settled: Boolean, storedLevel: Int?, reported: Int?): Boolean =
+    settled || storedLevel == null || (reported != null && reported >= storedLevel)

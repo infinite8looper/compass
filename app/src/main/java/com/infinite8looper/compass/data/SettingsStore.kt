@@ -48,6 +48,15 @@ data class Settings(
     val colors: ColorMode = ColorMode.STANDARD,
 )
 
+/**
+ * Calibration's ring as it is kept between openings, restarts and the end of the app's process: the regions lit
+ * (one bit each, nav/Calibration.kt) and the level the magnetometer last reported with them (a SensorManager
+ * accuracy; null where none is kept). See [com.infinite8looper.compass.nav.ringMemoryStep].
+ */
+data class CalibrationMemory(val covered: Int, val level: Int?) {
+    companion object { val NONE = CalibrationMemory(0, null) }
+}
+
 /** The breadcrumb trail as the settings file holds it: the stored mode and the Breadcrumb trail switch. */
 data class StoredTrail(val mode: TrailMode, val settingOn: Boolean)
 
@@ -68,6 +77,30 @@ class SettingsStore(
         corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
         scope = scope,
     ) { app.preferencesDataStoreFile("$fileName-position") }
+
+    /**
+     * Calibration's ring lives in its own file, which the backup rules do not include: it describes this watch's
+     * magnetometer, not the wearer's settings. The file is named after the settings file. A damaged file is reset to
+     * no region lit and no level.
+     */
+    private val calibrationStore: DataStore<Preferences> = PreferenceDataStoreFactory.create(
+        corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
+        scope = scope,
+    ) { app.preferencesDataStoreFile("$fileName-calibration") }
+
+    /** Calibration's ring as kept. A file that cannot be read gives none lit and no level. */
+    val calibration: Flow<CalibrationMemory> = calibrationStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { CalibrationMemory(it[COVERED] ?: 0, it[LEVEL]) }
+        .distinctUntilChanged()
+
+    /** Keeps calibration's ring as [memory] says, in one write. */
+    suspend fun setCalibration(memory: CalibrationMemory) {
+        calibrationStore.edit {
+            if (memory.covered == 0) it.remove(COVERED) else it[COVERED] = memory.covered
+            if (memory.level == null) it.remove(LEVEL) else it[LEVEL] = memory.level
+        }
+    }
 
     private val store: DataStore<Preferences> = PreferenceDataStoreFactory.create(
         // A damaged file is reset to defaults except the backup switch, which is the one setting that fails closed.
@@ -276,6 +309,8 @@ class SettingsStore(
         private val LON = doublePreferencesKey("last_lon")
         private val ALT = floatPreferencesKey("last_alt")
         private val COUNTER = intPreferencesKey("waypoint_counter")
+        private val COVERED = intPreferencesKey("covered")
+        private val LEVEL = intPreferencesKey("level")
 
         // The store holds the application's context only (`app`), which lives as long as the process: no leak.
         @SuppressLint("StaticFieldLeak")
