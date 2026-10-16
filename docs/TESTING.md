@@ -123,6 +123,8 @@ scripts/frame-times.sh settings <label>       # frame times while a list is scro
 
 `scripts/screenshot-matrix.sh` wipes the app's data and drives the app through its states; its header lists the sections, and [docs/screenshots/README.md](screenshots/README.md) lists each picture and how it was made. A status that shows for two or three seconds is caught by taking pictures until its color appears, so every picture still has to be looked at.
 
+`python3 -I scripts/readout-gaps.py <picture.png> ...` measures the compass's readout in a picture: the lines of ink inside the circle the cardinal letters sweep (0.47 of the radius), the rows of pixels with no ink between neighboring lines (the gap), the shortest distance between their ink with the sideways place counted, and how close any ink comes to that circle. Anti-aliased edges count as ink. The pane ticks, when they show, are the lowest line, and their round caps reach the circle. For the pictures of the `coords` section on 2026-10-15 (v3 Task 8), the smallest gaps were 2 px on the small round (`precise location` over `MAG` and the trail's label, `coords-needs-access`) and 3 px on the large, apart from `Locating…` over the pane ticks: 1 px of gap on both sizes, with its descender beside the ticks, not over them (4 px of nearest ink on the small round, 5 px on the large). Readout text came no closer than 3.3 px to the circle.
+
 ## Frame times
 
 `scripts/frame-times.sh` reads the system's frame statistics for the app (`dumpsys gfxinfo`) around a movement it makes itself. It measures whichever build is installed under the app's id. To compare builds, on one emulator in one sitting, for each build:

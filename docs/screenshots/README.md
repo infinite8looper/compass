@@ -2,7 +2,7 @@
 
 Every picture here is a capture from an emulator, taken on 2026-10-13 from the debug build. Nothing was drawn or edited. A picture marked "frames" is several captures joined side by side, first on the left.
 
-- `<state>-large.png` is from `Wear_OS_Large_Round` (API 35, 454 x 454) and `<state>-small.png` from `Wear_OS_Small_Round` (API 35, 384 x 384). They were made with `scripts/screenshot-matrix.sh`, a section at a time (`scripts/screenshot-matrix.sh large trail`); the section named in each row is the argument that makes that row's pictures again. The `coords` and `settings` pictures are from a later build than the rest, in which the rows under the heading stand a little differently with `Show coordinates` on.
+- `<state>-large.png` is from `Wear_OS_Large_Round` (API 35, 454 x 454) and `<state>-small.png` from `Wear_OS_Small_Round` (API 35, 384 x 384). They were made with `scripts/screenshot-matrix.sh`, a section at a time (`scripts/screenshot-matrix.sh large trail`); the section named in each row is the argument that makes that row's pictures again. The `settings` pictures are from a later build than the rest, and the `coords` pictures from a later one still (v3 Task 8, 2026-10-15), with the rows standing as `Show coordinates` puts them now.
 - The position fed is 43.7022, -72.2896 (`scripts/geo-feed.sh`). Waypoints are put in the app's database with `scripts/seed-targets.sh <bearing>:<place on the color ring>:<meters>`. "Three targets" is `60:137.5:400 200:275:1500 300:52.5:5000`. A heading is set with the emulator's magnetic-field sensor and corrected until the compass shows it.
 - The emulators give no color scheme, so the accent is blue and north and the error color are red, except in the `accent-` and `colors-watchface-` pictures. The pictures taken before the `Colors` setting (all but the `colors-` ones) show the waypoints' colors on the v2 ring of the blue and the red; with `Standard`, the default since then, a waypoint's place is a hue on the full wheel, as the `colors-standard-` pictures show.
 - The emulators report only high magnetometer accuracy and a position accuracy of 5 m; what that leaves unseen is listed at the end.
@@ -48,14 +48,23 @@ Every picture here is a capture from an emulator, taken on 2026-10-13 from the d
 
 ## Coordinates
 
+The `coords` pictures were taken again on 2026-10-15 (v3 Task 8), with the latitude and the longitude together under the row under the heading and the prompt and a status's second line at the top. `python3 -I scripts/readout-gaps.py` gives the gaps between their lines (docs/TESTING.md). The font scale at 1.24 gave the same readout, pixel for pixel in the measured lines (the readout's text sizes are set from the dial's radius).
+
 | State | File | How it was produced |
 |-|-|-|
 | No target | `coords-clean` | `coords`: `Show coordinates` on, no waypoints, heading 127 |
 | Old: `(old)` after the latitude | `coords-clean-old` | `coords`: location off, 25 s |
 | Before the first fix, nothing focused: `Locating…` in the longitude's place | `coords-locating` | `coords`: location on again, the app started, 1.2 s |
+| The same with the pane ticks under `Locating…` | `coords-locating-ticks` | `coords`: a drag toward waypoints let go early, at once |
 | With a focused target | `coords-target` | `coords`: three targets |
+| The same with the pane ticks under the longitude | `coords-pane-ticks` | `coords`: a drag toward waypoints let go early |
+| `Saved Waypoint 1` under the heading and its accuracy (`±16 ft`) at the top | `coords-saved` | `coords`: a double tap on the dial |
+| A target with location off: `Location is off` under the heading, no coordinates | `coords-location-off` | `coords`: location off, the app stopped and started |
 | Hold-flat with coordinates on: the two lines left out, `Arrived at target` over `Hold flat` | `coords-holdflat-arrived` | `coords`: `seed-targets.sh 0:0:4`, `adb emu sensor set acceleration 0:9.81:0` |
 | The same with `No target` | `coords-holdflat-no-target` | `coords`: three waypoints, the waypoints header tapped to clear all, the same pose |
+| `Saved Crumb 1` with its accuracy at the top, over `MAG` and `Trail 1` | `coords-crumb-saved` | `coords`: `True north` off, the trail started from its row, a double tap |
+| `MAG` and `Trail 1` over the name, with the distance and the coordinates | `coords-trail-mag` | `coords`: the same, after the status |
+| `Needs access to` under the heading and `precise location` at the top | `coords-needs-access` | `coords`: approximate location granted and the precise permission revoked with `pm`, the app started, a double tap answered `Keep approximate location` |
 
 ## Breadcrumb trail
 
