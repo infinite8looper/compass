@@ -31,7 +31,10 @@ suspend fun openOnPhone(context: Context, url: String): Boolean? {
         currentCoroutineContext().ensureActive()
         Log.w(TAG, "could not open the link on the phone (" + e.javaClass.simpleName + ")")
         false
-    } catch (e: Exception) {
+    } catch (e: Throwable) {
+        // From API 37 the call goes through the Wear SDK, which fails it with a bare Throwable (seen on the API 37
+        // emulator: `java.lang.Throwable` from RemoteInteractionsManager), neither an Exception nor an Error.
+        if (e is Error) throw e
         Log.w(TAG, "could not open the link on the phone (" + e.javaClass.simpleName + ")")
         false
     }
