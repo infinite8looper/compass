@@ -1,5 +1,6 @@
 package com.infinite8looper.compass
 
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.Application
 import android.graphics.Rect
 import android.hardware.Sensor
@@ -14,6 +15,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 import android.util.Log
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
@@ -59,7 +61,12 @@ class CalibrationScreenTest {
         settings.setBreadcrumbTrail(false)
         Unit
     }
-    @Before fun setUp() = reset()
+    @Before fun setUp() {
+        // The windows on screen are asked for by their list (nodes()), which the system gives only with this flag.
+        val automation = instrumentation.uiAutomation
+        automation.serviceInfo = automation.serviceInfo.apply { flags = flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS }
+        reset()
+    }
     @After fun tearDown() {
         reset()
         // The two-minute test lets the screen go to sleep; the next test needs it awake.
@@ -67,7 +74,16 @@ class CalibrationScreenTest {
     }
 
     private fun nodes(): List<AccessibilityNodeInfo> {
-        val root = instrumentation.uiAutomation.rootInActiveWindow ?: return emptyList()
+        // The app's own window among the windows on screen, and the active window only when it is not found. On API
+        // 33 a change of the sensors through the console puts the screen to sleep, and the test wakes it at once
+        // (setField). In 11 of 15 runs of theRegionsLitAreKeptAcrossAVisitToTheCheckScreenAndANewOpeningStartsAfresh
+        // there on 2026-10-16 (through Gradle too) the app was then resumed, focused and drawn (a screenshot showed
+        // the compass), yet rootInActiveWindow stayed null and the list of windows empty for the 10 s a wait gives.
+        // With the list of windows asked for (FLAG_RETRIEVE_INTERACTIVE_WINDOWS, setUp) it held the app's window,
+        // active and focused, in 6 runs of 6.
+        val root = instrumentation.uiAutomation.windows
+            .firstOrNull { it.type == AccessibilityWindowInfo.TYPE_APPLICATION && it.root?.packageName == app.packageName }?.root
+            ?: instrumentation.uiAutomation.rootInActiveWindow ?: return emptyList()
         root.refresh()
         val all = ArrayList<AccessibilityNodeInfo>()
         fun walk(n: AccessibilityNodeInfo) { all += n; for (i in 0 until n.childCount) n.getChild(i)?.let { if (it.refresh()) walk(it) } }
