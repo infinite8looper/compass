@@ -90,7 +90,7 @@ build_pid=$!; children+=($build_pid)
 typeset -A boot_pid
 for avd in $avds; do
   scripts/emulator.sh $avd ${serial_of[$avd]#emulator-} > $out/boot-$avd.log 2>&1 &
-  boot_pid[$avd]=$!; children+=($!)
+  pid=$!; boot_pid[$avd]=$pid; children+=($pid)
 done
 wait $build_pid; build_status=$?
 typeset -A booted
@@ -182,7 +182,7 @@ typeset -A run_pid
 for avd in $avds; do
   if [ -z "${booted[$avd]}" ]; then echo "$avd: did not boot, not run"; continue; fi
   ( trap - INT TERM; device_run $avd; echo $? > $out/status-$avd ) > $out/suite-$avd.log 2>&1 &
-  run_pid[$avd]=$!; children+=($!)
+  pid=$!; run_pid[$avd]=$pid; children+=($pid)
 done
 for avd in ${(k)run_pid}; do wait ${run_pid[$avd]}; done
 children=()
