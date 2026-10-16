@@ -56,7 +56,8 @@ tasks=(assembleDebug assembleDebugAndroidTest)
 bad=0
 if [ ${#unit} -gt 0 ]; then
   tasks+=(testDebugUnitTest)
-  for u in $unit; do tasks+=(--tests "$(full $u)"); done
+  # The unit test classes are in packages of their own (nav, ui): a simple name matches the class in any of them.
+  for u in $unit; do if [[ $u == *.* ]]; then tasks+=(--tests "$u"); else tasks+=(--tests "*.$u"); fi; done
 fi
 echo "== build: ./gradlew -q ${tasks[*]}"
 if ! ./gradlew -q $tasks > app/build/quick-tests-gradle.log 2>&1; then
