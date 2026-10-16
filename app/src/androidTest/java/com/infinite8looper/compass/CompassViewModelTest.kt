@@ -26,6 +26,12 @@ import com.infinite8looper.compass.nav.FALLBACK_ACCENT
 import com.infinite8looper.compass.nav.FALLBACK_NORTH
 import com.infinite8looper.compass.nav.FIRST_WAYPOINT_PLACE
 import com.infinite8looper.compass.nav.SKIP_HUE_APART
+import com.infinite8looper.compass.nav.ColorMode
+import com.infinite8looper.compass.nav.WAYPOINT_ROLE_CHANNELS_APART
+import com.infinite8looper.compass.nav.WatchScheme
+import com.infinite8looper.compass.nav.channelsApart
+import com.infinite8looper.compass.nav.paletteFor
+import com.infinite8looper.compass.nav.waypointRgb
 import com.infinite8looper.compass.nav.hueOf
 import com.infinite8looper.compass.nav.normalizeDeg
 import com.infinite8looper.compass.nav.shortestDelta
@@ -241,6 +247,23 @@ class CompassViewModelTest {
         assertEquals(FIRST_WAYPOINT_PLACE, places.first())
         assertEquals(places.size, places.toSet().size)
         // Stored as given.
+        assertEquals(places.toSet(), dao.observeAll().first().map { it.hue }.toSet())
+    }
+
+    @Test fun onTheOwnersGraySchemeNewWaypointsAreNotGivenColorsNearTheErrorColorOrThePointer() = runBlocking {
+        // Watch-fix re-review 2, Minor 1: on the owner's scheme the error color #FF7C65 lies on the ring between the
+        // pointer and north, and Waypoint 2 was #FF7F68. The scheme is the owner's watch's, as the unit tests have it.
+        val owner = paletteFor(ColorMode.WATCH_FACE, WatchScheme(0xFFF9EB, 0xFFC0B7, 0xFFBFB0, 0xEDE8DA, 0xD3CEC1, 0xAAA699))
+        assertTrue(owner.gray)
+        val vm = viewModel()
+        val places = (0 until 10).map { i -> vm.logWaypoint(hanover.copy(point = GeoPoint(43.70 + i * 0.001, -72.29)), owner).hue }
+        for (place in places) {
+            val c = waypointRgb(owner, place)
+            val what = "$place %06X in $places".format(c)
+            assertTrue(what, channelsApart(c, owner.roles.error) >= WAYPOINT_ROLE_CHANNELS_APART)
+            assertTrue(what, channelsApart(c, owner.roles.accent) >= WAYPOINT_ROLE_CHANNELS_APART)
+        }
+        assertEquals(places.size, places.toSet().size)
         assertEquals(places.toSet(), dao.observeAll().first().map { it.hue }.toSet())
     }
 

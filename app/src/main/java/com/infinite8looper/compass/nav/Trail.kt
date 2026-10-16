@@ -215,11 +215,15 @@ fun crumbTargetId(crumbId: Long): Long = -crumbId
  * While it is retraced the newest crumb is the one walked to: a focused target named by its place in the trail,
  * which is its number among the crumbs that are left, the oldest being 1. Like any target it has a distance, and a
  * dial angle unless it is arrived at. It is shown as arrived at only by a fix that could also consume it
- * ([fixGoodEnough], see [trailAfterFix]): a poorer fix shows its direction and distance, however near.
+ * ([fixGoodEnough], see [trailAfterFix]). Not arrived at, and nearer than the position's reported accuracy
+ * [fixAccuracyM] ([directionUncertain]), it has no dial angle and is marked [TargetUi.uncertain]: its distance is
+ * shown with the accuracy after it, and it is not consumed (owner, 2026-10-16, "Hide the pointer (Recommended)").
+ * Until then a poorer fix showed its direction and distance, however near.
  *
  * Every other crumb is a tick at its bearing, at the whole degree nearest to it, and crumbs in the same direction
  * share one: however long the trail, there are at most 360 ticks, in rising order. A crumb the wearer has arrived
- * at has no tick, as a target there has no line. With no [position] there are no ticks.
+ * at has no tick, as a target there has no line, and nor has a crumb nearer than the accuracy ([directionUncertain]),
+ * which is not counted as arrived at. With no [position] there are no ticks.
  *
  * Arrival, for the tick as for the crumb walked to, begins under the arrival distance and ends beyond the leaving
  * distance ([nextArrived]): [previouslyArrived] holds the [TrailUi.arrivedIds] of the time before.
@@ -227,6 +231,7 @@ fun crumbTargetId(crumbId: Long): Long = -crumbId
 fun buildTrail(
     mode: TrailMode, crumbs: List<CrumbPoint>, position: GeoPoint?, declination: Float?, north: NorthRef,
     units: Units = Units.METRIC, previouslyArrived: Set<Long> = emptySet(), fixGoodEnough: Boolean = true,
+    fixAccuracyM: Float? = null,
 ): TrailUi {
     val walked = if (mode == TrailMode.RETRACING) crumbs.firstOrNull() else null
     var arrivedIds: MutableSet<Long>? = null
@@ -235,10 +240,11 @@ fun buildTrail(
         val distance = position?.let { distanceMeters(it, c.point) }
         val arrived = distance != null && fixGoodEnough && nextArrived(id in previouslyArrived, distance, units)
         if (arrived) arrivedIds = mutableSetOf(id)
+        val uncertain = !arrived && directionUncertain(distance, fixAccuracyM)
         TargetUi(
             id = id, name = crumbName(crumbs.size), hue = 0f,
-            dialAngleDeg = position?.takeUnless { arrived }?.let { dialAngle(bearingDeg(it, c.point), declination, north) },
-            distanceM = distance, focused = true, arrived = arrived, isCrumb = true,
+            dialAngleDeg = position?.takeUnless { arrived || uncertain }?.let { dialAngle(bearingDeg(it, c.point), declination, north) },
+            distanceM = distance, focused = true, arrived = arrived, isCrumb = true, uncertain = uncertain,
         )
     }
     val ticks = if (position == null) emptyList() else {
@@ -246,10 +252,12 @@ fun buildTrail(
         for (c in crumbs) {
             if (c === walked) continue
             val id = crumbTargetId(c.id)
-            if (nextArrived(previouslyArrived.isNotEmpty() && id in previouslyArrived, distanceMeters(position, c.point), units)) {
+            val distance = distanceMeters(position, c.point)
+            if (nextArrived(previouslyArrived.isNotEmpty() && id in previouslyArrived, distance, units)) {
                 (arrivedIds ?: mutableSetOf<Long>().also { arrivedIds = it }) += id
                 continue
             }
+            if (directionUncertain(distance, fixAccuracyM)) continue
             taken[dialAngle(bearingDeg(position, c.point), declination, north).roundToInt().mod(360)] = true
         }
         (0 until 360).filter { taken[it] }.map { it.toFloat() }

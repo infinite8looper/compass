@@ -22,7 +22,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -59,7 +58,7 @@ import com.infinite8looper.compass.nav.coveredText
 import com.infinite8looper.compass.nav.headingErrorText
 import com.infinite8looper.compass.nav.isCovered
 import com.infinite8looper.compass.nav.isInterference
-import com.infinite8looper.compass.nav.nextCoverage
+import com.infinite8looper.compass.nav.coverageRegion
 import com.infinite8looper.compass.sensors.HeadingReading
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -90,12 +89,13 @@ private fun HeadingReading?.toView() = CalibrationView(
  * The ring (v3 spec, "Calibration") has a segment for each region of directions the magnetometer's field can point
  * in, in the watch's own frame (nav/Calibration.kt): three rings, for the field through the back of the watch
  * (outer), across its face (middle) and out of its face (inner), each of eight sectors, placed by the direction of
- * the field across the face. A segment lights when the field has pointed there since the screen opened. It shows
- * the motion covered, not accuracy, and is labeled so.
+ * the field across the face. A segment lights when the field has pointed there while the screen was open, and stays
+ * lit across openings until the magnetometer reports that its accuracy has fallen to low or unreliable (the view
+ * model keeps the ring, [CompassViewModel.calibration]). It shows the motion covered, not accuracy, and is labeled so.
  *
  * The screen keeps the display on ([CompassViewModel.setCalibrationAwake]) for two minutes from its opening or from
- * the last segment that lit, whichever is later. The segments lit, and when the last one lit, are kept across a visit
- * to the check screen; the two minutes count again from the return.
+ * the last segment that lit, whichever is later. When the last one lit is kept across a visit to the check screen;
+ * the two minutes count again from the return.
  *
  * In a build with the diagnostics switch on, a row at the bottom, `Check`, opens the check screen ([onCheck]; null
  * where the build has no such screen, and then there is no row).
@@ -113,21 +113,23 @@ fun CalibrationScreen(vm: CompassViewModel, onCheck: (() -> Unit)? = null) {
     val ring = calibrationRing(shown.accuracy, shown.interference)
     val filled = animateFloatAsState(ring.fraction, tween(FILL_MS), label = "ring")
 
-    // The regions covered since the screen opened, and when the last new one was: read where they are drawn and in
-    // the effect that keeps the display on, so a reading that adds nothing changes nothing. Both are saved with the
-    // screen's place in the navigation host, so a visit to the check screen and Back find them as they were; the
-    // time of opening is not, so the two minutes count again from the return.
-    val covered = rememberSaveable { mutableIntStateOf(0) }
+    // The regions covered are calibration's ring as the view model keeps it (owner, 2026-10-16: "Until accuracy
+    // drops (Recommended)"): kept across openings, restarts and the end of the process, and started over only when
+    // the magnetometer reports that its accuracy has fallen to low or unreliable (nav/Calibration.kt,
+    // ringMemoryStep). They are read where they are drawn and where the share is written; when the last new one lit
+    // here is saved with the screen's place in the navigation host, so a visit to the check screen and Back find it
+    // as it was; the time of opening is not, so the two minutes count again from the return.
+    val memory by vm.calibration.collectAsStateWithLifecycle()
     val openedAt = remember { SystemClock.elapsedRealtime() }
     val lastNewAt = rememberSaveable { mutableLongStateOf(NONE_YET) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(vm, lifecycle) {
+        vm.calibrationReady()
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             // The reading held from before the screen opened is not counted: the field may have been there long ago.
             vm.heading.drop(1).collect { r ->
                 if (r == null) return@collect
-                val next = nextCoverage(covered.intValue, r.fieldX, r.fieldY, r.fieldZ)
-                if (next != covered.intValue) { covered.intValue = next; lastNewAt.longValue = SystemClock.elapsedRealtime() }
+                if (vm.lightRegion(coverageRegion(r.fieldX, r.fieldY, r.fieldZ))) lastNewAt.longValue = SystemClock.elapsedRealtime()
             }
         }
     }
@@ -165,9 +167,9 @@ fun CalibrationScreen(vm: CompassViewModel, onCheck: (() -> Unit)? = null) {
                 autoSize = TextAutoSize.StepBased(minFontSize = guideStyle.fontSize * SMALLEST, maxFontSize = guideStyle.fontSize, stepSize = 0.25.sp),
             )
         }
-        CoverageRing({ covered.intValue }, Modifier.offset(y = r * RING_Y).size(r * RING_RADIUS * 2))
+        CoverageRing({ memory.covered }, Modifier.offset(y = r * RING_Y).size(r * RING_RADIUS * 2))
         Beside(
-            "Covered", coveredText(covered.intValue), besideStyle,
+            "Covered", coveredText(memory.covered), besideStyle,
             Modifier.offset(x = -r * BESIDE_X, y = r * RING_Y).width(r * BESIDE_WIDTH), announced = true,
         )
         shown.errorWholeDeg?.let { error ->

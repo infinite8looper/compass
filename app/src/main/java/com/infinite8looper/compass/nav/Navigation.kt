@@ -138,6 +138,13 @@ val FIRST_WAYPOINT_PLACE: Float = widestGapMiddle(FALLBACK_NORTH, FALLBACK_ACCEN
  */
 const val SKIP_HUE_APART = 25f
 
+/**
+ * In a gray scheme ([Palette.gray]), how far in a channel of red, green or blue ([channelsApart]) a new waypoint's
+ * color keeps from the error color and from the pointer ([nextWaypointPlace]): about a tenth of a channel's range,
+ * as far as the owner's first eight waypoints are tested to keep from north.
+ */
+const val WAYPOINT_ROLE_CHANNELS_APART = 24
+
 /** How many places of the numbering [nextWaypointPlace] chooses among. */
 const val PLACE_CHOICES = 8
 
@@ -148,23 +155,45 @@ private const val PLACE_SEARCH_LIMIT = 4096
 private const val SAME_PLACE = 0.01f
 
 /**
- * The place a new waypoint is given, with the places of the waypoints there are in [taken]. The places of the
- * numbering ([hueForIndex]) are taken in turn; one within [SKIP_HUE_APART] of the red or the blue is passed over,
- * and so is one already taken. Of the first [PLACE_CHOICES] left, the one furthest from every taken place is given
- * (the earliest of those as far): with no waypoints that is the first, [FIRST_WAYPOINT_PLACE]. So on an install
- * whose waypoints were numbered differently (from 0, before 2026-10-14) or were given colors by hand, a new place
- * is not put next to an old one where another is free. Places stored are never changed.
+ * The place a new waypoint is given, with the places of the waypoints there are in [taken], for the colors of
+ * [palette] (the ones on screen). The places of the numbering ([hueForIndex]) are taken in turn; one within
+ * [SKIP_HUE_APART] of the red or the blue is passed over, and so is one already taken. In a gray scheme's palette
+ * ([Palette.gray]) a place whose color ([waypointRgb]) is within [WAYPOINT_ROLE_CHANNELS_APART] in a channel of the
+ * error color or the pointer is passed over too ([nearTheRoles]); where that would leave no place, it is not.
+ * Of the first [PLACE_CHOICES] left, the one furthest from every taken place is given (the earliest of those as
+ * far): with no waypoints and no place passed over for the colors, that is the first, [FIRST_WAYPOINT_PLACE]. So on
+ * an install whose waypoints were numbered differently (from 0, before 2026-10-14) or were given colors by hand, a
+ * new place is not put next to an old one where another is free. Places stored are never changed, so a waypoint
+ * keeps its color.
  */
-fun nextWaypointPlace(taken: FloatArray): Float {
+fun nextWaypointPlace(taken: FloatArray, palette: Palette = STANDARD_PALETTE): Float {
+    if (palette.gray) chosenPlace(taken, palette, true)?.let { return it }
+    return chosenPlace(taken, palette, false) ?: FIRST_WAYPOINT_PLACE
+}
+
+/**
+ * Whether the color at [place] in a gray scheme's [palette] is within [WAYPOINT_ROLE_CHANNELS_APART] in a channel
+ * ([channelsApart]) of the error color or the pointer. Watch-fix re-review 2, Minor 1: on the owner's scheme the
+ * error color #FF7C65 lies on the ring between the pointer and north, and Waypoint 2 was #FF7F68 beside it.
+ */
+fun nearTheRoles(palette: Palette, place: Float): Boolean {
+    val color = waypointRgb(palette, place)
+    return channelsApart(color, palette.roles.error) < WAYPOINT_ROLE_CHANNELS_APART ||
+        channelsApart(color, palette.roles.accent) < WAYPOINT_ROLE_CHANNELS_APART
+}
+
+/** [nextWaypointPlace]'s choice, passing over places [nearTheRoles] where [skipRoles]; null where none is left. */
+private fun chosenPlace(taken: FloatArray, palette: Palette, skipRoles: Boolean): Float? {
     val red = hueOf(FALLBACK_NORTH)
     val blue = hueOf(FALLBACK_ACCENT)
-    var best = FIRST_WAYPOINT_PLACE
+    var best: Float? = null
     var bestApart = -1f
     var found = 0
     var index = 0
     while (found < PLACE_CHOICES && index < PLACE_SEARCH_LIMIT) {
         val place = hueForIndex(index++)
         if (abs(shortestDelta(place, red)) < SKIP_HUE_APART || abs(shortestDelta(place, blue)) < SKIP_HUE_APART) continue
+        if (skipRoles && nearTheRoles(palette, place)) continue
         var least = Float.MAX_VALUE
         for (t in taken) least = minOf(least, abs(shortestDelta(place, t)))
         if (least < SAME_PLACE) continue

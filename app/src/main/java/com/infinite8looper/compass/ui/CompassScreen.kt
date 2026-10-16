@@ -1,5 +1,6 @@
 package com.infinite8looper.compass.ui
 
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import com.infinite8looper.compass.NavUi
 import android.os.Build
@@ -385,22 +386,9 @@ fun CompassScreen(
         val density = LocalDensity.current
         // The readout's text styles depend on the dial's radius alone, and are made once for it: a line that
         // changes is composed again with the style it had.
-        val styles = remember(r, density) {
-            fun style(fraction: Float, weight: FontWeight = FontWeight.Normal) = with(density) {
-                val size = (r * fraction).toSp()
-                TextStyle(
-                    fontSize = size, lineHeight = size * 1.1f, fontWeight = weight, textAlign = TextAlign.Center,
-                    platformStyle = PlatformTextStyle(includeFontPadding = false),
-                    lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None),
-                )
-            }
-            ReadoutStyles(
-                body = style(READOUT_BODY_SIZE), detail = style(READOUT_DETAIL_SIZE),
-                heading = style(READOUT_HEADING_SIZE, FontWeight.Light), coordinates = style(COORDINATES_SIZE),
-            )
-        }
+        val styles = remember(r, density) { readoutStyles(r, density) }
         CompassReadout(
-            vm, navState, logStatusState, holdFlatState, headingShown, lowAccuracy, onScreen, paneView, onCalibrate, r, styles,
+            vm.supported, navState, logStatusState, holdFlatState, headingShown, lowAccuracy, onScreen, paneView, onCalibrate, r, styles,
             dial = { targets, focused, crumbTicks, modifier ->
                 CompassDial(
                     headingProvider = { shown.floatValue }, targets = targets, modifier = modifier,
@@ -421,8 +409,8 @@ fun CompassScreen(
  * seconds while the compass is on screen, composes this and not the screen around it.
  */
 @Composable
-private fun BoxScope.CompassReadout(
-    vm: CompassViewModel, navState: State<NavUi>, logStatusState: State<LogStatus>, holdFlatState: State<Boolean>,
+internal fun BoxScope.CompassReadout(
+    supported: Boolean, navState: State<NavUi>, logStatusState: State<LogStatus>, holdFlatState: State<Boolean>,
     headingShownState: State<String>, lowAccuracyState: State<Boolean>, onScreen: State<Boolean>, paneView: () -> PaneView,
     onCalibrate: () -> Unit, r: Dp, styles: ReadoutStyles,
     dial: @Composable (targets: List<TargetUi>, focused: TargetUi?, crumbTicks: List<Float>, modifier: Modifier) -> Unit,
@@ -457,7 +445,8 @@ private fun BoxScope.CompassReadout(
             distanceM = focused?.distanceM, arrived = focused?.arrived == true,
             noTarget = focused == null && nav.loaded && nav.waypoints.isNotEmpty(),
             position = nav.position, stale = stale, fixAccuracyM = nav.fixAccuracyM, noPosition = nav.noPosition,
-            showCoordinates = nav.showCoordinates && vm.supported, holdFlat = holdFlat, lowAccuracy = vm.supported && lowAccuracy,
+            showCoordinates = nav.showCoordinates && supported, holdFlat = holdFlat, lowAccuracy = supported && lowAccuracy,
+            uncertain = focused?.uncertain == true,
         )
         // The hold-flat drawing has more room when the rows next to the heading are empty. A row added next to the
         // heading belongs here too.
@@ -482,7 +471,7 @@ private fun BoxScope.CompassReadout(
             )
         }
 
-        if (!vm.supported) {
+        if (!supported) {
             Text("This watch has no compass sensor", color = Ink, style = bodyStyle, modifier = Modifier.slot(0f, 0.8f))
         } else {
             // The top slot: `MAG`, and while a trail is being laid `Trail` with the number of crumbs, side by side
@@ -527,7 +516,8 @@ private fun BoxScope.CompassReadout(
             if (lines.mainIsStatus) StatusLine(main.words, color, bodyStyle, Modifier.slot(rows.main, 0.78f), view = paneView)
             else Text(
                 // For the crumb walked to, a fix too poor to consume it has its accuracy after the distance,
-                // dim: the wearer standing on a crumb that stays sees why.
+                // dim: the wearer standing on a crumb that stays sees why. So has any target nearer than the
+                // accuracy, whose line is not drawn.
                 text = remember(main.words, main.note) {
                     if (main.note == null) AnnotatedString(main.words) else buildAnnotatedString {
                         append(main.words); append(' ')
@@ -604,7 +594,23 @@ internal fun StatusLine(text: String, color: Color, style: TextStyle, modifier: 
 }
 
 /** The text styles of the compass's readout, made once for a dial radius. */
-private class ReadoutStyles(val body: TextStyle, val detail: TextStyle, val heading: TextStyle, val coordinates: TextStyle)
+internal class ReadoutStyles(val body: TextStyle, val detail: TextStyle, val heading: TextStyle, val coordinates: TextStyle)
+
+/** The readout's text styles for a dial of radius [r]: each a share of the radius ([READOUT_BODY_SIZE] and the rest). */
+internal fun readoutStyles(r: Dp, density: Density): ReadoutStyles {
+    fun style(fraction: Float, weight: FontWeight = FontWeight.Normal) = with(density) {
+        val size = (r * fraction).toSp()
+        TextStyle(
+            fontSize = size, lineHeight = size * 1.1f, fontWeight = weight, textAlign = TextAlign.Center,
+            platformStyle = PlatformTextStyle(includeFontPadding = false),
+            lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None),
+        )
+    }
+    return ReadoutStyles(
+        body = style(READOUT_BODY_SIZE), detail = style(READOUT_DETAIL_SIZE),
+        heading = style(READOUT_HEADING_SIZE, FontWeight.Light), coordinates = style(COORDINATES_SIZE),
+    )
+}
 
 /** How small a line of the logging status is drawn, as a share of its full size, before it is cut short or slides. */
 private const val STATUS_SMALLEST = 0.75f

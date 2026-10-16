@@ -9,6 +9,7 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.infinite8looper.compass.data.BREADCRUMB_TRAIL_DEFAULT
+import com.infinite8looper.compass.data.CalibrationMemory
 import com.infinite8looper.compass.data.Crumb
 import com.infinite8looper.compass.data.RestoredOptOut
 import com.infinite8looper.compass.data.Settings
@@ -16,11 +17,14 @@ import com.infinite8looper.compass.data.SettingsStore
 import com.infinite8looper.compass.data.Waypoint
 import com.infinite8looper.compass.data.WaypointDatabase
 import com.infinite8looper.compass.nav.*
+import com.infinite8looper.compass.ui.shownPalette
 import com.infinite8looper.compass.sensors.HeadingReading
 import com.infinite8looper.compass.sensors.HeadingSource
 import com.infinite8looper.compass.sensors.LocationSource
 import com.infinite8looper.compass.sensors.declinationAt
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -166,6 +170,71 @@ class CompassViewModel(
     /** The check screen says here whether it keeps the screen on; the switch itself is set above every screen. */
     fun setCheckAwake(awake: Boolean) { checkAwakeNow.value = awake }
 
+    // Calibration's ring as kept (owner, 2026-10-16: "Until accuracy drops (Recommended)"). This is the one place
+    // it is changed: the regions the calibration screen lights ([lightRegion]) and what each report of the
+    // magnetometer's level does to it while the sensor runs, for any screen ([ringMemoryStep]). It is read from its
+    // file once, as the view model is made, and each change is written back to the file in the order made.
+    private val calibrationNow = MutableStateFlow(CalibrationMemory.NONE)
+    private val calibrationRead = CompletableDeferred<Unit>()
+
+    /** Calibration's ring as kept: the regions lit and the level the magnetometer last reported with them. */
+    val calibration: StateFlow<CalibrationMemory> = calibrationNow
+
+    init {
+        viewModelScope.launch {
+            val kept = try {
+                settingsStore.calibration.first()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "could not read calibration's ring (" + e.javaClass.simpleName + ")"); CalibrationMemory.NONE
+            }
+            calibrationNow.value = kept
+            // Every change from here on is written, the newest last; nothing changes it before the file is read.
+            launch(start = CoroutineStart.UNDISPATCHED) {
+                calibrationNow.drop(1).collect { quietly("keep calibration's ring") { settingsStore.setCalibration(it) } }
+            }
+            calibrationRead.complete(Unit)
+        }
+    }
+
+    /** Returns once calibration's ring has been read from its file; until then [calibration] holds none lit. */
+    suspend fun calibrationReady() = calibrationRead.await()
+
+    /** Lights [region] of calibration's ring (nav/Calibration.kt); true if it was not lit before. Call after [calibrationReady]. */
+    fun lightRegion(region: Int): Boolean {
+        if (region !in 0 until COVERAGE_REGIONS) return false
+        val kept = calibrationNow.value
+        if (isCovered(kept.covered, region)) return false
+        calibrationNow.value = kept.copy(covered = kept.covered or (1 shl region))
+        return true
+    }
+
+    /**
+     * One run of the heading sensor, as the ring's memory follows it: when it was registered and whether its
+     * start-up is over ([ringMemorySettles]). Each reading's level is weighed by [ringMemoryStep]; nothing is made
+     * for a reading that changes nothing.
+     */
+    private inner class RingRun(private val registeredAt: Long) {
+        private var settled = false
+        fun report(reported: Int?) {
+            val kept = calibrationNow.value
+            when (ringMemoryStep(kept.level, reported, SystemClock.elapsedRealtime() - registeredAt, settled)) {
+                RingMemoryStep.KEEP -> Unit
+                RingMemoryStep.STORE_LEVEL -> calibrationNow.value = kept.copy(level = reported)
+                RingMemoryStep.CLEAR -> calibrationNow.value = CalibrationMemory(0, reported)
+            }
+            settled = ringMemorySettles(settled, calibrationNow.value.level, reported)
+        }
+    }
+
+    /** [readings] of one run of the sensor, each level weighed for calibration's ring once the ring has been read. */
+    private fun followedForTheRing(readings: Flow<HeadingReading>): Flow<HeadingReading> = flow {
+        calibrationRead.await()
+        val run = RingRun(SystemClock.elapsedRealtime())
+        emitAll(readings.onEach { run.report(it.accuracy) })
+    }
+
     /**
      * The latest reading. While the sensor is not running this stays the last one it gave; null before the first.
      * The magnetometer's accuracy and field strength in a reading are the last it reported, across a stop and a
@@ -177,7 +246,7 @@ class CompassViewModel(
         .combine(headingKindNow) { running, kind -> if (running) kind else null }
         .combine(allHeadingsNow) { kind, all -> kind?.let { HeadingAsked(it, all) } }
         .distinctUntilChanged()
-        .flatMapLatest { asked -> if (asked != null) headingSource.readings(asked.kind, asked.allThree) else emptyFlow() }
+        .flatMapLatest { asked -> if (asked != null) followedForTheRing(headingSource.readings(asked.kind, asked.allThree)) else emptyFlow() }
         .scan<HeadingReading, HeadingReading?>(null) { last, reading ->
             val magnet = carriedOver(
                 last?.let { MagnetReport(it.accuracy, it.fieldMicroTesla) }, MagnetReport(reading.accuracy, reading.fieldMicroTesla),
@@ -335,10 +404,13 @@ class CompassViewModel(
         // are all still targets with none of them focused. The stored focus is not touched, so it is back afterwards.
         val targets = buildTargets(
             ws.map { it.toInfo() }, s.focusedId, f?.point, declination, s.north, s.units, arrived,
-            focusSuspended = mode == TrailMode.RETRACING,
+            focusSuspended = mode == TrailMode.RETRACING, fixAccuracyM = f?.accuracyM,
         )
         // The crumb walked to is shown as arrived at only by a fix that could consume it.
-        val trail = buildTrail(mode, cs, f?.point, declination, s.north, s.units, arrived, fixGoodEnough = f != null && isGoodEnough(f.accuracyM))
+        val trail = buildTrail(
+            mode, cs, f?.point, declination, s.north, s.units, arrived, fixGoodEnough = f != null && isGoodEnough(f.accuracyM),
+            fixAccuracyM = f?.accuracyM,
+        )
         val focused = trail.current ?: targets.firstOrNull { it.focused }
         arrived = targets.filter { it.arrived }.mapTo(HashSet(trail.arrivedIds)) { it.id }
         // Only a live fix gives distances; the saved last position is not presented as where the wearer is now.
@@ -401,8 +473,12 @@ class CompassViewModel(
     /** Held while a new waypoint's place is chosen and the waypoint stored ([logWaypoint]). */
     private val waypointAdds = Mutex()
 
-    /** Stores a new waypoint as a target. Throws if the waypoint cannot be stored, so the caller can say so. */
-    suspend fun logWaypoint(fix: Fix): Waypoint {
+    /**
+     * Stores a new waypoint as a target. Throws if the waypoint cannot be stored, so the caller can say so. Its place
+     * is chosen for the colors [palette], the ones on screen ([shownPalette]): in a gray scheme a place whose color
+     * is near the error color or the pointer is passed over ([nextWaypointPlace]).
+     */
+    suspend fun logWaypoint(fix: Fix, palette: Palette = shownPalette): Waypoint {
         // The focus falls back to the newest target when none is stored, so pin it down before adding one. Under
         // the lock a step of the focus takes, so the pin cannot write back a focus that a step has just moved on from.
         focusChanges.withLock { targetsAndFocus().second?.let { settingsStore.setFocused(it) } }
@@ -413,7 +489,7 @@ class CompassViewModel(
             val taken = dao.observeAll().first().let { all -> FloatArray(all.size) { all[it].hue } }
             val w = Waypoint(
                 name = "Waypoint $n", lat = fix.point.lat, lon = fix.point.lon, accuracyM = fix.accuracyM,
-                createdAt = System.currentTimeMillis(), hue = nextWaypointPlace(taken), isTarget = true,
+                createdAt = System.currentTimeMillis(), hue = nextWaypointPlace(taken, palette), isTarget = true,
             )
             w.copy(id = dao.insert(w))
         }

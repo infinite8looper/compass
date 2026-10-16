@@ -21,6 +21,7 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.infinite8looper.compass.data.CalibrationMemory
 import com.infinite8looper.compass.data.SettingsStore
 import com.infinite8looper.compass.data.WaypointDatabase
 import com.infinite8looper.compass.nav.TrailMode
@@ -59,6 +60,8 @@ class CalibrationScreenTest {
         settings.setFocused(null)
         settings.setTrailMode(TrailMode.OFF)
         settings.setBreadcrumbTrail(false)
+        // Calibration's ring is kept between openings and starts (nav/Calibration.kt): each test starts with none lit.
+        settings.setCalibration(CalibrationMemory.NONE)
         Unit
     }
     /** The automation's flags before setUp added one, put back after each test so the classes after it run as alone. */
@@ -81,7 +84,7 @@ class CalibrationScreenTest {
     private fun nodes(): List<AccessibilityNodeInfo> {
         // The app's own window among the windows on screen, and the active window only when it is not found. On API
         // 33 a change of the sensors through the console puts the screen to sleep, and the test wakes it at once
-        // (setField). In 11 of 15 runs of theRegionsLitAreKeptAcrossAVisitToTheCheckScreenAndANewOpeningStartsAfresh
+        // (setField). In 11 of 15 runs of theRegionsLitAreKeptAcrossTheCheckScreenANewOpeningARecreationAndANewStart
         // there on 2026-10-16 (through Gradle too) the app was then resumed, focused and drawn (a screenshot showed
         // the compass), yet rootInActiveWindow stayed null and the list of windows empty for the 10 s a wait gives.
         // With the list of windows asked for (FLAG_RETRIEVE_INTERACTIVE_WINDOWS, setUp) it held the app's window,
@@ -323,22 +326,27 @@ class CalibrationScreenTest {
     }
 
     /**
-     * The regions lit are kept across a visit to the check screen (calibration's `Check` row, then Back), and a new
-     * opening of calibration from the settings starts afresh. The field is changed through the emulator's sensor
+     * The regions lit are kept across a visit to the check screen (calibration's `Check` row, then Back), across a
+     * new opening of calibration from the settings, across the activity made again, and across a new start of the
+     * activity (owner, 2026-10-16, on how long the lit segments are kept: "Until accuracy drops (Recommended)"; this
+     * replaces the ruling that a new opening starts afresh). The field is changed through the emulator's sensor
      * console: from the field of the watch lying flat at 40 (one region) to the field of the watch face down (another
-     * region), and back, so two regions are lit while the field points into one.
+     * region), and back, so two regions are lit while the field points into one. The console cannot set the
+     * magnetometer's accuracy, so the ring's start-over at a fall of the level is checked by CalibrationTest's pure
+     * rule only; the end of the app's process by scripts/calibration-check.sh (am force-stop).
      */
-    @Test fun theRegionsLitAreKeptAcrossAVisitToTheCheckScreenAndANewOpeningStartsAfresh() = runBlocking {
-        ActivityScenario.launch(MainActivity::class.java).use {
-            // The field is put back however the test ends; if putting it back fails too, the test's own failure is the
-            // one reported, with that of putting it back attached to it.
-            var failure: Throwable? = null
-            try {
+    @Test fun theRegionsLitAreKeptAcrossTheCheckScreenANewOpeningARecreationAndANewStart() = runBlocking {
+        // The field is put back however the test ends; if putting it back fails too, the test's own failure is the
+        // one reported, with that of putting it back attached to it.
+        var failure: Throwable? = null
+        try {
+            var two = ""
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
                 setField(FLAT_AT_40)
                 openCalibration()
                 val one = shareWhen("the flat field's segment lit") { it != "0%" }
                 setField(FACE_DOWN)
-                val two = shareWhen("the face-down field's segment lit") { (percent(it) ?: 0) > percent(one)!! }
+                two = shareWhen("the face-down field's segment lit") { (percent(it) ?: 0) > percent(one)!! }
                 setField(FLAT_AT_40)
                 delay(1_500)
                 assertEquals("the share after the field went back to the flat one", two, shareShown())
@@ -358,17 +366,27 @@ class CalibrationScreenTest {
                 assertTrue(row.performAction(AccessibilityNodeInfo.ACTION_CLICK))
                 shows("calibration opened again") { visible(INSTRUCTION) }
                 val again = sharesFor(3_000)
-                assertTrue("opened again, calibration showed the earlier share $two: $again", again.none { it == two })
-                assertEquals("opened again, the share with the flat field alone: $again", one, again.last())
-            } catch (t: Throwable) {
-                failure = t
-                throw t
-            } finally {
-                try {
-                    setField(FLAT_AT_40)
-                } catch (cleanup: Throwable) {
-                    failure?.addSuppressed(cleanup) ?: throw cleanup
-                }
+                assertTrue("opened again, calibration did not show the earlier share $two throughout: $again", again.all { it == two })
+
+                scenario.recreate()
+                shows("calibration after the activity was made again") { visible(INSTRUCTION) }
+                val recreated = sharesFor(3_000)
+                assertTrue("after the activity was made again the share was not $two throughout: $recreated", recreated.all { it == two })
+            }
+            // A new start of the activity, with a view model of its own that reads the ring from its file.
+            ActivityScenario.launch(MainActivity::class.java).use {
+                openCalibration()
+                val started = sharesFor(3_000)
+                assertTrue("after a new start the share was not $two throughout: $started", started.all { it == two })
+            }
+        } catch (t: Throwable) {
+            failure = t
+            throw t
+        } finally {
+            try {
+                setField(FLAT_AT_40)
+            } catch (cleanup: Throwable) {
+                failure?.addSuppressed(cleanup) ?: throw cleanup
             }
         }
         Unit
