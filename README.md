@@ -142,7 +142,7 @@ Needs JDK 17 and the Android SDK (`local.properties` with `sdk.dir`, which Andro
 ./gradlew installDebug
 ```
 
-`installDebug` installs on the single attached device or emulator. The release build type shrinks the app and is signed from `keystore.properties` when that file exists (the file and keystores are ignored by git).
+`installDebug` installs on the single attached device or emulator. The release build type shrinks the app and is signed from `keystore.properties` when that file exists (the file and keystores are ignored by git). The release build (`./gradlew bundleRelease` for Google Play) puts the symbol tables of the libraries' native code into the bundle for Google Play's crash reports, using NDK 27.1.12297006 (`ndkVersion` in `app/build.gradle.kts`; install it with the SDK Manager); `androidx.graphics.path` ships its library already stripped, so only datastore's has symbols.
 
 ```
 ./gradlew assembleWatch

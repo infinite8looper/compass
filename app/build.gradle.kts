@@ -14,6 +14,8 @@ val keystoreProps = Properties().apply {
 android {
     namespace = "com.infinite8looper.compass"
     compileSdk = 37
+    // The NDK the release build extracts the libraries' native symbol tables with (ndk.debugSymbolLevel below).
+    ndkVersion = "27.1.12297006"
 
     defaultConfig {
         applicationId = "com.infinite8looper.compass"
@@ -44,6 +46,9 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
             signingConfig = signingConfigs.findByName("release")
             buildConfigField("boolean", "DIAGNOSTICS", "false")
+            // The symbol tables of the libraries' native code (androidx.graphics.path, datastore's shared counter) go
+            // into the bundle (BUNDLE-METADATA), so Google Play can read native crash reports. Needs ndkVersion's NDK.
+            ndk { debugSymbolLevel = "SYMBOL_TABLE" }
         }
         // The watch build: made as the release build is (minified, resources shrunk, not debuggable) and signed with
         // this machine's debug key, the one the debug build is signed with, so it installs with no keystore. Its
